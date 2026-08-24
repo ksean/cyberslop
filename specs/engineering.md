@@ -30,6 +30,7 @@ The initial toolchain is Kotlin 2.4.10 and Gradle 9.4.0, a current pairing withi
 - **ENG-031:** Platform-independent behavior must be tested without a browser where practical. Browser integration must have focused browser tests.
 - **ENG-032:** `./scripts/check.sh` must run the complete local verification suite and create a production browser distribution.
 - **ENG-033:** CI must execute the same check script for every pull request and push to `main`.
+- **ENG-034:** A successful push to `main` must make the verified production browser distribution available through GitHub Pages.
 
 ## Development integration
 

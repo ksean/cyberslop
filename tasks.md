@@ -8,6 +8,20 @@ None.
 
 ## Completed
 
+### CYB-004 — Repair the GitHub Pages workflow
+
+- **Status:** Completed on 2026-08-24
+- **Specification:** [Change 0002](specs/changes/0002-github-pages-deployment.md)
+- **Depends on:** Nothing
+
+TDD checkpoints:
+
+- [x] Reproduce the invalid-YAML failure with a parser and retain the failed GitHub run as evidence.
+- [x] Correct only the malformed workflow structure required for GitHub to create its jobs.
+- [x] Validate the workflow with IntelliJ and a YAML parser.
+- [x] Run `./scripts/check.sh` to verify the artifact-producing build remains green.
+- [x] Commit the focused workflow repair.
+
 ### CYB-003 — Verify the title-screen slice end to end
 
 - **Status:** Completed on 2026-08-24
