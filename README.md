@@ -1,6 +1,6 @@
 # Cyberslop
 
-Cyberslop is a dystopian side-scrolling adventure game being built with Kotlin and WebAssembly for modern web browsers. It is in early development and does not yet have a playable build.
+Cyberslop is a dystopian side-scrolling adventure game being built with Kotlin and WebAssembly for modern web browsers. It is in early development; the current build contains a placeholder title screen.
 
 ## Run locally
 

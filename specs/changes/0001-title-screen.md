@@ -1,7 +1,7 @@
 # Change 0001: Initial title screen
 
-- **Status:** Specified
-- **Implementation approval:** Pending
+- **Status:** Implemented on 2026-08-24
+- **Implementation approval:** Approved on 2026-08-24
 - **Created:** 2026-08-23
 
 ## Intent
