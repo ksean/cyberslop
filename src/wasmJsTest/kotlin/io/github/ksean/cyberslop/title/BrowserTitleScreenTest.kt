@@ -39,21 +39,33 @@ class BrowserTitleScreenTest {
     }
 
     @Test
-    fun `actions receive focus and remain placeholders when activated`() {
+    fun `actions are keyboard focusable`() {
         renderTitleScreen(root, stateWithSavedGame(available = true))
-        val originalMarkup = root.innerHTML
 
         buttons().forEach { button ->
             button.focus()
             assertSame(button, document.activeElement)
-
-            button.click()
-            assertEquals(originalMarkup, root.innerHTML)
         }
     }
 
+    /**
+     * Supersedes change 0001's TITLE-005, which made activation a deliberate no-op with a test
+     * asserting the screen did not change. Change 0003 gives the buttons their behaviour, so the
+     * assertion is replaced rather than deleted: activating an action must report exactly which
+     * action was chosen.
+     */
+    @Test
+    fun `activating an action reports which one was chosen`() {
+        val chosen = mutableListOf<TitleScreenAction>()
+        renderTitleScreen(root, stateWithSavedGame(available = true)) { chosen.add(it) }
+
+        buttons().forEach { it.click() }
+
+        assertEquals(listOf(TitleScreenAction.ContinueGame, TitleScreenAction.NewGame), chosen)
+    }
+
     private fun stateWithSavedGame(available: Boolean): TitleScreenState =
-        createTitleScreenState { available }
+        createTitleScreenState(SavedGameAvailability { available })
 
     private fun buttonNames(): List<String> =
         buttons().map { it.textContent.orEmpty() }

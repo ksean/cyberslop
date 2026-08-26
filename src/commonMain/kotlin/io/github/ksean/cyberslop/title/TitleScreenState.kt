@@ -22,9 +22,7 @@ fun createTitleScreenState(savedGames: SavedGameAvailability): TitleScreenState 
         actions = availableActions(savedGames.hasSavedGame()),
     )
 
-private fun availableActions(hasSavedGame: Boolean): List<TitleScreenAction> =
-    if (hasSavedGame) {
-        listOf(TitleScreenAction.ContinueGame, TitleScreenAction.NewGame)
-    } else {
-        listOf(TitleScreenAction.NewGame)
-    }
+private fun availableActions(hasSavedGame: Boolean): List<TitleScreenAction> = buildList {
+    if (hasSavedGame) add(TitleScreenAction.ContinueGame)
+    add(TitleScreenAction.NewGame)
+}

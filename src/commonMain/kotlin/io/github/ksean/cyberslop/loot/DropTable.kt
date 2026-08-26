@@ -1,0 +1,99 @@
+package io.github.ksean.cyberslop.loot
+
+import io.github.ksean.cyberslop.combat.Tier
+import io.github.ksean.cyberslop.combat.WeaponSpec
+import io.github.ksean.cyberslop.combat.Weapons
+import io.github.ksean.cyberslop.core.Rng
+import io.github.ksean.cyberslop.gen.DifficultyCurve
+
+/**
+ * How rarity is decided.
+ *
+ * Weight is **strictly decreasing in tier at every map index**, which is what "stronger things are
+ * rarer" has to mean if it is to mean anything. Later maps do not achieve their better loot by
+ * making rare things common — the whole distribution flattens, so the strongest tier's share rises
+ * from 1% to 7% while still being the least likely thing to find.
+ *
+ * Only the two endpoint rows are authoritative; everything between is interpolated. Writing out
+ * intermediate rows by hand is how an earlier version ended up with a table that was not the
+ * interpolation it claimed to be, and was not monotone either.
+ */
+object DropTable {
+    private val FIRST_MAP = doubleArrayOf(62.0, 25.0, 9.0, 3.0, 1.0)
+    private val LAST_MAP = doubleArrayOf(34.0, 26.0, 20.0, 13.0, 7.0)
+
+    /** Normalised tier weights for [mapIndex], strongest tier last. */
+    fun weights(mapIndex: Int): DoubleArray {
+        val d = (mapIndex - 1) / (DifficultyCurve.MAPS - 1).toDouble()
+        val raw = DoubleArray(FIRST_MAP.size) { i ->
+            FIRST_MAP[i] + (LAST_MAP[i] - FIRST_MAP[i]) * d
+        }
+        val total = raw.sum()
+        return DoubleArray(raw.size) { i -> raw[i] / total }
+    }
+
+    fun rollTier(rng: Rng, mapIndex: Int, floor: Tier? = null, shifts: Int = 0): Tier {
+        var best = drawTier(rng, mapIndex)
+        repeat(shifts) {
+            val again = drawTier(rng, mapIndex)
+            if (again.ordinal > best.ordinal) best = again
+        }
+        if (floor != null && best.ordinal < floor.ordinal) best = floor
+        return best
+    }
+
+    /**
+     * [unlocked] is how many weapons this account has opened up. Scrap widens the pool, and without
+     * this parameter it bought nothing: every roll drew from the whole registry regardless.
+     */
+    fun rollWeapon(
+        rng: Rng,
+        mapIndex: Int,
+        floor: Tier? = null,
+        shifts: Int = 0,
+        unlocked: Int = Weapons.all.size,
+    ): WeaponSpec {
+        val available = Weapons.all.take(unlocked.coerceIn(1, Weapons.all.size))
+        val tier = rollTier(rng, mapIndex, floor, shifts)
+        val candidates = available.filter { it.tier == tier }
+            .ifEmpty { available.filter { it.tier.ordinal <= tier.ordinal } }
+            .ifEmpty { available }
+        return candidates[rng.nextInt(candidates.size)]
+    }
+
+    fun rollPowerup(rng: Rng, mapIndex: Int, pool: List<Powerup>): Powerup {
+        val weights = weights(mapIndex)
+        val weighted = pool.map { weights[it.tier.ordinal] }
+        val total = weighted.sum()
+        var draw = rng.nextDouble() * total
+        pool.forEachIndexed { index, powerup ->
+            draw -= weighted[index]
+            if (draw <= 0.0) return powerup
+        }
+        return pool.last()
+    }
+
+    /** The subset of powerup types a single run can draw from, so duplicates stack often enough. */
+    fun runPool(rng: Rng, mapIndex: Int, size: Int = RUN_POOL_SIZE): List<Powerup> {
+        val remaining = Powerups.all.toMutableList()
+        val pool = mutableListOf<Powerup>()
+        repeat(size.coerceAtMost(remaining.size)) {
+            val picked = rollPowerup(rng, mapIndex, remaining)
+            pool.add(picked)
+            remaining.remove(picked)
+        }
+        return pool
+    }
+
+    private fun drawTier(rng: Rng, mapIndex: Int): Tier {
+        val weights = weights(mapIndex)
+        var draw = rng.nextDouble()
+        Tier.entries.forEachIndexed { index, tier ->
+            draw -= weights[index]
+            if (draw <= 0.0) return tier
+        }
+        return Tier.entries.last()
+    }
+
+    const val RUN_POOL_SIZE = 8
+}

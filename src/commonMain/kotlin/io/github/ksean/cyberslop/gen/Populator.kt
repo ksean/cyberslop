@@ -1,0 +1,149 @@
+package io.github.ksean.cyberslop.gen
+
+import io.github.ksean.cyberslop.core.Rng
+import io.github.ksean.cyberslop.entity.EnemyArchetype
+import io.github.ksean.cyberslop.entity.EnemySpawn
+import io.github.ksean.cyberslop.world.Level
+import io.github.ksean.cyberslop.world.TileMap
+
+/**
+ * Places enemies along the route, but never where a hit would be unavoidable.
+ *
+ * An earlier version kept patrols clear of the *entire* corridor. In a side-scroller the corridor is
+ * essentially all the standable ground, so almost nowhere qualified — and the only floor the player
+ * never walked was the far end of the boss arena. Every enemy on every map ended up pooled there,
+ * which a human playtest found immediately and no test had noticed.
+ *
+ * What actually needs protecting is a **committed span**: a gap or an acid crossing, where the
+ * player is airborne on a trajectory they can no longer change. Two rules follow. Nothing patrols
+ * within [COMMITTED_BUFFER] tiles of one, and nothing that shoots has a clear line into one.
+ * Everywhere else, meeting an enemy is the game.
+ *
+ * The claim is deliberately narrow: the route can be crossed **without being forced into an
+ * unavoidable hit**. It is not a claim that enemies can be ignored.
+ */
+object Populator {
+    /** Clearance kept between a patrol and a span the player cannot steer out of. */
+    const val COMMITTED_BUFFER = 3
+
+    fun populate(level: Level, rng: Rng, curve: DifficultyCurve): List<EnemySpawn> {
+        // Density follows the difficulty curve, as plan.md 5.2 says it should.
+        val target = (level.widthTiles / 100.0 * curve.enemiesPerHundredTiles)
+            .toInt()
+            .coerceIn(MIN_ENEMIES, MAX_ENEMIES)
+        val placed = mutableListOf<EnemySpawn>()
+
+        var attempts = 0
+        while (placed.size < target && attempts < target * ATTEMPTS_PER_ENEMY) {
+            attempts++
+            val column = rng.nextInt(level.widthTiles)
+            val archetype = pickArchetype(rng)
+            val patrol = 1 + rng.nextInt(3)
+            val row = standableRow(level, column) ?: continue
+            val spawn = EnemySpawn(archetype, column, row, patrol)
+
+            if (!isClearOfCommittedSpans(level, spawn)) continue
+            if (archetype.shoots && seesCommittedSpan(level, spawn)) continue
+            placed.add(spawn)
+        }
+        return placed
+    }
+
+    /**
+     * Weighted so that most of what the player meets is melee.
+     *
+     * Drawing uniformly from the five kinds made two of them ranged, so 40% of every map shot at the
+     * player from off-screen — a guaranteed loadout following the intended route died on map four
+     * to nothing but accumulated chip damage.
+     */
+    private fun pickArchetype(rng: Rng): EnemyArchetype {
+        val roll = rng.nextDouble()
+        var running = 0.0
+        WEIGHTS.forEach { (archetype, weight) ->
+            running += weight
+            if (roll < running) return archetype
+        }
+        return EnemyArchetype.Swarm
+    }
+
+    private val WEIGHTS = listOf(
+        EnemyArchetype.Swarm to 0.38,
+        EnemyArchetype.Brute to 0.22,
+        EnemyArchetype.Flyer to 0.18,
+        EnemyArchetype.Shooter to 0.15,
+        EnemyArchetype.Turret to 0.07,
+    )
+
+    /** No part of the patrol may sit on or beside a span the player crosses committed. */
+    fun isClearOfCommittedSpans(level: Level, spawn: EnemySpawn): Boolean {
+        for (column in spawn.leftTile - COMMITTED_BUFFER..spawn.rightTile + COMMITTED_BUFFER) {
+            if (isCommitted(level, column)) return false
+        }
+        return true
+    }
+
+    /**
+     * A committed span is one the player crosses without being able to change course: a gap, or
+     * anything over acid. A shooter with an unobstructed line into one can land a hit that no input
+     * would have avoided.
+     */
+    fun seesCommittedSpan(level: Level, spawn: EnemySpawn): Boolean {
+        for (column in 0 until level.widthTiles) {
+            if (!isCommitted(level, column)) continue
+            for (row in 0 until level.tiles.height) {
+                if (!level.arcMask[column, row]) continue
+                if (hasLineOfFire(level, spawn.column, spawn.row, column, row)) return true
+            }
+        }
+        return false
+    }
+
+    fun isCommitted(level: Level, column: Int): Boolean {
+        for (row in 0 until level.tiles.height) {
+            if (level.tiles.isLethal(column, row)) return true
+        }
+        // A column with no floor beneath the corridor is a gap the player is airborne over.
+        val corridorRow = (0 until level.tiles.height).firstOrNull { level.arcMask[column, it] }
+            ?: return false
+        return (corridorRow until level.tiles.height).none { level.tiles.blocksMovement(column, it) }
+    }
+
+    private fun hasLineOfFire(
+        level: Level,
+        fromColumn: Int,
+        fromRow: Int,
+        toColumn: Int,
+        toRow: Int,
+    ): Boolean {
+        val steps = maxOf(kotlin.math.abs(toColumn - fromColumn), kotlin.math.abs(toRow - fromRow))
+        if (steps == 0) return true
+        if (steps > MAX_SIGHT_TILES) return false
+        for (step in 1 until steps) {
+            val column = fromColumn + (toColumn - fromColumn) * step / steps
+            val row = fromRow + (toRow - fromRow) * step / steps
+            if (level.tiles.blocksMovement(column, row)) return false
+        }
+        return true
+    }
+
+    /**
+     * The lowest standable row in a column — the main floor rather than whatever decoration happens
+     * to sit highest. Scanning downward found ledges first and stood enemies on the scenery.
+     */
+    private fun standableRow(level: Level, column: Int): Int? {
+        for (row in level.tiles.height - 2 downTo 0) {
+            if (level.tiles.blocksMovement(column, row + 1) &&
+                !level.tiles.blocksMovement(column, row) &&
+                !level.tiles.isLethal(column, row)
+            ) {
+                return row
+            }
+        }
+        return null
+    }
+
+    private const val MIN_ENEMIES = 8
+    private const val ATTEMPTS_PER_ENEMY = 24
+    private const val MAX_ENEMIES = 60
+    private const val MAX_SIGHT_TILES = 24
+}

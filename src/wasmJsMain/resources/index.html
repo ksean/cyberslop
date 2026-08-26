@@ -5,9 +5,26 @@
     <meta name="viewport" content="width=device-width, initial-scale=1">
     <meta name="color-scheme" content="dark">
     <title>Cyberslop</title>
+    <style>
+        html, body { margin: 0; height: 100%; background: #0b0b12; color: #e6e6f0; }
+        body { font-family: system-ui, sans-serif; }
+        #game-canvas { display: none; width: 100vw; height: 100vh; image-rendering: pixelated; }
+        #game-root { display: flex; flex-direction: column; align-items: center; gap: 1rem; padding: 4rem 1rem; }
+        #game-root button { font: inherit; padding: 0.6rem 1.4rem; cursor: pointer; }
+        .visually-hidden {
+            position: absolute; width: 1px; height: 1px; overflow: hidden;
+            clip: rect(0 0 0 0); clip-path: inset(50%); white-space: nowrap;
+        }
+    </style>
 </head>
 <body>
 <main id="game-root"></main>
+<canvas id="game-canvas" tabindex="0" role="application"
+        aria-label="Cyberslop gameplay. Arrow keys move, crouch and jump. The weapon fires by itself."
+        aria-describedby="game-status"></canvas>
+<!-- Run state in text, so the game is not opaque to assistive technology. A canvas announces
+     nothing on its own. -->
+<p id="game-status" class="visually-hidden" role="status" aria-live="polite"></p>
 <noscript>Cyberslop requires JavaScript and WebAssembly.</noscript>
 <script src="cyberslop.js"></script>
 </body>
