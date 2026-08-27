@@ -7,6 +7,8 @@ import io.github.ksean.cyberslop.physics.IntentFilter
 import io.github.ksean.cyberslop.physics.TICK_SECONDS
 import io.github.ksean.cyberslop.render.Camera
 import io.github.ksean.cyberslop.render.CanvasRenderer
+import io.github.ksean.cyberslop.render.HudModel
+import io.github.ksean.cyberslop.render.Scene
 import io.github.ksean.cyberslop.run.MetaProgression
 import io.github.ksean.cyberslop.run.RunState
 import io.github.ksean.cyberslop.save.LocalStorageSaveStore
@@ -81,8 +83,16 @@ class GameHost(
     private fun enter(run: RunState, mapIndex: Int) {
         val entering = run.copy(mapIndex = mapIndex)
         val generated = LevelGenerator.generate(entering.seed, mapIndex)
-        simulation = GameSimulation(generated.level, entering, entering.seed)
-        camera = Camera(0.0, 0.0, canvas.width.toDouble(), canvas.height.toDouble())
+        val sim = GameSimulation(generated.level, entering, entering.seed)
+        simulation = sim
+        // The view is measured in world units, so the zoom is a *smaller* view rather than a
+        // transform. Nothing about following or clamping to the level changes.
+        camera = Camera(
+            0.0, 0.0,
+            canvas.width.toDouble() / Scene.ZOOM,
+            canvas.height.toDouble() / Scene.ZOOM,
+        )
+        renderer?.enterLevel(sim, entering.seed)
         saves.save(entering, meta)
     }
 
@@ -159,26 +169,22 @@ class GameHost(
         val active = renderer ?: return
         active.resizeToDisplay()
 
-        val x = sim.previousPlayer.x + (sim.player.x - sim.previousPlayer.x) * alpha
-        val y = sim.previousPlayer.y + (sim.player.y - sim.previousPlayer.y) * alpha
+        // A point that a stance change cannot move. Interpolating the box's corner moved the camera
+        // twelve world pixels on a crouch; following the body's centre still moved it six.
+        val follow = Scene.drawnFollow(sim, alpha)
+        val x = follow.x
+        val y = follow.y
 
         camera = Camera.following(
-            camera.copy(viewWidth = canvas.width.toDouble(), viewHeight = canvas.height.toDouble()),
+            camera.copy(
+                viewWidth = canvas.width.toDouble() / Scene.ZOOM,
+                viewHeight = canvas.height.toDouble() / Scene.ZOOM,
+            ),
             x, y, sim.facing, sim.level,
         )
-        active.draw(sim, camera, sim.elapsedTicks * TICK_SECONDS)
-        announce(
-            "Map ${sim.run.mapIndex} of 10, ${sim.level.theme.displayName}. " +
-                "Health ${sim.run.health.toInt()}. Weapon ${sim.run.loadout.weapon.name}." +
-                bossStatus(sim),
-        )
-    }
-
-    private fun bossStatus(sim: GameSimulation): String = when {
-        sim.boss.fight.defeated -> " Boss defeated; the way out is open."
-        sim.boss.fight.committed -> " Fighting ${sim.boss.spec.name}, " +
-            "${(sim.boss.healthFraction * 100).toInt()} percent."
-        else -> ""
+        active.draw(sim, camera, sim.elapsedTicks * TICK_SECONDS, alpha)
+        // The same model the bar is drawn from, so the two cannot disagree (PROD-004).
+        announce(HudModel.of(sim).announcement)
     }
 
     /**

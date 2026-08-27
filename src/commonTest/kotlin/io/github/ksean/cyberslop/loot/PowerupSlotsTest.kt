@@ -31,16 +31,11 @@ class PowerupSlotsTest {
     }
 
     @Test
-    fun `at most five distinct powerups are held`() {
+    fun `at most five distinct powerups are held, however many arrive`() {
         var slots = PowerupSlots.empty()
-        Powerups.all.take(5).forEach { slots = slots.collect(it.id).first }
+        Powerups.all.forEach { slots = slots.collect(it.id).first }
 
-        val sixth = Powerups.all[5].id
-        val (after, pickup) = slots.collect(sixth)
-
-        assertIs<Pickup.Scrapped>(pickup)
-        assertEquals(5, after.distinctCount)
-        assertEquals(0, after.stacksOf(sixth))
+        assertEquals(PowerupSlots.MAX_SLOTS, slots.distinctCount, "PROD-028's cap was exceeded")
     }
 
     @Test
@@ -49,9 +44,10 @@ class PowerupSlotsTest {
         val firstFive = Powerups.all.take(5).map { it.id }
         firstFive.forEach { slots = slots.collect(it).first }
 
-        slots = slots.collect(Powerups.all[5].id).first
+        val (after, pickup) = slots.collect(Powerups.all[5].id)
 
-        firstFive.forEach { assertEquals(1, slots.stacksOf(it), "$it was displaced") }
+        assertIs<Pickup.Scrapped>(pickup)
+        firstFive.forEach { assertEquals(1, after.stacksOf(it), "$it was displaced") }
     }
 
     @Test
@@ -73,7 +69,10 @@ class PowerupSlotsTest {
             repeat(4) {
                 val (next, pickup) = slots.collect(powerup.id)
                 slots = next
-                assertTrue(pickup is Pickup.Applied || pickup is Pickup.Scrapped)
+                assertTrue(
+                    pickup is Pickup.Applied || pickup is Pickup.Scrapped,
+                    "contact resolved to nothing: $pickup",
+                )
             }
         }
 
@@ -87,5 +86,55 @@ class PowerupSlotsTest {
         repeat(200) { index -> slots = slots.collect(Powerups.all[index % Powerups.all.size].id).first }
 
         assertTrue(slots.totalStacks <= 15, "held ${slots.totalStacks} stacks")
+    }
+
+    /**
+     * What collecting actually guarantees: **it never takes anything away.**
+     *
+     * This is the honest form of the property. Review round seven observed that a full build scraps
+     * a *guaranteed* award once five optional powerups hold the slots, so a real player can be
+     * carrying less than `LootFloor` models. Displacement was tried as the fix and withdrawn — see
+     * [PowerupSlots.collect] — because it made the floor's own DPS measure fall. What remains true,
+     * and is worth pinning, is that no pickup can shrink a build the player already has.
+     */
+    @Test
+    fun `no sequence of pickups can take away something already held`() {
+        var slots = PowerupSlots.empty()
+        val order = Powerups.all.sortedBy { it.magnitude(1) } +
+            Powerups.all.sortedByDescending { it.magnitude(1) }
+
+        order.forEach { powerup ->
+            val before = slots
+            val (next, _) = slots.collect(powerup.id)
+            before.held.forEach { (id, count) ->
+                assertTrue(
+                    next.stacksOf(id) >= count,
+                    "collecting ${powerup.name} reduced $id from $count to ${next.stacksOf(id)}",
+                )
+            }
+            slots = next
+        }
+    }
+
+    /**
+     * The gap round seven named, pinned so it is a recorded fact rather than a paragraph.
+     *
+     * A build filled with the weakest optional powerups refuses a stronger guaranteed one. This is
+     * a known limitation raised with the owner, not a passing test dressed up as a guarantee.
+     */
+    @Test
+    fun `a full build of weak powerups refuses a stronger one, which is the open gap`() {
+        val ranked = Powerups.all.sortedBy { it.magnitude(1) }
+        var slots = PowerupSlots.empty()
+        ranked.take(PowerupSlots.MAX_SLOTS).forEach { slots = slots.collect(it.id).first }
+
+        val (after, outcome) = slots.collect(ranked.last().id)
+
+        assertIs<Pickup.Scrapped>(outcome)
+        assertEquals(0, after.stacksOf(ranked.last().id))
+        assertTrue(
+            ranked.last().magnitude(1) > ranked.first().magnitude(1),
+            "the fixture does not actually offer something stronger",
+        )
     }
 }

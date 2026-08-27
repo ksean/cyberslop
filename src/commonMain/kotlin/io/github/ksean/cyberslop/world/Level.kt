@@ -47,6 +47,27 @@ data class FireJet(
     fun coversRow(row: Int): Boolean = row in topRow..bottomRow
 }
 
+/**
+ * Where a statically placed pickup stands (PROD-047).
+ *
+ * Generation decides *where*; the simulation decides *what*, because what a pickup yields depends on
+ * the run — which weapons the account has unlocked, and that run's powerup pool — and generation
+ * knows none of that.
+ */
+data class PickupSite(val column: Int, val row: Int) {
+    /**
+     * Where the pickup actually sits: the middle of the cell, not its top-left corner.
+     *
+     * A review round found it realised at the corner and then drawn centred there, which put every
+     * "ground" pickup most of a tile above the surface and half a tile to its left.
+     */
+    val centre: io.github.ksean.cyberslop.core.Vec2
+        get() = io.github.ksean.cyberslop.core.Vec2(
+            TileMap.toWorld(column) + TILE_SIZE / 2.0,
+            TileMap.toWorld(row) + TILE_SIZE / 2.0,
+        )
+}
+
 class Level(
     val mapIndex: Int,
     val theme: ThemeId,
@@ -59,6 +80,8 @@ class Level(
     val boss: Arena,
     val jets: List<FireJet>,
     val enemies: List<io.github.ksean.cyberslop.entity.EnemySpawn> = emptyList(),
+    /** Statically placed pickups, averaging two per map across seeds (PROD-047). */
+    val pickups: List<PickupSite> = emptyList(),
     /**
      * The column sealing the boss arena's exit.
      *

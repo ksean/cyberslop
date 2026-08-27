@@ -1,6 +1,6 @@
 # Cyberslop — Research & Development Plan
 
-**Status:** Revised after review round R1 · **Owner:** Sean Kennedy · **Created:** 2026-08-25
+**Status:** Version 3 — visual identity and loot density added (§15) · **Owner:** Sean Kennedy · **Created:** 2026-08-25
 
 This plan turns the Cyberslop concept into buildable, verifiable engineering work. It is the
 research artifact that *drives* the repository's spec-driven workflow in [`AGENTS.md`](AGENTS.md) —
@@ -12,6 +12,12 @@ in [`tasks.md`](tasks.md).
 > a dozen were load-bearing defects in the completability guarantee, the loot economy, and the build.
 > Every accepted finding is recorded in [§13](#13-review-log-r1) with what changed. Several claims
 > in v1 were simply **wrong** and are corrected here rather than quietly dropped.
+
+> **Version 3.** [§15](#15-visual-identity-animation-and-loot-density) adds the graphical overhaul —
+> procedural character rigs, animation, per-theme palettes, distinct enemy silhouettes, a parallax
+> backdrop — and the loot density the owner set. It adds properties 23–26 and requirements
+> PROD-040..047 and ENG-060..062. It supersedes §6.7's trash drop-rate row, which is called out at
+> that row rather than left to be discovered.
 
 ---
 
@@ -893,14 +899,17 @@ distinct, and gives D1's meta-unlocks something to expand.
 
 | Source | Count/map | Chance | Yields |
 |---|---|---|---|
-| Trash enemy | ~28 | 1.5% (L1) → 3% (L10) | 70% powerup / 30% weapon |
+| Trash enemy | ~28 | **20%, flat** — *superseded by [§15.7](#157-loot-density) / PROD-046; was 1.5% (L1) → 3% (L10)* | 70% powerup / 30% weapon |
 | Elite ("Chromed") | 2 → 5 | 25% | 60% powerup; tier floor T2 |
 | **Starter cache (map 1 only, pre-midpoint)** | 1 | 100% | **weapon, tier floor T1** |
-| Cache / dead terminal | 1 (L3–7), 2 (L8–10) | 100% | powerup, +1 tier shift |
+| Static drop (cache / dead terminal) | **mean 2.0, every map** — *superseded by [§15.7](#157-loot-density) / PROD-047; was 1 (L3–7), 2 (L8–10), and was never built* | 100% | 70% powerup / 30% weapon, **+1 tier shift on both** |
 | Mini-boss | 1 | 100% | weapon (floor T2); **+ powerup from map 4** |
 | Main boss | 1 | 100% | weapon (floor T3, +2 shift) + powerup (floor T2) + Scrap |
 
-Simulated over 20,000 runs (5 slots, 3 stacks, 8-type pool):
+Simulated over 20,000 runs (5 slots, 3 stacks, 8-type pool). **These figures are stale as of version
+3**: they were computed at the 1.5–3% trash rate this table no longer carries, and [§15.7](#157-loot-density)
+records recomputing them as a follow-up rather than a blocker.
+
 
 | After map | 1 | 2 | 3 | 4 | 5 | 6+ |
 |---|---|---|---|---|---|---|
@@ -1401,6 +1410,23 @@ but uncommitted** in this working tree; whether to remove it is the owner's call
    bonuses? Pool-only is assumed.
 5. **Run length.** 38–45 minutes for ten maps is the working target. Shorter maps would make
    permadeath sting less.
+6. **Full-build pickup policy, and what backs the loot floor.** `PowerupSlots` scraps a sixth
+   distinct powerup, so at the new drop rate a build fills with whatever the route hands over —
+   contact cannot be declined — and a *guaranteed* award arriving later is thrown away. Two review
+   rounds pressed on this and the position is now:
+   - **Displacing the weakest slot does not fix it.** Implemented and withdrawn: `magnitude` ranks
+     strength generically rather than by damage, so it swapped a damage powerup out for a
+     stronger-but-useless one and made `LootFloor.damagePerSecondAt` *fall* between maps four and
+     five. The floor's own monotonicity test caught it.
+   - **The commit line does not cover for it.** `BossFight.playerMoved` commits on crossing a
+     column; nothing checks what the player is carrying. The long-standing claim that an underpowered
+     player is "never sealed in" is false as stated, and is corrected in `LootFloor`.
+
+   So the guarantee change 0003 states — a player taking only guaranteed drops clears every
+   encounter — is not enforced for a player who has also picked things up, which at one kill in five
+   is every player. Closing it needs either a pickup policy that respects what the floor measures, or
+   a commit line that refuses an underpowered player, or an accepted weakening of the guarantee.
+   **All three are the owner's call, and none of them is inside this change.**
 
 ---
 
@@ -1499,3 +1525,328 @@ specification rather than in a research plan.
 with live compilation and benchmarking; provable platformer generation; roguelite loot economy).
 Where research conflicted with the brief — three weapon slots, weapon-owned powerups, a hold-to-swap
 input — the brief won, and the override is recorded at the point of divergence.*
+
+---
+
+## 15. Visual identity, animation and loot density
+
+**Added in version 3**, after the owner asked for a graphical overhaul with animation for weapons,
+jumping, crouching and sideways movement; visually distinct enemies that read tougher the stronger
+they are; a cyberpunk-dystopian 2D style that becomes more stylized in later passes; and a loot
+density of one drop per five kills plus an average of two static drops per map.
+
+Everything the game currently draws is a flat `fillRect`. That was the right call for the vertical
+slice — [change 0004](specs/changes/0004-keyboard-only-controls.md) says so explicitly, and it is
+what let the boss-visibility defect be fixed in an afternoon. It is not a style, and the game does
+not yet read as a place. This section is how it becomes one without adding an engine (ENG-013), an
+asset pipeline, or a dependency (ENG-004).
+
+### 15.1 The decision: procedural rigs, not a sprite atlas
+
+Two ways to animate a 2D character. A **sprite atlas** loads authored frames and blits them; a
+**procedural rig** draws the character from code as a small set of jointed parts posed by a
+function. The atlas has the higher fidelity ceiling and is what a shipped game would eventually use.
+It is the wrong first move here, for four reasons that are properties of this repository rather than
+of the technique:
+
+1. **No art exists, and none is commissioned.** An atlas without art is an empty pipeline.
+2. **An atlas is a runtime dependency on a network fetch and a decode.** Under §8.5's Pages base path
+   every reference must be relative, first paint waits on `decode()`, and a 404 is a black screen
+   rather than a degraded one. That is three new failure modes for a build whose current asset count
+   is zero.
+3. **A rig is testable without a browser.** Posing is arithmetic. Under ENG-031 that belongs in
+   `commonTest`, where "the crouch pose is shorter than the standing pose" and "the run cycle's feet
+   alternate" are assertions rather than screenshots. Frame indices into an atlas are not.
+4. **"More stylized later" is a richer draw function, not a new pipeline.** The staging the owner
+   asked for falls out of the rig for free: pass one establishes silhouette and motion, pass two adds
+   plating, lighting and grime to the same joints.
+
+**Decision: procedural rigs.** If authored art arrives later, an atlas-backed actor becomes a second
+implementation behind the same `Pose`, and nothing above it changes. No abstraction is introduced for
+that possibility now (ENG-022).
+
+### 15.2 Where the presentation layer lives
+
+The current renderer holds every visual rule in `wasmJsMain`, which puts them outside the reach of
+every test that does not boot a browser. That is not a defect today — there are four colours and six
+rectangles — but it will not survive ten palettes, five enemy silhouettes and eight animation clips.
+
+```
+commonMain/render/
+  Palette.kt        per-theme colour, one Palette per ThemeId
+  Rig.kt            Pose: joint offsets for a humanoid, already trigonometry-resolved
+  Actor.kt          Motion -> Clip -> Pose. Pure. No clock.
+  EnemyLook.kt      archetype + map index -> silhouette build and menace
+  Backdrop.kt       seeded parallax skyline, deterministic per level
+  Scene.kt          the frame as a batched draw list
+
+wasmJsMain/render/
+  CanvasRenderer.kt walks the draw list and issues primitives. Holds no rule.
+```
+
+**ENG-060** states this boundary and **ENG-062** states that animation is a pure function of
+simulation state and elapsed simulation time — no `Date.now()`, no ambient counter, and no feedback
+into the rules. A pose that could change what the simulation does would put presentation inside
+ENG-050's purity claim, and a recorded witness would stop meaning one thing on replay.
+
+### 15.3 The draw list, and why the frame is batched
+
+§8.1's measurement is the constraint that shapes this whole layer: at 600 entities, bare `fillRect`
+costs 1.9% of the frame budget and per-sprite `save`/`translate`/`rotate`/`restore` costs **21.0%** —
+7.61× — and the recommended alternative, `setTransform`, **was never measured**. A rig multiplies the
+per-entity draw count by roughly six. Naively written, that is 3600 transformed draws where the
+measured table already shows 600 costing a fifth of the budget.
+
+So the frame is not drawn entity by entity. `Scene` fills a small set of **style batches** — one per
+distinct fill or stroke style — each holding a flat `DoubleArray` of primitive coordinates. The
+renderer sets a style once per batch and loops. Three primitives cover everything the game draws:
+
+| Primitive | Fields | Used by |
+|---|---|---|
+| `Rect` | x, y, w, h | tiles, torsos, armour plates, HUD, pickups, backdrop |
+| `Segment` | x1, y1, x2, y2, width | limbs, weapon barrels, swing arcs, jet columns |
+| `Dot` | x, y, r | eyes, muzzle flash, projectiles, glow |
+
+A limb is a stroked segment rather than a rotated rectangle, which is the point: **no rotation means
+no transform**, so the 7.61× trap is not merely avoided but structurally unreachable. Every rotated
+part in the game is either a limb (a segment) or a swing arc (already segments today).
+
+This yields a property that is testable in `commonTest` without a browser, which is what
+**ENG-061** requires: *the number of drawing-state changes in a frame is bounded by the number of
+style batches and does not grow with the number of entities drawn.* Property 23 asserts it by
+building the same scene at 10 and at 600 entities and comparing batch counts.
+
+Coordinate buffers and the batch objects are owned by a reusable `SceneBuilder` and cleared per frame
+rather than reallocated, so per-frame allocation is a small constant rather than one allocation per
+primitive. It is **not zero** — publishing the frame allocates two short lists — and claiming zero
+would be the kind of unmeasured assertion this plan has had to withdraw before. §8.1's boxing warning
+applies: coordinates are `DoubleArray`, never `List<Double>`.
+
+> **Stated honestly:** the batch count is a *proxy* for frame cost, not a measurement of it. It bounds
+> state changes, which is the expensive part the table measures; it does not bound rasterization.
+> Measuring a full realistic frame is still the open M4 task §8.1 records, and this section does not
+> discharge it.
+
+### 15.4 The rig and its clips
+
+A humanoid is nine parts: head, torso, two upper arms, two forearms, two thighs, two shins. Weapons
+attach to the lead hand. `Pose` holds resolved joint **offsets** in actor-local pixels — the trig has
+already happened, via `TrigTable` (ENG-054), so the renderer does no arithmetic beyond adding the
+camera offset.
+
+**Two axes, not one list.** A single enum cannot both select and layer, and PROD-041 requires weapon
+animation to compose **over** movement — the weapon fires on its own cooldown and the player never
+presses anything to use it, so a figure that stopped moving to shoot would stop constantly. So a
+pose carries a locomotion `Clip` and an `Action` overlay, and each is a total function of motion.
+
+| Clip | Selected when | Reads as |
+|---|---|---|
+| `JumpRise` | airborne, `vy < 0` | legs tucked, torso forward |
+| `JumpFall` | airborne, `vy ≥ 0` | legs reaching, torso back |
+| `CrouchWalk` | crouched, `|vx| > ε` | low box, shortened stride, head forward |
+| `Crouch` | crouched | low box, weapon held across the body |
+| `Run` | grounded, `|vx| > ε` | full gait, lean proportional to `vx` |
+| `Idle` | otherwise | weapon at rest, feet apart |
+
+| Action | Selected when | Overrides |
+|---|---|---|
+| `Swing` | a swing is still being drawn | lead arm sweeps the arc the hit covered |
+| `Fire` | the muzzle flash is still being drawn | weapon arm recoils back and settles |
+| `None` | otherwise | nothing |
+
+**The window is the simulation's, not the animation's.** How long a swing or a flash lasts is decided
+once, by whatever the simulation is still drawing, and the pose reads it off that. Written as two
+independent constants they drifted immediately — an arm sweeping over 0.18 s against a swing the
+simulation cleared at 0.16 s, so the arm snapped back at 89% of its arc on every swing.
+
+Only the arm chain changes. The legs keep whatever the clip gave them, and a test asserts exactly
+that: posing the same motion with and without an action leaves both feet identical.
+
+*(v3 as first written listed eight clips in priority order **and** said two of them composed, which
+contradicts itself. Corrected here to what was built.)*
+
+**Gait phase comes from distance travelled, not from wall time.** `phase = stridePx / strideLength`,
+where `stridePx` accumulates `|vx| · dt` in the simulation. Driving the cycle from elapsed time and a
+speed-dependent rate makes the phase jump discontinuously whenever speed changes — feet visibly
+skate and snap. Distance-driven phase plants the feet by construction, and it is deterministic,
+which time-since-load is not.
+
+`stridePx` lives on `GameSimulation` and on `LiveEnemy` — deliberately **not** on `PlayerState`.
+`PlayerState` is the value whose hash property 19 pins to a committed golden value across targets;
+adding a presentational field to it would either break that test or, worse, quietly widen what
+"physics state" means. `lastSwing` already sets this precedent: presentation state the simulation
+carries, kept out of the physics value.
+
+### 15.5 Enemies: distinct silhouettes, monotone menace
+
+Five archetypes, five silhouettes that differ in **shape** rather than in colour, so they are
+distinguishable to a player who cannot rely on hue:
+
+| Archetype | HP × | Silhouette | Motion |
+|---|---|---|---|
+| `Swarm` | 0.6 | small, hunched, spindly, oversized head | fast twitchy gait, high stride rate |
+| `Shooter` | 0.8 | upright, one long weapon arm | measured walk; turns to face the player inside firing range |
+| `Flyer` | 0.7 | legless pod, twin thruster plumes, no ground contact | hovers, bobs on a sine, thrust trails its direction of travel |
+| `Turret` | 1.5 | wide fixed base, no legs, sweeping head | base never moves; barrel and eye track the player inside firing range |
+| `Brute` | 2.2 | broadest, heavy shoulder plates, short thick limbs | slow heavy gait |
+
+Tracking is presentational and reads the simulation's **own** firing range, so an enemy looks like it
+is doing what it is doing. R7 found the first implementation drawing all three along their patrol
+direction: a turret never moves, so its barrel pointed one way forever while it shot the player
+standing behind it. The Brute's ground-shake on footfall is pass two, per §15.10.
+
+**"Tougher the stronger they are"** is made a monotone function rather than an impression.
+`EnemyLook.of(archetype, mapIndex)` returns a build descriptor whose fields move with the enemy's
+health — `bulk` (body width and limb thickness), `plates`, `spikes`, and `glowTone`, an index into
+the theme's three-step glow ramp.
+
+Health is `healthMultiplier × Balance.trashHealth(mapIndex)`, so both axes the owner named are the
+same axis. **But the scope of the claim had to be corrected twice, and the correction is the
+interesting part.** A descriptor being monotone says nothing about what is *drawn*:
+
+- **Luminance** resolves through the current map's palette, and the palettes differ. A map-1 Turret
+  carries more health than a map-2 Shooter and resolved to Rec. 709 luma 96.7 against 103.1.
+- **Size** is `height × bulk`, and `height` carries the archetype's own scale. A map-4 Swarm carries
+  more health than a map-1 Brute and was drawn at 14.2 against 24.3 — 19 of the 49 adjacent pairs in
+  the grid were inverted.
+
+Neither is fixable while archetypes keep their identity, and that is a measurement rather than an
+opinion: forcing drawn size monotone across the whole grid requires the five archetypes' heights to
+sit within **1.01×** of each other — every enemy the same size — against the 1.78× spread that makes
+a Brute the broadest thing on a map. So PROD-042 now says what is true and useful: **plates and
+spikes are monotone across the whole run; drawn size and luminance are monotone within a map**,
+which is the only comparison a player can make. Height scales are ordered by health multiplier so
+the per-map claim holds exactly, and a palette refuses a glow ramp that is not strictly increasing
+in luminance. **Property 24** asserts all of it against the drawn quantities, not the descriptors.
+
+Bosses reuse the rig at larger scale with a distinct crown of plating, and the mini-boss is drawn at
+`MINIBOSS_SCALE` as it already is. A boss is never mistakable for trash because it is roughly four
+times the height and carries a health bar.
+
+### 15.6 The world: themed tiles, hazards, and a backdrop
+
+**Palettes.** Ten themes, ten palettes, each a small value: background, backdrop far/near, tile
+fill, tile edge, hazard, accent neon, haze. Chosen so the run's colour temperature drifts across it —
+`RuinedCitySprawl` cold slate and sodium orange through `NeonSlums` magenta and cyan to
+`ReactorCore` sodium red and `ArcologyVault` sterile white-gold. This is the cheapest single change
+that makes ten maps feel like ten places.
+
+**Tiles** gain a lit top edge and a darker body, which is what turns a grid of squares into surfaces
+with a light direction. Two batches, not two draws per tile: one rect batch for bodies, one for
+edges. Acid gains a bright surface line and a dimmer body; fire jets gain a hot core segment and a
+cooler outer segment, plus a floor pool of light.
+
+**Backdrop.** Three parallax layers of procedural skyline at 0.12×, 0.30× and 0.55× the camera rate,
+generated from `Rng.derive(seed, mapIndex, "backdrop")` so a seed reproduces its own skyline
+(ENG-053). Buildings are rects with a scatter of lit windows, each layer tinted a step further
+forward — `backdropFar`, `backdropMid`, `backdropNear`. Layers are generated once per level and posed
+per frame by an offset, horizontally and (damped) vertically — not regenerated, which would make the
+skyline crawl.
+
+*(Rates and tint corrected here after R7 found the published figures were the ones this section was
+drafted with rather than the ones that survived being looked at.)*
+
+The backdrop is drawn **behind** everything and is never collidable, so it cannot interact with the
+completability guarantee. It reads no tile and writes no tile.
+
+### 15.7 Loot density
+
+The owner set two numbers. Both are stated as requirements rather than as tuning constants, because
+the current values are neither documented in `specs/` nor discoverable from the game.
+
+**One drop per five kills (PROD-046).** Today `dropChance()` ramps 3% → 6% across the run, which
+§6.7's table records as 1.5% → 3% and is therefore already inconsistent with itself. It becomes a
+flat **0.20**, split by the existing 30% weapon / 70% powerup share. On a map carrying 28 trash
+enemies that moves expected drops from ~0.8 to **5.6 per map**.
+
+The rate is the **trash** rate, and PROD-046 now says so. Mini-boss and boss awards stay guaranteed:
+they are §6.7's own rows, and property 18's floor is computed from them, so putting a boss award
+behind a one-in-five roll would drop the floor below what that property proves. R7 found the first
+wording claiming every slain enemy, which the bosses have never obeyed.
+
+This is a substantial buff and it is worth saying what it does and does not break:
+
+- **`LootFloor`'s arithmetic is unaffected**, since it counts guaranteed awards only. **The tempting
+  corollary is false**, and review round R7 caught it stated as fact: raising the drop rate does not
+  only move a real player *above* the floor. `PowerupSlots` scraps a sixth distinct powerup, so
+  random drops filling all five slots with utility effects can make a later guaranteed damage powerup
+  scrap on contact. Property 18 still holds for the loadout it models; it does not bound a player who
+  has been picking things up. Whether a full build should displace its weakest slot is an open
+  question for the owner (§12).
+- **It cannot break completability (PROD-024).** The witness is a movement tape. Loot does not appear
+  in it.
+- **It does change the powerup economy.** §6.7's simulation put a run at 37.7 powerups against 15
+  capacity and 69.7% of runs fully maxed by map 10. Roughly four more powerups per map pushes that
+  towards a maxed build several maps earlier, and the surplus converting to Scrap grows. That is a
+  faster, more generous game — which is what was asked for — and the honest note is that §6.7's
+  published series is now **stale**, not that it is wrong. Recomputing it is a follow-up, not a
+  blocker, and it is recorded as one.
+
+**Two static drops per map on average (PROD-047).** §6.7 already planned "cache / dead terminal"
+pickups at 1 per map on maps 3–7 and 2 on maps 8–10, and **none of it was ever built**: the only
+pre-placed item in the game is map 1's starter cache. Static drops are placed by the generator, drawn
+from `{1, 2, 3}` so the cohort mean is 2.0. They are excluded from the arenas — a pickup inside a
+sealed boss arena is a pickup the player takes only after the fight it would have helped with — and
+from committed spans, on `Populator`'s own reasoning.
+
+**Where one may stand is proved by the witness, not by a mask.** A pickup sits on a cell the map's own
+verified tape put the player's feet on, so PROD-047's reachability clause is discharged by the same
+mechanism PROD-024 is. The first implementation used `ArcMask` membership instead, and R7 showed that
+to be unsound: `SpineWalker.rollback` deliberately does not rewind the mask, so it holds cells from
+carved-then-abandoned proposals no witness ever walks. The replay now reports the footholds it
+touched, and placement draws from those.
+
+**Property 25** asserts the mean over a seed cohort is 2.0 within tolerance and that every static
+drop stands on reachable standable ground. Asserting "two per map" exactly would be a different and
+weaker requirement than the one the owner stated.
+
+### 15.8 New properties
+
+23. **Batch bound (ENG-061).** The same scene issued to a counting sink at 10 and at 600 entities
+    produces the same number of calls, each of which is one drawing-state change. A batch's identity
+    includes its stroke width, so no batch can force a path to break inside it. The production
+    bundle's smoke test additionally bounds strokes per frame, measured at 14 against a bound of 60.
+    *(Both halves are corrections. The first version measured style batches while the renderer broke
+    its path per width change — 45, 279 and 1,579 stroke setups at 10, 100 and 600 entities against a
+    batch count that never moved. The second measured a number defined to be one per batch, without
+    touching a renderer at all.)*
+24. **Menace monotonicity (PROD-042).** Over the archetype × map grid ordered by actual health, plate
+    and spike counts are non-decreasing and strictly increasing between the extremes. Within each
+    map, the drawn size (`height × bulk`, which is what every limb width is derived from) and the
+    resolved glow colour's luminance are both non-decreasing in health. Every palette's glow ramp is
+    strictly increasing in luminance, enforced where the palette is constructed rather than only in
+    a test.
+25. **Loot density (PROD-046, PROD-047).** Over a seed cohort: the per-map static drop count has mean
+    2.0 ± 0.15 and lies in `{1, 2, 3}`; every static drop is on standable, reachable ground outside
+    both arenas and outside every committed span. Separately, the kill drop rate is 0.20 at every map
+    index.
+26. **Animation totality (PROD-041).** Every reachable motion selects a clip and an action; every
+    clip and every action is selected by at least one motion; the crouch clips are shorter than the
+    standing clips by the physics' own crouch height; a run cycle's lead foot alternates by a
+    visible fraction of the figure's height, not merely by a sign; and an action leaves the legs
+    untouched.
+
+### 15.9 What building it changed
+
+Six things were found by rendering a frame or a pose sheet rather than by a test, and all six are
+recorded against their tasks in `tasks.md`. Three are worth repeating here because they are design
+corrections rather than tuning:
+
+- **Batching by style alone destroys paint order.** Two things far apart in depth that happen to
+  share a colour land in one batch and are painted at whichever was reached first. Batches are keyed
+  by a fixed `Layer` as well, which restores painter's order and keeps the ENG-061 bound a constant.
+- **The game drew 1:1.** A 26 px character on a 900 px screen is a moving dot, and none of this work
+  would have been visible. The camera's view is measured in world units, so a zoom is a smaller view
+  rectangle rather than a transform — following and clamping are untouched.
+- **A backdrop needs vertical parallax, damped.** Pinned to the screen it slides past a world that is
+  not moving; un-damped it leaves the screen entirely the first time the player drops down a shaft.
+
+### 15.10 What this section does not claim
+
+- It does not measure a frame. §8.1's full-frame budget remains an open measurement task, and
+  property 23 bounds state changes rather than time.
+- It does not make the game pretty. Pass one is silhouette, motion, palette and light direction — a
+  game that reads as a cyberpunk place with characters that move. Plating, grime, scanlines, chromatic
+  edges, screen shake, hit flashes and particle work are pass two, and pass two is not scheduled here.
+- It does not touch audio, which remains M8's deferred item.
+

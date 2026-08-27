@@ -7,12 +7,25 @@ import io.github.ksean.cyberslop.physics.TICK_SECONDS
 import io.github.ksean.cyberslop.world.Level
 import io.github.ksean.cyberslop.world.TileMap
 
+/** A cell the replayed player actually stood on, in tile coordinates. */
+data class Foothold(val column: Int, val row: Int)
+
 data class ReplayResult(
     val reachedMiniboss: Boolean,
     val reachedBoss: Boolean,
     val touchedLethal: Boolean,
     val finalState: PlayerState,
     val ticks: Int,
+    /**
+     * Every cell the player was grounded on during the replay.
+     *
+     * This is the only thing in the level that is **proof** of reachability rather than a proxy for
+     * it: the witness put the player's feet there, through the game's own movement model. The arc
+     * mask is not proof — [SpineWalker.rollback][io.github.ksean.cyberslop.gen.SpineWalker.rollback]
+     * deliberately does not rewind it, so it retains cells from abandoned move proposals that no
+     * witness ever traverses.
+     */
+    val footholds: Set<Foothold> = emptySet(),
 ) {
     val succeeded: Boolean get() = reachedMiniboss && reachedBoss && !touchedLethal
 }
@@ -26,6 +39,9 @@ data class ReplayResult(
  * arrives cannot.
  */
 object WitnessReplay {
+    /** Keeps a foot resting exactly on a tile boundary in the tile it is standing in. */
+    private const val SKIN = 0.001
+
     fun replay(
         level: Level,
         witness: Witness,
@@ -36,6 +52,7 @@ object WitnessReplay {
         var touchedLethal = false
         var reachedMiniboss = false
         var reachedBoss = false
+        val footholds = mutableSetOf<Foothold>()
 
         fun observe() {
             val column = TileMap.toTile(state.x + physics.width / 2.0)
@@ -43,6 +60,12 @@ object WitnessReplay {
             if (column >= level.boss.leftTile) reachedBoss = true
             if (state.touchedLethal) touchedLethal = true
             if (burnedByJet(level, state, physics, ticks * TICK_SECONDS)) touchedLethal = true
+            if (state.onGround) {
+                // The row the player's feet occupy, which is the cell a pickup would stand in.
+                footholds.add(
+                    Foothold(column, TileMap.toTile(state.y + state.height(physics) - SKIN)),
+                )
+            }
         }
 
         observe()
@@ -55,7 +78,7 @@ object WitnessReplay {
             }
         }
 
-        return ReplayResult(reachedMiniboss, reachedBoss, touchedLethal, state, ticks)
+        return ReplayResult(reachedMiniboss, reachedBoss, touchedLethal, state, ticks, footholds)
     }
 
     private fun burnedByJet(

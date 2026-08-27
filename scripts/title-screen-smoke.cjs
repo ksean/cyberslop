@@ -7,6 +7,15 @@ const { pathToFileURL } = require("node:url")
 const nodeProcess = process
 const RUN_KEY = "cyberslop.run.v1"
 
+/** One stroke setup per width-keyed batch; the start frame measured 14 for 41 segments. */
+const MAX_STROKES_PER_FRAME = 30
+
+/** A batched frame fills far more rectangles than it sets styles; measured well above this. */
+const MIN_FILLS_PER_STYLE = 8
+
+/** `strokeStyle`, `lineWidth`, `lineCap` — set once per stroke batch. */
+const STROKE_PROPERTIES = 3
+
 // A real encoded run, not a boolean marker. `Continue game` is offered only for a save that actually
 // decodes, so a stale flag from an older deployment can no longer promise a run that is unreadable.
 const VALID_SAVE = "2|12345|3|BrokenBottle||100.0|0|0"
@@ -76,11 +85,60 @@ async function smokeTestStartingARun() {
     assert.ok(newGame, "New game button missing")
 
     newGame.click()
-    env.runFrames(3)
+    const frames = 3
+    env.runFrames(frames)
 
     assert.equal(env.root.style.display, "none", "title screen still visible after starting")
     assert.equal(env.canvas.style.display, "block", "canvas not shown after starting")
     assert.ok(env.context.fillRectCalls > 0, "a run started but no frame was drawn")
+    assert.ok(
+        env.context.strokeCalls > 0,
+        "a run started but nothing was stroked, so no figure was drawn",
+    )
+    assert.ok(
+        env.context.fillTextCalls > 0,
+        "a run started but no HUD text was drawn",
+    )
+
+    // ENG-061, against the production bundle: one stroke setup per width-keyed batch, however many
+    // segments are in it. Round one found the renderer breaking its path *inside* a batch, at 1,579
+    // stroke setups for 600 entities while every other check stayed green.
+    //
+    // The comparison is against the number of segments drawn, not a fixed ceiling. Round three
+    // showed why: the start frame holds 14 batches but only 41 segments, so a fixed bound of 60
+    // would have let the regression through at 41 strokes and still passed. Stroking per segment
+    // makes these two numbers equal, whatever the frame contains.
+    const strokes = env.context.strokeCalls
+    const segments = env.context.lineToCalls
+    assert.ok(segments > 0, "no segments were drawn, so the stroke bound proves nothing")
+    assert.ok(
+        strokes * 2 <= segments,
+        `${strokes} stroke setups for ${segments} segments — the renderer is breaking its ` +
+            "stroke path inside a batch rather than once per batch",
+    )
+    assert.ok(
+        strokes / frames <= MAX_STROKES_PER_FRAME,
+        `${strokes / frames} strokes per frame, over the ${MAX_STROKES_PER_FRAME} a batched ` +
+            "frame costs",
+    )
+
+    // The same argument for fills. A frame draws thousands of tile rectangles from a handful of
+    // style batches, so reconfiguring the canvas per rectangle would collapse this ratio.
+    const fills = env.context.fillRectCalls
+    const styleChanges = env.context.fillStyleAssignments
+    assert.ok(
+        styleChanges * MIN_FILLS_PER_STYLE <= fills,
+        `${styleChanges} fill-style assignments for ${fills} rectangles — the canvas is being ` +
+            "reconfigured inside a batch rather than once per batch",
+    )
+
+    // A stroke batch configures three properties once. Per segment, this becomes three per segment.
+    const strokeConfig = env.context.strokeConfigAssignments
+    assert.ok(
+        strokeConfig <= strokes * STROKE_PROPERTIES,
+        `${strokeConfig} stroke-property assignments for ${strokes} strokes — more than the ` +
+            `${STROKE_PROPERTIES} a batch sets once, so one of them is inside the segment loop`,
+    )
 }
 
 /**
@@ -271,15 +329,89 @@ class FakeCanvasElement extends FakeElement {
     }
 }
 
+// Everything the renderer actually calls. The stub used to carry `fillRect` alone, which was
+// enough while every sprite was a rectangle; the first stroked limb made the production bundle
+// throw here, which is exactly what this smoke test exists to catch.
 class FakeContext2D {
     constructor() {
-        this.fillStyle = null
+        this._fillStyle = null
+        this._strokeStyle = null
+        this._lineWidth = 1
+        this._lineCap = "butt"
+        this.fillStyleAssignments = 0
+        // Every property a stroke configures, so moving any one of them into the segment loop is
+        // visible. Counting only `stroke()` left two of the three unguarded.
+        this.strokeConfigAssignments = 0
+        this.font = ""
+        this.textAlign = "left"
         this.imageSmoothingEnabled = true
         this.fillRectCalls = 0
+        this.strokeCalls = 0
+        this.lineToCalls = 0
+        this.fillTextCalls = 0
+    }
+
+    // A counted property, so the smoke test can see how often the canvas is *reconfigured* rather
+    // than only how often it is drawn to. Round seven pointed out that moving a fill-style
+    // assignment into a loop would leave every other check green.
+    get fillStyle() {
+        return this._fillStyle
+    }
+
+    set fillStyle(value) {
+        this._fillStyle = value
+        this.fillStyleAssignments++
+    }
+
+    get strokeStyle() {
+        return this._strokeStyle
+    }
+
+    set strokeStyle(value) {
+        this._strokeStyle = value
+        this.strokeConfigAssignments++
+    }
+
+    get lineWidth() {
+        return this._lineWidth
+    }
+
+    set lineWidth(value) {
+        this._lineWidth = value
+        this.strokeConfigAssignments++
+    }
+
+    get lineCap() {
+        return this._lineCap
+    }
+
+    set lineCap(value) {
+        this._lineCap = value
+        this.strokeConfigAssignments++
     }
 
     fillRect() {
         this.fillRectCalls++
+    }
+
+    beginPath() {}
+
+    moveTo() {}
+
+    lineTo() {
+        this.lineToCalls++
+    }
+
+    arc() {}
+
+    stroke() {
+        this.strokeCalls++
+    }
+
+    fill() {}
+
+    fillText() {
+        this.fillTextCalls++
     }
 
     drawImage() {}

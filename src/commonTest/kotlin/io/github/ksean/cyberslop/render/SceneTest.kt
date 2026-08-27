@@ -1,0 +1,702 @@
+package io.github.ksean.cyberslop.render
+
+import io.github.ksean.cyberslop.combat.WeaponId
+import io.github.ksean.cyberslop.combat.Weapons
+import io.github.ksean.cyberslop.core.Vec2
+import io.github.ksean.cyberslop.entity.EnemyArchetype
+import io.github.ksean.cyberslop.gen.LevelGenerator
+import io.github.ksean.cyberslop.physics.InputFrame
+import io.github.ksean.cyberslop.physics.Stance
+import io.github.ksean.cyberslop.run.RunState
+import io.github.ksean.cyberslop.sim.GameSimulation
+import io.github.ksean.cyberslop.sim.LiveEnemy
+import kotlin.test.Test
+import kotlin.test.assertEquals
+import kotlin.test.assertTrue
+
+/**
+ * ENG-061 over the real frame, not over the builder in isolation.
+ *
+ * `plan.md` §8.1 measured per-sprite `save`/`translate`/`rotate`/`restore` at 21% of the frame
+ * budget at 600 entities, and the alternative it recommended was never measured. This is the
+ * structural answer: the number of style assignments a frame costs cannot grow with what is in it.
+ *
+ * Stated honestly, and the same way §15.3 states it: a batch count bounds **state changes**, which
+ * is the expensive part that table measured. It does not bound rasterization, and §8.1's full-frame
+ * measurement is still owed.
+ */
+class SceneTest {
+    @Test
+    fun `six hundred entities cost no more drawing state than ten`() {
+        val builder = SceneBuilder()
+        val sim = simulation()
+        val camera = camera()
+        val backdrop = backdrop(sim)
+
+        // The same mix of archetypes at both sizes. ENG-061 bounds the cost by the number of
+        // *kinds* of thing on screen, not by the count — a frame that contains a kind the previous
+        // one did not legitimately opens that kind's batch, and the bound itself is asserted below.
+        trimTo(sim, 0)
+        growTo(sim, FEW)
+        val sparse = Scene.compose(sim, camera, backdrop, hudOf(sim), 0.0, builder).batches.size
+
+        growTo(sim, MANY)
+        val crowded = Scene.compose(sim, camera, backdrop, hudOf(sim), 0.0, builder)
+
+        assertEquals(
+            sparse,
+            crowded.batches.size,
+            "drawing $MANY entities costs more style assignments than drawing $FEW, so the " +
+                "frame's cost grows with the scene",
+        )
+        assertTrue(
+            crowded.batches.sumOf { it.size } > sparse * MANY / FEW,
+            "the crowded frame did not actually draw more; the test proves nothing",
+        )
+    }
+
+    /**
+     * ENG-061 over what a sink is actually handed, not over a number defined to be one.
+     *
+     * Round one found the renderer breaking its stroke path inside a batch — 45, 279 and 1,579
+     * `beginPath`/`stroke` pairs at 10, 100 and 600 entities while the batch count sat at 34. Round
+     * two found the replacement for that test assigning every batch a cost of one *by definition*
+     * and never touching a renderer at all, so moving `stroke()` back inside the loop would have
+     * left it green. The traversal now lives in `FramePainter`, and this counts the calls it makes.
+     */
+    @Test
+    fun `drawing state handed to a sink does not grow with the scene`() {
+        val sparse = CountingSink().also { FramePainter.paint(frameWith(FEW), it) }
+        val crowded = CountingSink().also { FramePainter.paint(frameWith(MANY), it) }
+
+        assertEquals(
+            sparse.stateChanges,
+            crowded.stateChanges,
+            "drawing $MANY entities issued ${crowded.stateChanges} state changes against " +
+                "${sparse.stateChanges} for $FEW",
+        )
+        assertTrue(
+            crowded.primitives > sparse.primitives * 3,
+            "the crowded frame drew ${crowded.primitives} primitives against ${sparse.primitives}" +
+                " — not enough more for the comparison to mean anything",
+        )
+        assertEquals(
+            sparse.widths.size,
+            crowded.widths.size,
+            "the crowded frame used more distinct stroke widths, so its paths break more often",
+        )
+    }
+
+    /** One call per batch, and never a batch handed over twice. */
+    @Test
+    fun `a sink is handed each batch exactly once, in layer order`() {
+        val frame = frameWith(MANY)
+        val sink = CountingSink()
+
+        FramePainter.paint(frame, sink)
+
+        assertEquals(frame.batches.size, sink.batches, "a batch was skipped or issued twice")
+        assertEquals(frame.texts.size, sink.texts, "a label was skipped or issued twice")
+        assertEquals(
+            frame.batches.map { it.layer },
+            sink.layers,
+            "batches were issued out of layer order, so they paint over each other wrongly",
+        )
+    }
+
+    private class CountingSink : PaintSink {
+        var stateChanges = 0
+            private set
+        var batches = 0
+            private set
+        var primitives = 0
+            private set
+        var texts = 0
+            private set
+        val widths = mutableSetOf<Double>()
+        val layers = mutableListOf<Layer>()
+
+        private companion object {
+            /**
+             * What each call really costs the canvas. Charging one per batch described the frame as
+             * cheaper than it is — a stroke sets style, width and cap — and the point of this
+             * number is that it be the true one, not that it be small.
+             */
+            const val FILL_STATE_CHANGES = 1
+            const val STROKE_STATE_CHANGES = 3
+
+            /** `fillStyle`, `font`, `textAlign`. */
+            const val TEXT_STATE_CHANGES = 3
+        }
+
+        override fun fillRects(style: String, batch: DrawBatch) = record(batch, FILL_STATE_CHANGES)
+
+        override fun strokeSegments(style: String, width: Double, batch: DrawBatch) {
+            widths.add(width)
+            record(batch, STROKE_STATE_CHANGES)
+        }
+
+        override fun fillDots(style: String, batch: DrawBatch) = record(batch, FILL_STATE_CHANGES)
+
+        /**
+         * A label costs three state changes — fill style, font, alignment — and they are counted.
+         * Ignoring them let the frame's total be described as "one per batch" when it was not.
+         * Text does not grow with entity count, so ENG-061 still holds; the number just has to be
+         * the real one.
+         */
+        override fun drawText(item: TextItem) {
+            texts++
+            stateChanges += TEXT_STATE_CHANGES
+        }
+
+        private fun record(batch: DrawBatch, cost: Int) {
+            stateChanges += cost
+            batches++
+            primitives += batch.size
+            layers.add(batch.layer)
+        }
+    }
+
+    private fun frameWith(entities: Int): DrawList {
+        val sim = simulation()
+        trimTo(sim, 0)
+        growTo(sim, entities)
+        return Scene.compose(sim, camera(), backdrop(sim), hudOf(sim), 0.0, SceneBuilder())
+    }
+
+    @Test
+    fun `no segment batch mixes stroke widths`() {
+        val sim = simulation()
+        growTo(sim, MANY)
+        val frame = Scene.compose(sim, camera(), backdrop(sim), hudOf(sim), 0.0, SceneBuilder())
+
+        val segments = frame.batches.filter { it.primitive == Primitive.Segment }
+        assertTrue(segments.isNotEmpty(), "nothing was stroked, so the check proves nothing")
+        assertTrue(
+            segments.all { it.width > 0.0 },
+            "a segment batch has no stroke width, so the renderer would draw a hairline",
+        )
+        assertTrue(
+            segments.map { it.width }.distinct().size <= Scene.strokeLadderSize,
+            "segment widths are not snapped to the ladder, so their count is unbounded",
+        )
+    }
+
+    @Test
+    fun `a frame is bounded by a handful of batches`() {
+        val sim = simulation()
+        growTo(sim, MANY)
+
+        val frame = Scene.compose(sim, camera(), backdrop(sim), hudOf(sim), 0.0, SceneBuilder())
+
+        assertTrue(
+            frame.batches.size <= MAX_BATCHES,
+            "a frame opened ${frame.batches.size} batches, over the $MAX_BATCHES this design " +
+                "claims: ${frame.batches.map { "${it.style}/${it.primitive}" }}",
+        )
+    }
+
+    @Test
+    fun `every archetype on a map still shares its batches`() {
+        val sim = simulation()
+        trimTo(sim, 0)
+        // One of each, so nothing about the mix can open a batch per enemy.
+        EnemyArchetype.entries.forEach { archetype -> sim.enemies.add(enemy(sim, archetype)) }
+        val withOne = Scene.compose(sim, camera(), backdrop(sim), hudOf(sim), 0.0, SceneBuilder())
+
+        repeat(20) { EnemyArchetype.entries.forEach { sim.enemies.add(enemy(sim, it)) } }
+        val withMany = Scene.compose(sim, camera(), backdrop(sim), hudOf(sim), 0.0, SceneBuilder())
+
+        assertEquals(
+            withOne.batches.size,
+            withMany.batches.size,
+            "enemy appearance opens a batch per enemy, which is what a continuous luminance " +
+                "would do (ENG-061)",
+        )
+    }
+
+    @Test
+    fun `the frame is composed from the simulation without a clock`() {
+        val sim = simulation()
+        val camera = camera()
+        val backdrop = backdrop(sim)
+
+        val once = Scene.compose(sim, camera, backdrop, hudOf(sim), 1.5, SceneBuilder())
+        val again = Scene.compose(sim, camera, backdrop, hudOf(sim), 1.5, SceneBuilder())
+
+        assertEquals(once.batches.size, again.batches.size)
+        assertEquals(
+            once.batches.map { it.size },
+            again.batches.map { it.size },
+            "the same tick composed two different frames, so something outside the simulation " +
+                "is being read (ENG-062)",
+        )
+    }
+
+    @Test
+    fun `the player is posed from the simulation`() {
+        val sim = simulation()
+        repeat(30) { sim.tick(InputFrame(right = true)) }
+
+        val motion = Scene.motionOf(sim)
+
+        assertEquals(sim.player.vx, motion.speedX, "the rig is not reading the player's velocity")
+        assertEquals(sim.playerStridePx, motion.stridePx, "the gait is not reading distance walked")
+        assertTrue(motion.stridePx > 0.0, "walking right for half a second advanced no stride")
+        assertEquals(Clip.Run, Actor.clipOf(motion), "a player walking right is not running")
+    }
+
+    /**
+     * The loop interpolates between ticks, and the camera's target is interpolated. Drawing the
+     * figure at the raw tick position instead slid it against a camera that had already moved,
+     * which reads as the player vibrating whenever the frame did not land on a tick boundary.
+     */
+    @Test
+    fun `the player is drawn where the camera thinks it is`() {
+        val sim = simulation()
+        repeat(40) { sim.tick(InputFrame(right = true)) }
+        assertTrue(
+            sim.player.x - sim.previousPlayer.x > 1.0,
+            "the player did not move this tick, so interpolation cannot be observed",
+        )
+
+        val camera = camera()
+        val backdrop = backdrop(sim)
+        val start = playerFeetX(Scene.compose(sim, camera, backdrop, hudOf(sim), 0.0, SceneBuilder(), 0.0))
+        val half = playerFeetX(Scene.compose(sim, camera, backdrop, hudOf(sim), 0.0, SceneBuilder(), 0.5))
+        val end = playerFeetX(Scene.compose(sim, camera, backdrop, hudOf(sim), 0.0, SceneBuilder(), 1.0))
+
+        assertTrue(start < half && half < end, "the figure does not move with alpha at all")
+        assertEquals(
+            (start + end) / 2.0,
+            half,
+            absoluteTolerance = 1e-6,
+            message = "half a tick did not draw the figure halfway between the two ticks",
+        )
+    }
+
+    /** The spine, which only the player draws in the player's own body colour. */
+    private fun playerFeetX(frame: DrawList): Double {
+        val spine = frame.batches.first {
+            it.style == Scene.PLAYER_BODY && it.primitive == Primitive.Segment
+        }
+        return spine[0]
+    }
+
+    /**
+     * The interpolation must survive a stance change, which the horizontal-only version did not.
+     *
+     * Crouching re-anchors the player's `y` by the difference between the two stance heights, so
+     * interpolating the top-left corner and then adding the *new* height threw the figure a whole
+     * stance height off the floor for the frames either side of a crouch.
+     */
+    @Test
+    fun `crouching does not launch the figure off the floor`() {
+        val sim = simulation()
+        // Settle, then crouch: the tick that changes stance is the one that used to break.
+        repeat(20) { sim.tick(InputFrame()) }
+        sim.tick(InputFrame(crouch = true))
+        assertEquals(Stance.Crouch, sim.player.stance, "the player did not crouch")
+        assertTrue(
+            sim.player.y != sim.previousPlayer.y,
+            "the stance change did not move the box's corner, so nothing is being tested",
+        )
+
+        val feet = (0..4).map { step ->
+            val alpha = step / 4.0
+            playerFeetY(
+                Scene.compose(sim, camera(), backdrop(sim), hudOf(sim), 0.0, SceneBuilder(), alpha),
+            )
+        }
+
+        val spread = feet.max() - feet.min()
+        assertTrue(
+            spread < ONE_PIXEL,
+            "the figure's feet move $spread screen pixels across a crouch that never left the " +
+                "ground: $feet",
+        )
+    }
+
+    /**
+     * The camera, which the crouch test above could not see because it uses a fixed one.
+     *
+     * Round three fixed the figure and left the camera interpolating the stance-dependent corner;
+     * round six moved it to the body's centre, which still subtracts the current stance height. Both
+     * were recorded as complete. What the camera follows must not move at all when only the stance
+     * does.
+     */
+    @Test
+    fun `crouching does not move the camera`() {
+        val sim = simulation()
+        repeat(20) { sim.tick(InputFrame()) }
+        val standing = Scene.drawnFollow(sim, 1.0)
+
+        sim.tick(InputFrame(crouch = true))
+        assertEquals(Stance.Crouch, sim.player.stance, "the player did not crouch")
+
+        val across = (0..4).map { Scene.drawnFollow(sim, it / 4.0).y }
+        assertTrue(
+            across.max() - across.min() < TINY,
+            "the camera's target moves ${across.max() - across.min()} world px across a crouch",
+        )
+        assertEquals(
+            standing.y,
+            across.last(),
+            absoluteTolerance = TINY,
+            message = "the crouch left the camera somewhere other than where standing had it",
+        )
+    }
+
+    /** The lowest point of the player's own legs. */
+    private fun playerFeetY(frame: DrawList): Double {
+        val legs = frame.batches.filter {
+            it.style == Scene.PLAYER_LIMB && it.primitive == Primitive.Segment
+        }
+        return legs.flatMap { batch ->
+            (0 until batch.size).flatMap { n ->
+                listOf(batch[n * Primitive.Segment.stride + 1], batch[n * Primitive.Segment.stride + 3])
+            }
+        }.max()
+    }
+
+    /**
+     * The animation's action window must be the simulation's, not a second constant beside it.
+     * Written independently they drifted at once: the arm's sweep ran 0.18 s against a swing the
+     * simulation stopped drawing at 0.16, so the arm snapped back at 89% of its arc every time.
+     */
+    @Test
+    fun `an action lasts exactly as long as the thing it depicts`() {
+        val sim = simulation(WeaponId.RustlineMachete)
+        while (sim.lastSwing == null) sim.tick(InputFrame())
+
+        val swing = sim.lastSwing!!
+        val motion = Scene.motionOf(sim)
+
+        assertEquals(
+            swing.totalSeconds,
+            motion.swingSeconds,
+            "the arm sweeps over a different window than the swing is drawn for",
+        )
+        assertEquals(Action.Swing, Actor.actionOf(motion))
+
+        // One tick before the simulation drops it, the arm is still swinging; after, it is not.
+        val nearlyDone = motion.copy(secondsSinceSwing = swing.totalSeconds - 0.001)
+        val done = motion.copy(secondsSinceSwing = swing.totalSeconds + 0.001)
+        assertEquals(Action.Swing, Actor.actionOf(nearlyDone))
+        assertEquals(Action.None, Actor.actionOf(done))
+    }
+
+    /**
+     * `plan.md` §15.5 promises a shooter that tracks the player and a turret whose head sweeps. A
+     * review round found neither implemented: both were drawn along their patrol facing, and a
+     * turret never moves, so its barrel pointed one way forever while it shot the player behind it.
+     */
+    @Test
+    fun `an armed enemy turns to face what it is shooting at`() {
+        val sim = simulation()
+        trimTo(sim, 0)
+        val behind = sim.player.x - CLOSE
+        sim.enemies.add(facingAway(sim, EnemyArchetype.Shooter, behind))
+        sim.enemies.add(facingAway(sim, EnemyArchetype.Turret, behind))
+
+        val frame = Scene.compose(sim, camera(), backdrop(sim), hudOf(sim), 0.0, SceneBuilder())
+        val barrel = frame.batches.first {
+            it.style == Palettes.ENEMY_PLATE && it.primitive == Primitive.Segment
+        }
+
+        // The barrel runs from the head outward; the player is to its right, so must the barrel be.
+        assertTrue(
+            barrel[2] > barrel[0],
+            "the turret's barrel points away from a player standing in its firing range",
+        )
+    }
+
+    @Test
+    fun `a shooter firing upward aims its weapon upward`() {
+        val sim = simulation()
+        trimTo(sim, 0)
+        // Beside the player and well below it, so tracking has a real vertical component.
+        val below = LiveEnemy(
+            EnemyArchetype.Shooter,
+            Vec2(sim.player.x + CLOSE, sim.player.y + CLOSE * 2.0),
+            EnemyArchetype.Shooter.healthOn(1), sim.player.x + CLOSE, 0.0,
+        ).also { it.facing = 1 }
+        sim.enemies.add(below)
+
+        val frame = Scene.compose(sim, camera(), backdrop(sim), hudOf(sim), 0.0, SceneBuilder())
+        val held = frame.batches.first {
+            it.layer == Layer.ActorFront && it.primitive == Primitive.Segment
+        }
+
+        // The lead arm and the barrel share a style and a width, so they share a batch: reading the
+        // first primitive reads the *arm*, and a barrel left horizontal would pass. Every segment
+        // in the batch has to rise, and the last of them is the barrel.
+        assertTrue(held.size >= 3, "expected two arm segments and a barrel, got ${held.size}")
+        for (n in 0 until held.size) {
+            val i = n * Primitive.Segment.stride
+            assertTrue(
+                held[i + 3] < held[i + 1],
+                "segment $n of the weapon arm points level or down while the enemy shoots at " +
+                    "something above it",
+            )
+        }
+    }
+
+    /** Roles are layers, so what paints over what cannot depend on which enemy came first. */
+    @Test
+    fun `a head never paints over its own eye`() {
+        val sim = simulation()
+        trimTo(sim, 0)
+        // The Flyer first: it opens a glow batch before any biped's head batch exists.
+        sim.enemies.add(facingAway(sim, EnemyArchetype.Flyer, sim.player.x + CLOSE))
+        sim.enemies.add(facingAway(sim, EnemyArchetype.Brute, sim.player.x + CLOSE * 2.0))
+
+        val frame = Scene.compose(sim, camera(), backdrop(sim), hudOf(sim), 0.0, SceneBuilder())
+        val order = frame.batches.map { it.layer }
+
+        // Every part role, not just the eye: a Flyer's pod could paint over a biped's head while
+        // both sat on one actor layer, which is what the first version of this test missed.
+        val drawn = ROLE_STACK.filter { it in order }
+        assertTrue(drawn.size >= 4, "too few part roles were drawn to prove an ordering: $drawn")
+        assertEquals(
+            drawn.map { role -> order.indexOfFirst { it == role } }.sorted(),
+            drawn.map { role -> order.indexOfFirst { it == role } },
+            "actor parts are painted out of role order, so a part can fall behind one it sits " +
+                "inside: $order",
+        )
+    }
+
+    /**
+     * The role order itself, which is a design decision and not something a test can derive.
+     *
+     * The first version of this took its expected order from `Layer.entries`, which made it
+     * self-referential: reordering the enum reordered the expectation too, so it could only ever
+     * catch a *sorting* failure and never a wrong order. Found by mutation — moving `ActorTrim`
+     * after `ActorGlow`, letting a crown paint over the eye it frames, left it green.
+     */
+    @Test
+    fun `the actor role stack is in the order the parts sit in`() {
+        assertEquals(
+            ROLE_STACK,
+            Layer.entries.filter { it in ROLE_STACK },
+            "the actor layers are declared in a different order than the parts stack up in",
+        )
+    }
+
+    @Test
+    fun `an unarmed enemy keeps walking its patrol`() {
+        val sim = simulation()
+        trimTo(sim, 0)
+        sim.enemies.add(facingAway(sim, EnemyArchetype.Brute, sim.player.x - CLOSE))
+
+        val motionless = Scene.compose(sim, camera(), backdrop(sim), hudOf(sim), 0.0, SceneBuilder())
+
+        assertTrue(
+            motionless.batches.any { it.primitive == Primitive.Segment },
+            "the brute was not drawn at all",
+        )
+        // Nothing to assert about aim: a brute has no weapon, so it must not be turned by one.
+        assertEquals(
+            -1,
+            sim.enemies.first().facing,
+            "drawing the enemy changed the simulation's own facing (ENG-062)",
+        )
+    }
+
+    @Test
+    fun `an armed enemy out of range keeps its patrol facing`() {
+        val sim = simulation()
+        trimTo(sim, 0)
+        val faraway = sim.player.x + GameSimulation.SHOOTER_RANGE * 4.0
+        sim.enemies.add(facingAway(sim, EnemyArchetype.Turret, faraway))
+
+        val frame = Scene.compose(sim, camera(), backdrop(sim), hudOf(sim), 0.0, SceneBuilder())
+        val barrel = frame.batches.firstOrNull {
+            it.style == Palettes.ENEMY_PLATE && it.primitive == Primitive.Segment
+        }
+
+        assertTrue(barrel != null, "the distant turret was not drawn")
+        assertTrue(
+            barrel!![2] < barrel[0],
+            "a turret out of firing range is still tracking the player",
+        )
+    }
+
+    /** Placed to the player's side and pointing the other way, so tracking has to visibly turn it. */
+    private fun facingAway(sim: GameSimulation, archetype: EnemyArchetype, x: Double): LiveEnemy =
+        LiveEnemy(
+            archetype = archetype,
+            position = Vec2(x, sim.player.y),
+            health = archetype.healthOn(sim.level.mapIndex),
+            homeX = x,
+            patrolPx = 0.0,
+        ).also { it.facing = -1 }
+
+    /**
+     * The player's own weapon arm, which R7 round five fixed and round six found untested: the
+     * upward-aim test inspects an *enemy*, so reverting either half of the player path left it
+     * green.
+     *
+     * Aiming takes no input (PROD-022). The held weapon is the only thing that can tell a player
+     * what the game has locked onto, so an arm pointing along the walk while shots leave on another
+     * bearing is the animation failing at the one job it has here.
+     */
+    @Test
+    fun `the player's weapon follows what the game is aiming at`() {
+        val sim = simulation()
+        trimTo(sim, 0)
+        // Directly above and slightly behind: no facing-relative default can produce this.
+        val target = Vec2(sim.player.x - CLOSE, sim.player.y - CLOSE * 3.0)
+        sim.enemies.add(
+            LiveEnemy(
+                EnemyArchetype.Swarm, target, EnemyArchetype.Swarm.healthOn(1), target.x, 0.0,
+            ),
+        )
+        sim.tick(InputFrame(right = true))
+
+        assertTrue(
+            sim.aimDirection.y < 0.0 && sim.aimDirection.x < 0.0,
+            "the simulation is not aiming up and behind at the only target there is: " +
+                "${sim.aimDirection}",
+        )
+        assertEquals(
+            sim.aimDirection,
+            Scene.motionOf(sim).weaponAim,
+            "the rig is not reading where the game is aiming",
+        )
+
+        val pose = Actor.pose(Scene.motionOf(sim))
+        assertTrue(
+            pose.weaponAim.y < 0.0,
+            "the weapon points level or down while the game shoots at something above: " +
+                "${pose.weaponAim}",
+        )
+        assertTrue(
+            pose.leadHand.y < pose.leadShoulder.y,
+            "the hand is not raised toward what is being shot at",
+        )
+    }
+
+    /**
+     * The swing must sweep the arc that dealt damage, not the direction the weapon is being held.
+     *
+     * The first version of this only compared an early and a late hand position, which move apart
+     * whichever direction the sweep is built around — so a swing animated around the held aim
+     * instead of the arc that resolved would have passed. The two are made to disagree here.
+     */
+    @Test
+    fun `a melee swing sweeps the arc that dealt damage, not where the weapon is held`() {
+        val sim = simulation(WeaponId.RustlineMachete)
+        while (sim.lastSwing == null) sim.tick(InputFrame())
+
+        val base = Scene.motionOf(sim)
+        assertEquals(Action.Swing, Actor.actionOf(base), "the swing did not take the arm")
+
+        // Deliberately opposed: the swing went one way, the weapon is held the other.
+        val swung = Vec2(0.0, -1.0)
+        val motion = base.copy(
+            facing = 1,
+            swingDirection = swung,
+            weaponAim = Vec2(0.0, 1.0),
+            secondsSinceSwing = base.swingSeconds / 2.0,
+        )
+
+        val pose = Actor.pose(motion)
+        val reach = pose.leadHand - pose.leadShoulder
+
+        assertTrue(
+            reach.y < 0.0,
+            "the hand swept toward the held aim rather than the arc that dealt damage: $reach",
+        )
+
+        // And the sweep really is a sweep: the hand is somewhere else a moment later.
+        val later = Actor.pose(motion.copy(secondsSinceSwing = base.swingSeconds * 0.95))
+        assertTrue(pose.leadHand != later.leadHand, "the hand does not move through the arc")
+    }
+
+    @Test
+    fun `the heads-up display carries the build`() {
+        val sim = simulation()
+        val model = hudOf(sim)
+
+        assertTrue(model.weaponName.isNotBlank(), "the HUD cannot name the weapon")
+        assertEquals(sim.level.theme.displayName, model.themeName)
+        assertEquals(sim.run.mapIndex, model.mapIndex)
+        assertTrue(model.healthFraction in 0.0..1.0)
+    }
+
+    private fun simulation(weapon: WeaponId = WeaponId.BrokenBottle): GameSimulation {
+        val level = LevelGenerator.generate(SEED, 1).level
+        var run = RunState.begin(SEED)
+        if (weapon != WeaponId.BrokenBottle) {
+            run = run.copy(loadout = run.loadout.copy(weapon = Weapons.of(weapon)))
+        }
+        return GameSimulation(level, run, SEED)
+    }
+
+    private fun camera() = Camera(0.0, 0.0, VIEW_WIDTH, VIEW_HEIGHT)
+
+    private fun backdrop(sim: GameSimulation) =
+        Backdrops.of(SEED, sim.level)
+
+    private fun hudOf(sim: GameSimulation) =
+        HudModel.of(sim.run, sim.level.theme, MAPS, sim.boss.spec.name, sim.boss.healthFraction)
+
+    private fun trimTo(sim: GameSimulation, count: Int) {
+        while (sim.enemies.size > count) sim.enemies.removeAt(sim.enemies.size - 1)
+    }
+
+    private fun growTo(sim: GameSimulation, count: Int) {
+        val archetypes = EnemyArchetype.entries
+        while (sim.enemies.size < count) {
+            sim.enemies.add(enemy(sim, archetypes[sim.enemies.size % archetypes.size]))
+        }
+    }
+
+    /** Placed inside the view, so it is actually drawn rather than culled. */
+    private fun enemy(sim: GameSimulation, archetype: EnemyArchetype): LiveEnemy {
+        val index = sim.enemies.size
+        val x = sim.player.x + (index % SPREAD) * SPACING
+        return LiveEnemy(
+            archetype = archetype,
+            position = Vec2(x, sim.player.y),
+            health = archetype.healthOn(sim.level.mapIndex),
+            homeX = x,
+            patrolPx = 0.0,
+        )
+    }
+
+    private companion object {
+        val SEED = 0xC0FFEEuL
+        const val VIEW_WIDTH = 560.0
+        const val VIEW_HEIGHT = 320.0
+        const val FEW = 10
+        const val MANY = 600
+        const val MAPS = 10
+        const val SPREAD = 24
+        const val SPACING = 20.0
+        const val CLOSE = 40.0
+        const val ONE_PIXEL = 1.0
+        const val TINY = 1e-9
+
+        /**
+         * Back to front, as an actor is built: rear limbs, then the body they hang off, then the
+         * head, then what is held in front of it, then armour bolted on, then the lit eye.
+         */
+        val ROLE_STACK = listOf(
+            Layer.ActorBehind,
+            Layer.Actors,
+            Layer.ActorHead,
+            Layer.ActorFront,
+            Layer.ActorTrim,
+            Layer.ActorGlow,
+        )
+
+        /**
+         * Bounded by `layers x styles`: twelve layers over roughly a dozen and a half distinct
+         * colours, of which only a fraction ever co-occur. Generous, and still a constant that no
+         * number of entities can move.
+         */
+        const val MAX_BATCHES = 72
+    }
+}

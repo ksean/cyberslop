@@ -6,11 +6,97 @@
     <meta name="color-scheme" content="dark">
     <title>Cyberslop</title>
     <style>
-        html, body { margin: 0; height: 100%; background: #0b0b12; color: #e6e6f0; }
-        body { font-family: system-ui, sans-serif; }
+        /*
+         * The screens around the game share its look (PROD-048). Everything here is a colour, a
+         * border or a shadow — no images, because presentation adds no runtime asset (ENG-063).
+         */
+        :root {
+            --ink: #05060c;
+            --panel: #0d1018;
+            --edge: #2a3350;
+            --text: #c7d2e0;
+            --dim: #7d8aa0;
+            --neon: #ff2fb3;
+            --cool: #22d3ee;
+        }
+
+        html, body { margin: 0; height: 100%; background: var(--ink); color: var(--text); }
+
+        body {
+            font-family: system-ui, -apple-system, "Segoe UI", sans-serif;
+            /* A city glow below and a cold wash above, so the page is a place rather than a fill. */
+            background:
+                radial-gradient(120% 60% at 50% 118%, rgba(255, 47, 179, 0.20), transparent 70%),
+                radial-gradient(100% 50% at 50% -20%, rgba(34, 211, 238, 0.10), transparent 70%),
+                var(--ink);
+        }
+
         #game-canvas { display: none; width: 100vw; height: 100vh; image-rendering: pixelated; }
-        #game-root { display: flex; flex-direction: column; align-items: center; gap: 1rem; padding: 4rem 1rem; }
-        #game-root button { font: inherit; padding: 0.6rem 1.4rem; cursor: pointer; }
+
+        #game-root {
+            display: flex; flex-direction: column; align-items: center;
+            justify-content: center; gap: 1.25rem; min-height: 100%;
+            padding: 3rem 1.25rem; box-sizing: border-box; text-align: center;
+        }
+
+        #game-root h1 {
+            margin: 0;
+            font-size: clamp(2.75rem, 11vw, 6rem);
+            font-weight: 800;
+            letter-spacing: 0.14em;
+            text-transform: uppercase;
+            color: #f2f5ff;
+            /* Offset colour fringes, which is the cheapest thing that reads as a bad CRT. */
+            text-shadow: 0.055em 0 0 var(--neon), -0.055em 0 0 var(--cool);
+        }
+
+        #game-root .tagline {
+            margin: -0.35rem 0 0.6rem;
+            color: var(--dim);
+            letter-spacing: 0.34em;
+            text-transform: uppercase;
+            font-size: 0.78rem;
+        }
+
+        #game-root p { margin: 0; color: var(--dim); }
+
+        #game-root button {
+            font: inherit;
+            font-weight: 600;
+            letter-spacing: 0.1em;
+            text-transform: uppercase;
+            min-width: 15rem;
+            padding: 0.85rem 1.6rem;
+            color: var(--text);
+            background: linear-gradient(180deg, rgba(42, 51, 80, 0.55), rgba(13, 16, 24, 0.85));
+            border: 1px solid var(--edge);
+            border-radius: 2px;
+            cursor: pointer;
+            transition: color 120ms linear, border-color 120ms linear, box-shadow 120ms linear;
+        }
+
+        #game-root button:hover {
+            color: #fff;
+            border-color: var(--neon);
+            box-shadow: 0 0 0 1px rgba(255, 47, 179, 0.35), 0 0 22px rgba(255, 47, 179, 0.28);
+        }
+
+        /*
+         * The game is played on four keys and must stay fully operable from the keyboard
+         * (PROD-004), so the focus ring is louder than the hover state rather than quieter.
+         */
+        #game-root button:focus-visible {
+            outline: 2px solid var(--cool);
+            outline-offset: 3px;
+            color: #fff;
+            border-color: var(--cool);
+            box-shadow: 0 0 24px rgba(34, 211, 238, 0.4);
+        }
+
+        @media (prefers-reduced-motion: reduce) {
+            #game-root button { transition: none; }
+        }
+
         .visually-hidden {
             position: absolute; width: 1px; height: 1px; overflow: hidden;
             clip: rect(0 0 0 0); clip-path: inset(50%); white-space: nowrap;

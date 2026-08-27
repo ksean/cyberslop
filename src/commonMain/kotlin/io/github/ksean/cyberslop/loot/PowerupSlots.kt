@@ -26,7 +26,23 @@ class PowerupSlots private constructor(private val stacks: Map<PowerupId, Int>) 
         return if (count == 0) 0.0 else Powerups.of(id).magnitude(count)
     }
 
-    /** Applies [id] if there is room, otherwise converts it to Scrap. Never refuses. */
+    /**
+     * Applies [id] if there is room, otherwise converts it to Scrap. Never refuses.
+     *
+     * **A full build refuses a sixth distinct powerup, and that is deliberate rather than an
+     * oversight.** Review round seven pointed out that this can scrap a *guaranteed* boss award once
+     * five optional powerups hold the slots, leaving a real player below the loadout [LootFloor]
+     * models. Displacing the weakest slot instead was implemented and then withdrawn: it is unsound.
+     * [Powerup.magnitude] is a generic strength scalar, not a contribution to damage, so displacing
+     * by it swapped a damage powerup out for a stronger-but-useless one and made `LootFloor`'s own
+     * DPS floor **fall** between maps four and five. It also churned, because a displaced powerup
+     * re-collected later displaces its replacement.
+     *
+     * So collecting still never removes anything a player holds — their build only ever grows — and
+     * the gap is in what [LootFloor] *claims*, which is corrected there. Closing it properly needs a
+     * notion of "better" that respects what the floor measures, and that is a change to the powerup
+     * economy rather than to this change's scope.
+     */
     fun collect(id: PowerupId, scrapValue: Int = DEFAULT_SCRAP): Pair<PowerupSlots, Pickup> {
         val current = stacksOf(id)
         return when {

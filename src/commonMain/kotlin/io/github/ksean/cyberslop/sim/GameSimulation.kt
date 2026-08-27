@@ -81,6 +81,32 @@ class GameSimulation(
     var lastSwing: SwingVisual? = null
         private set
 
+    /** The most recent shot leaving the muzzle, for the renderer. */
+    var lastShot: MuzzleFlash? = null
+        private set
+
+    /**
+     * Where the weapon is currently pointing — a unit vector, updated every tick.
+     *
+     * Aiming takes no input (PROD-022), so the only way a player learns what the game has locked
+     * onto is by watching the figure hold its weapon that way. Without it the arm pointed the way
+     * the player was walking while shots left on whatever bearing the nearest target happened to
+     * be, including behind them.
+     */
+    var aimDirection: Vec2 = Vec2.Right
+        private set
+
+    /**
+     * How far the player has walked, which is what the gait cycle reads (`plan.md` §15.4).
+     *
+     * Here rather than on `PlayerState` on purpose. That value's hash is pinned to a committed
+     * golden across both targets by `PhysicsDeterminismTest`; putting a presentational field into it
+     * would either break that test or quietly widen what "physics state" means. `lastSwing` set the
+     * precedent — presentation the simulation carries, kept out of the physics value.
+     */
+    var playerStridePx: Double = 0.0
+        private set
+
     val enemies = mutableListOf<LiveEnemy>()
     val projectiles = mutableListOf<LiveProjectile>()
     val items = mutableListOf<GroundItem>()
@@ -93,6 +119,31 @@ class GameSimulation(
         Bosses.boss(level.mapIndex), level.boss,
         commitColumn = level.boss.leftTile + COMMIT_OFFSET,
     )
+
+    /** Declared above `init`, which places static pickups and therefore draws from it. */
+    private val runPool = DropTable.runPool(Rng.derive(seed, 0, "pool"), level.mapIndex)
+
+    /**
+     * What the pickups already lying on the map turn out to be.
+     *
+     * Its own stream, because it is drawn before the player has done anything and the combat stream
+     * is not: sharing one made the number of static caches shift every later crit, stun and kill
+     * drop on the map (ENG-053). Isolating it leaves `rng` untouched until the first shot, which is
+     * a stronger position than the code was in before static drops existed.
+     */
+    private val cacheRng = Rng.derive(seed, level.mapIndex, "cache-content")
+
+    /**
+     * The map-one starter cache, which is a different award from the optional static drops beside
+     * it — PROD-047 says so, and change 0003 requires this one so a mini-boss is never met with the
+     * broken bottle.
+     *
+     * Its own stream because sharing one made the *guaranteed* award depend on how many *optional*
+     * pickups the generator happened to place: at seed 1, three static pickups gave a Chrome Fang
+     * and removing them gave a Sable Corp Railgun. Isolating combat from the caches in the round
+     * before this left the two caches still coupled to each other.
+     */
+    private val starterRng = Rng.derive(seed, level.mapIndex, "starter-cache")
 
     private val autoFire = AutoFire(run.loadout.weapon, run.loadout.slots)
     private var minibossRewarded = false
@@ -110,13 +161,39 @@ class GameSimulation(
                 ),
             )
         }
+        // Statically placed pickups (PROD-047). Generation chose where; what each yields is decided
+        // here, because it depends on the run's unlocks and its powerup pool.
+        level.pickups.forEach { site ->
+            val at = site.centre
+            items.add(
+                if (cacheRng.nextDouble() < DropTable.weaponShare()) {
+                    GroundItem(
+                        at,
+                        DropTable.rollWeapon(
+                            cacheRng, level.mapIndex, shifts = CACHE_TIER_SHIFTS,
+                            unlocked = unlockedWeapons,
+                        ),
+                        null,
+                    )
+                } else {
+                    GroundItem(
+                        at,
+                        null,
+                        DropTable.rollPowerup(
+                            cacheRng, level.mapIndex, runPool, shifts = CACHE_TIER_SHIFTS,
+                        ),
+                    )
+                },
+            )
+        }
+
         // The starter cache. Map one must never meet its mini-boss with the broken bottle.
         if (level.mapIndex == 1) {
             items.add(
                 GroundItem(
                     Vec2(TileMap.toWorld(level.spawnColumn + STARTER_CACHE_TILES),
                         TileMap.toWorld(level.spawnRow) - TILE_SIZE),
-                    DropTable.rollWeapon(rng, 1, floor = io.github.ksean.cyberslop.combat.Tier.Street, unlocked = unlockedWeapons),
+                    DropTable.rollWeapon(starterRng, 1, floor = io.github.ksean.cyberslop.combat.Tier.Street, unlocked = unlockedWeapons),
                     null,
                 ),
             )
@@ -132,10 +209,21 @@ class GameSimulation(
 
         val muzzle = centreOf(player)
         val aim = Targeting.aimPoint(muzzle, targets(), facing)
+        aimDirection = (aim - muzzle).normalisedOr(Vec2(facing.toDouble(), 0.0))
+
+        // Distance, not time: a gait driven by elapsed time and a speed-dependent rate jumps
+        // whenever speed changes, and the feet skate.
+        if (player.onGround) {
+            playerStridePx += (if (player.vx < 0.0) -player.vx else player.vx) * TICK_SECONDS
+        }
 
         lastSwing = lastSwing?.let { swing ->
             val remaining = swing.secondsLeft - TICK_SECONDS
             if (remaining > 0.0) swing.copy(secondsLeft = remaining) else null
+        }
+        lastShot = lastShot?.let { flash ->
+            val remaining = flash.secondsLeft - TICK_SECONDS
+            if (remaining > 0.0) flash.copy(secondsLeft = remaining) else null
         }
         autoFire.tick(TICK_SECONDS, muzzle, aim).forEach { emit(it, muzzle, aim) }
         advanceProjectiles()
@@ -174,14 +262,21 @@ class GameSimulation(
 
         when (weapon.spec.cls) {
             WeaponClass.Melee -> resolveArc(shot, muzzle)
-            else -> when (weapon.spec.pattern) {
-                is FirePattern.Blast, is FirePattern.Strike ->
-                    resolveBlast(shot, origin, (weapon.spec.pattern as? FirePattern.Blast)?.radius
-                        ?: (weapon.spec.pattern as FirePattern.Strike).radius)
-                is FirePattern.Chain -> resolveChain(shot, origin)
-                is FirePattern.Orbit -> resolveBlast(shot, origin, weapon.spec.rangePx)
-                is FirePattern.Pull -> resolveBlast(shot, origin, (weapon.spec.pattern as FirePattern.Pull).radius)
-                else -> spawnProjectiles(shot, origin)
+            else -> {
+                lastShot = MuzzleFlash(
+                    direction = shot.direction,
+                    secondsLeft = FLASH_VISIBLE_SECONDS,
+                    totalSeconds = FLASH_VISIBLE_SECONDS,
+                )
+                when (weapon.spec.pattern) {
+                    is FirePattern.Blast, is FirePattern.Strike ->
+                        resolveBlast(shot, origin, (weapon.spec.pattern as? FirePattern.Blast)?.radius
+                            ?: (weapon.spec.pattern as FirePattern.Strike).radius)
+                    is FirePattern.Chain -> resolveChain(shot, origin)
+                    is FirePattern.Orbit -> resolveBlast(shot, origin, weapon.spec.rangePx)
+                    is FirePattern.Pull -> resolveBlast(shot, origin, (weapon.spec.pattern as FirePattern.Pull).radius)
+                    else -> spawnProjectiles(shot, origin)
+                }
             }
         }
     }
@@ -449,6 +544,7 @@ class GameSimulation(
             val next = enemy.position + step
             if (enemy.archetype.ignoresTerrain || !blocked(next)) {
                 enemy.position = next
+                enemy.stridePx += speed * TICK_SECONDS
             } else {
                 enemy.facing = -enemy.facing
             }
@@ -539,7 +635,6 @@ class GameSimulation(
         }
     }
 
-    private val runPool = DropTable.runPool(Rng.derive(seed, 0, "pool"), level.mapIndex)
 
     private fun onKilled(enemy: LiveEnemy) {
         run = run.copy(scrap = run.scrap + SCRAP_PER_KILL)
@@ -548,11 +643,11 @@ class GameSimulation(
         ) {
             autoFire.clearCooldown()
         }
-        if (rng.nextDouble() > dropChance()) return
-        if (rng.nextDouble() < WEAPON_SHARE) {
-            items.add(GroundItem(enemy.position, DropTable.rollWeapon(rng, level.mapIndex, unlocked = unlockedWeapons), null))
+        if (rng.nextDouble() > DropTable.killDropChance(level.mapIndex)) return
+        if (rng.nextDouble() < DropTable.weaponShare()) {
+            items.add(GroundItem(centreOfEnemy(enemy), DropTable.rollWeapon(rng, level.mapIndex, unlocked = unlockedWeapons), null))
         } else {
-            items.add(GroundItem(enemy.position, null, DropTable.rollPowerup(rng, level.mapIndex, runPool)))
+            items.add(GroundItem(centreOfEnemy(enemy), null, DropTable.rollPowerup(rng, level.mapIndex, runPool)))
         }
     }
 
@@ -631,10 +726,7 @@ class GameSimulation(
     private fun lifetimeOf(weapon: ResolvedWeapon): Double =
         (weapon.spec.pattern as? FirePattern.Projectile)?.lifetimeSeconds ?: DEFAULT_LIFETIME
 
-    private fun dropChance(): Double =
-        DROP_CHANCE_FIRST + (DROP_CHANCE_LAST - DROP_CHANCE_FIRST) * (level.mapIndex - 1) / 9.0
-
-    private companion object {
+    companion object {
         const val COMMIT_OFFSET = 4
         const val STARTER_CACHE_TILES = 6
         const val MAX_PROJECTILES = 300
@@ -645,6 +737,13 @@ class GameSimulation(
         const val ENEMY_HALF = 7.0
         const val CONTACT_RADIUS_SQUARED = 18.0 * 18.0
         const val ENEMY_SPEED = 70.0
+        /**
+         * How close the player has to be for a shooter or a turret to open fire.
+         *
+         * Public because presentation needs it: an enemy that is tracking the player should *look*
+         * like it is, and a second constant in the renderer would drift from this one the way the
+         * swing window already did.
+         */
         const val SHOOTER_RANGE = 220.0
         const val SHOOTER_COOLDOWN = 1.6
         const val SHOOTER_SPEED = 260.0
@@ -652,9 +751,8 @@ class GameSimulation(
         const val SHOOTER_DAMAGE_SHARE = 0.6
         const val SCRAP_PER_KILL = 2
         const val BOSS_SCRAP = 40
-        const val DROP_CHANCE_FIRST = 0.03
-        const val DROP_CHANCE_LAST = 0.06
-        const val WEAPON_SHARE = 0.3
+        /** A static cache draws twice for its tier and keeps the better roll (`plan.md` §6.7). */
+        const val CACHE_TIER_SHIFTS = 1
         const val BLAST_RADIUS = 36.0
         const val BURN_SECONDS = 3.0
         const val SLOW_SECONDS = 2.0
@@ -662,6 +760,7 @@ class GameSimulation(
         const val LIFESTEAL_CAP = 4.0
         const val FULL_CIRCLE = 360.0
         const val SWING_VISIBLE_SECONDS = 0.16
+        const val FLASH_VISIBLE_SECONDS = 0.10
         const val EXIT_CLEARANCE = 6
     }
 }

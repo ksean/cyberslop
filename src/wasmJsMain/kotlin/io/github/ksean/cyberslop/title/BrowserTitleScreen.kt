@@ -11,10 +11,24 @@ internal fun renderTitleScreen(
 ) {
     root.textContent = ""
     root.appendChild(titleElement(state.title))
+    root.appendChild(tagline())
     state.actions.forEach { action ->
         root.appendChild(actionButton(action, onAction))
     }
 }
+
+/**
+ * Says what the run is, in one line.
+ *
+ * A heading and two buttons told a first-time player nothing about the game they were starting. It
+ * is a paragraph rather than anything focusable, so it adds nothing to the keyboard path
+ * (PROD-004).
+ */
+private fun tagline(): HTMLElement =
+    (document.createElement("p") as HTMLElement).apply {
+        className = "tagline"
+        textContent = "Ten maps. One way out."
+    }
 
 private fun titleElement(title: String): HTMLElement =
     (document.createElement("h1") as HTMLElement).apply {

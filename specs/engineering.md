@@ -27,6 +27,15 @@ The initial toolchain is Kotlin 2.4.10 and Gradle 9.4.0, a current pairing withi
 - **ENG-055:** Map generation must derive every distance from the movement model's measured envelope. Traversal distances must not be written as literals in generation code.
 - **ENG-056:** Map verification must run in the shipping build. A map whose witness fails replay must not be presented to the player.
 
+## Presentation
+
+*Added by [change 0005](changes/0005-visual-identity-and-loot-density.md).*
+
+- **ENG-060:** Platform-independent presentation state — palettes, character poses, animation selection, enemy appearance, backdrops, and the draw list describing a frame — must live in `commonMain` and must be testable without a browser. Browser rendering must contain no rule about what a frame looks like beyond issuing the primitives the draw list names.
+- **ENG-061:** The number of drawing-state changes issued per frame must be bounded by the number of style batches in the frame and must not grow with the number of entities drawn. Per-sprite canvas transform state must not be used.
+- **ENG-062:** Animation must be a pure function of simulation state and elapsed simulation time. It must not read a clock or ambient randomness, and no animation state may change what the simulation does.
+- **ENG-063:** Presentation must not add a runtime asset dependency. Everything drawn must be produced by code from the browser's own 2D context.
+
 ## Code quality
 
 - **ENG-020:** Functions and types must have one clear responsibility and meaningful domain names.

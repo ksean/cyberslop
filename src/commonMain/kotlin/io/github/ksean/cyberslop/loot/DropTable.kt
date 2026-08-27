@@ -32,6 +32,26 @@ object DropTable {
         return DoubleArray(raw.size) { i -> raw[i] / total }
     }
 
+    /**
+     * The chance a slain enemy drops anything (PROD-046).
+     *
+     * Flat, and deliberately not a function of [mapIndex] beyond taking it: the parameter is kept so
+     * that a future curve is a change here rather than a change at every call site, and the test
+     * asserts it does not vary. It replaces two ramps that disagreed with each other — `plan.md`
+     * §6.7 published 1.5%-to-3% while the simulation ran 3%-to-6%.
+     */
+    @Suppress("UNUSED_PARAMETER")
+    fun killDropChance(mapIndex: Int): Double = KILL_DROP_CHANCE
+
+    /**
+     * How much of a drop is a weapon rather than a powerup (PROD-046).
+     *
+     * Here beside the rate it splits, rather than as a private constant in the simulation, because a
+     * review round found it normative in `specs/` and untested: changing it left every loot test
+     * green, since they all measured the total.
+     */
+    fun weaponShare(): Double = WEAPON_SHARE
+
     fun rollTier(rng: Rng, mapIndex: Int, floor: Tier? = null, shifts: Int = 0): Tier {
         var best = drawTier(rng, mapIndex)
         repeat(shifts) {
@@ -61,7 +81,21 @@ object DropTable {
         return candidates[rng.nextInt(candidates.size)]
     }
 
-    fun rollPowerup(rng: Rng, mapIndex: Int, pool: List<Powerup>): Powerup {
+    /**
+     * [shifts] draws again and keeps the rarer result, the same way [rollTier] does for weapons — so
+     * a cache can hold something better than a corpse does on both branches rather than only on the
+     * weapon one, which is what PROD-047 now requires.
+     */
+    fun rollPowerup(rng: Rng, mapIndex: Int, pool: List<Powerup>, shifts: Int = 0): Powerup {
+        var best = drawPowerup(rng, mapIndex, pool)
+        repeat(shifts) {
+            val again = drawPowerup(rng, mapIndex, pool)
+            if (again.tier.ordinal > best.tier.ordinal) best = again
+        }
+        return best
+    }
+
+    private fun drawPowerup(rng: Rng, mapIndex: Int, pool: List<Powerup>): Powerup {
         val weights = weights(mapIndex)
         val weighted = pool.map { weights[it.tier.ordinal] }
         val total = weighted.sum()
@@ -96,4 +130,10 @@ object DropTable {
     }
 
     const val RUN_POOL_SIZE = 8
+
+    /** One in five (PROD-046). */
+    private const val KILL_DROP_CHANCE = 0.20
+
+    /** Three in ten of those (PROD-046). */
+    private const val WEAPON_SHARE = 0.30
 }

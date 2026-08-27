@@ -33,6 +33,15 @@ class LiveEnemy(
     val patrolPx: Double,
 ) {
     var facing: Int = 1
+
+    /**
+     * Distance walked, which is what drives the gait (`plan.md` §15.4).
+     *
+     * Presentational, and deliberately here rather than on a physics value: enemies have no shared
+     * state hash to disturb, but keeping the two kinds of state in the same place as the player's
+     * is what makes the rule easy to follow.
+     */
+    var stridePx: Double = 0.0
     var slowSecondsLeft: Double = 0.0
     var slowFraction: Double = 0.0
     var stunSecondsLeft: Double = 0.0
@@ -189,6 +198,27 @@ data class SwingVisual(
     val totalSeconds: Double,
 ) {
     /** One at the moment of the swing, falling to zero as it fades. */
+    val strength: Double get() = (secondsLeft / totalSeconds).coerceIn(0.0, 1.0)
+}
+
+/**
+ * A shot leaving the muzzle, for the renderer.
+ *
+ * The counterpart to [SwingVisual]. Without it a ranged weapon firing on its own cooldown produced
+ * a projectile that simply appeared a few pixels away from the player, with nothing tying it to the
+ * figure that fired it.
+ *
+ * It carries no origin. The flash is drawn at the posed lead hand, because it belongs to the weapon
+ * the figure is holding — and for a cursor-anchored psychic weapon the shot's origin is the target,
+ * which is the last place a muzzle flash should appear. An origin field existed and was read by
+ * nothing.
+ */
+data class MuzzleFlash(
+    val direction: Vec2,
+    val secondsLeft: Double,
+    val totalSeconds: Double,
+) {
+    /** One at the shot, falling to zero as it fades. */
     val strength: Double get() = (secondsLeft / totalSeconds).coerceIn(0.0, 1.0)
 }
 

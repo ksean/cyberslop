@@ -1,0 +1,1031 @@
+package io.github.ksean.cyberslop.render
+
+import io.github.ksean.cyberslop.core.TrigTable
+import io.github.ksean.cyberslop.core.Vec2
+import io.github.ksean.cyberslop.physics.Physics
+import io.github.ksean.cyberslop.sim.GameSimulation
+import io.github.ksean.cyberslop.sim.LiveBoss
+import io.github.ksean.cyberslop.sim.LiveEnemy
+import io.github.ksean.cyberslop.world.Level
+import io.github.ksean.cyberslop.world.TILE_SIZE
+import io.github.ksean.cyberslop.world.TileKind
+import io.github.ksean.cyberslop.world.TileMap
+
+/**
+ * Turns one tick of the game into one frame of drawing (ENG-060).
+ *
+ * Everything about what a frame looks like is decided here, in `commonMain`, where a test can read
+ * it without a browser. The browser layer receives a [DrawList] and issues primitives; it makes no
+ * decision and holds no rule.
+ *
+ * The shape of the output is what ENG-061 rests on. Nothing is drawn entity by entity: a caller
+ * takes a batch handle for a style once and pushes into it, so a frame costs one style assignment
+ * per batch however many things are in it. Limbs are stroked segments rather than rotated
+ * rectangles, so the per-sprite transform `plan.md` §8.1 measured at 7.61x a bare draw does not
+ * exist to be slow.
+ */
+object Scene {
+    /**
+     * World pixels to screen pixels.
+     *
+     * The game drew 1:1, which put a 26 px character on a 900 px screen — at that size an animated
+     * figure is a moving dot and none of this work would be visible. The camera's view is measured
+     * in world units, so zooming is this factor and a smaller view rectangle, and nothing about
+     * following or clamping changes.
+     */
+    const val ZOOM = 3.5
+
+    /**
+     * Snaps a stroke width onto a bounded ladder.
+     *
+     * A batch is one `beginPath`/`stroke` pair, so its width is part of its identity — and a
+     * continuous width would give almost every limb its own batch, which is the same trap a
+     * continuous enemy luminance would be. Fourteen steps cover a 26 px player's forearm to a boss's
+     * torso; the largest snap is under a fifth of the width, which is nothing at a limb's size.
+     */
+    val strokeLadderSize: Int get() = STROKE_LADDER.size
+
+    fun strokeWidth(raw: Double): Double {
+        var best = STROKE_LADDER[0]
+        var bestGap = if (raw > best) raw - best else best - raw
+        for (index in 1 until STROKE_LADDER.size) {
+            val candidate = STROKE_LADDER[index]
+            val gap = if (raw > candidate) raw - candidate else candidate - raw
+            if (gap < bestGap) { best = candidate; bestGap = gap }
+        }
+        return best
+    }
+
+    fun compose(
+        sim: GameSimulation,
+        camera: Camera,
+        backdrop: Backdrop,
+        hud: HudModel,
+        timeSeconds: Double,
+        builder: SceneBuilder,
+        /**
+         * How far this frame sits between the last tick and the current one.
+         *
+         * The loop interpolates the camera's target but the figure was drawn at the raw tick
+         * position, so the player slid a few pixels against a camera that had already moved —
+         * visible as jitter at every frame that was not exactly on a tick boundary. Both now read
+         * the same position.
+         */
+        alpha: Double = 1.0,
+        /** Draws the corridor mask over the world. Development only. */
+        debugMasks: Boolean = false,
+    ): DrawList {
+        builder.begin()
+        val palette = Palettes.of(sim.level.theme)
+        val width = camera.viewWidth * ZOOM
+        val height = camera.viewHeight * ZOOM
+
+        sky(builder, palette, width, height)
+        skyline(builder, palette, backdrop, camera, width, height)
+        tiles(builder, palette, sim.level, camera)
+        arenas(builder, palette, sim.level, camera)
+        jets(builder, palette, sim.level, camera, timeSeconds)
+        pickups(builder, palette, sim, camera)
+        enemies(builder, palette, sim, camera, timeSeconds)
+        bosses(builder, palette, sim, camera)
+        projectiles(builder, palette, sim, camera)
+        // Both the arc and the figure hang off one interpolated position, or the swing sits ahead
+        // of the hand that threw it by a tick of travel.
+        val muzzle = drawnMuzzle(sim, alpha)
+        swing(builder, palette, sim, camera, muzzle)
+        player(builder, palette, sim, camera, muzzle)
+        if (debugMasks) masks(builder, sim.level, camera)
+        hud(builder, palette, hud, width, height)
+
+        return builder.build()
+    }
+
+    // ---- world ----------------------------------------------------------------------------
+
+    private fun sky(builder: SceneBuilder, palette: Palette, width: Double, height: Double) {
+        builder.batch(Layer.Sky, palette.sky, Primitive.Rect).rect(0.0, 0.0, width, height)
+        // A band rather than a gradient: a gradient is a browser object, and a horizon is what the
+        // eye actually reads here.
+        val horizon = height * BACKDROP_HORIZON
+        builder.batch(Layer.Sky, palette.skyLow, Primitive.Rect)
+            .rect(0.0, horizon, width, height - horizon)
+    }
+
+    private fun skyline(
+        builder: SceneBuilder,
+        palette: Palette,
+        backdrop: Backdrop,
+        camera: Camera,
+        width: Double,
+        height: Double,
+    ) {
+        backdrop.layers.forEach { layer ->
+            val batch = builder.batch(layer.layer, layer.tint, Primitive.Rect)
+            // Opened after the tint so the lit windows are painted over their own building rather
+            // than under it — and per depth, so a near tower still occludes a far window.
+            val windows = builder.batch(layer.layer, palette.window, Primitive.Rect)
+            val offset = camera.x * layer.parallax * ZOOM
+            // Vertical parallax, anchored to the height the horizon fraction was calibrated at.
+            val horizon = height * backdrop.horizonFraction +
+                verticalDrift(backdrop, camera, layer.parallax, height)
+            layer.buildings.forEach { building ->
+                val x = building.x * ZOOM - offset
+                val drawWidth = building.width * ZOOM
+                if (x + drawWidth < 0.0 || x > width) return@forEach
+
+                val drawHeight = building.height * ZOOM
+                batch.rect(x, horizon - drawHeight, drawWidth, drawHeight)
+
+                val cellWidth = drawWidth / building.windowColumns
+                val cellHeight = drawHeight / building.windowRows
+                for (column in 0 until building.windowColumns) {
+                    for (row in 0 until building.windowRows) {
+                        if (!building.hasWindow(column, row)) continue
+                        windows.rect(
+                            x + cellWidth * (column + WINDOW_INSET),
+                            horizon - drawHeight + cellHeight * (row + WINDOW_INSET),
+                            cellWidth * WINDOW_FILL,
+                            cellHeight * WINDOW_FILL,
+                        )
+                    }
+                }
+            }
+        }
+        val haze = height * backdrop.horizonFraction +
+            verticalDrift(backdrop, camera, backdrop.layers.last().parallax, height)
+        builder.batch(Layer.Haze, palette.haze, Primitive.Rect)
+            .rect(0.0, haze - HAZE_PX, width, HAZE_PX * 2.0)
+    }
+
+    /**
+     * How far the horizon slides when the camera changes height, damped and then bounded.
+     *
+     * Anchored to the height the horizon fraction was calibrated at — the player's spawn — so the
+     * skyline sits where it was designed to sit at the start of a map and drifts from there.
+     */
+    private fun verticalDrift(
+        backdrop: Backdrop,
+        camera: Camera,
+        parallax: Double,
+        height: Double,
+    ): Double {
+        val drift = (backdrop.referenceY - camera.y) * parallax * VERTICAL_PARALLAX * ZOOM
+        val limit = height * VERTICAL_LIMIT
+        return drift.coerceIn(-limit, limit)
+    }
+
+    /**
+     * Only the tiles inside the view, because a 720-tile map is 46,000 cells and all but a few
+     * hundred are off screen — the rule the placeholder renderer measured its way into, kept.
+     *
+     * Solid tiles get a lit top edge wherever nothing sits above them. That single extra rectangle
+     * is what turns a grid of squares into surfaces with a light direction.
+     */
+    private fun tiles(builder: SceneBuilder, palette: Palette, level: Level, camera: Camera) {
+        val first = (TileMap.toTile(camera.x) - 1).coerceAtLeast(0)
+        val last = (TileMap.toTile(camera.x + camera.viewWidth) + 1)
+            .coerceAtMost(level.widthTiles - 1)
+        val top = (TileMap.toTile(camera.y) - 1).coerceAtLeast(0)
+        val bottom = (TileMap.toTile(camera.y + camera.viewHeight) + 1)
+            .coerceAtMost(level.tiles.height - 1)
+
+        val body = builder.batch(Layer.Terrain, palette.tileBody, Primitive.Rect)
+        val deep = builder.batch(Layer.Terrain, palette.tileDeep, Primitive.Rect)
+        val edge = builder.batch(Layer.Terrain, palette.tileEdge, Primitive.Rect)
+        val hazard = builder.batch(Layer.Hazard, palette.hazard, Primitive.Rect)
+        val hazardGlow = builder.batch(Layer.Hazard, palette.hazardGlow, Primitive.Rect)
+        val size = TILE_SIZE * ZOOM
+
+        for (x in first..last) {
+            for (y in top..bottom) {
+                val screenX = (TileMap.toWorld(x) - camera.x) * ZOOM
+                val screenY = (TileMap.toWorld(y) - camera.y) * ZOOM
+                when (level.tiles[x, y]) {
+                    TileKind.Solid -> {
+                        body.rect(screenX, screenY, size, size)
+                        if (!level.tiles.blocksMovement(x, y - 1)) {
+                            edge.rect(screenX, screenY, size, EDGE_PX)
+                        }
+                        deep.rect(screenX, screenY + size - SEAM_PX, size, SEAM_PX)
+                    }
+
+                    TileKind.Acid -> {
+                        hazard.rect(screenX, screenY, size, size)
+                        if (level.tiles[x, y - 1] != TileKind.Acid) {
+                            hazardGlow.rect(screenX, screenY, size, EDGE_PX)
+                        }
+                    }
+
+                    else -> Unit
+                }
+            }
+        }
+    }
+
+    private fun arenas(builder: SceneBuilder, palette: Palette, level: Level, camera: Camera) {
+        val batch = builder.batch(Layer.Terrain, palette.accent, Primitive.Rect)
+        listOf(level.miniboss, level.boss).forEach { arena ->
+            batch.rect(
+                (TileMap.toWorld(arena.leftTile) - camera.x) * ZOOM,
+                (TileMap.toWorld(arena.floorRow) - camera.y) * ZOOM - ARENA_PX,
+                arena.widthTiles * TILE_SIZE * ZOOM,
+                ARENA_PX,
+            )
+        }
+    }
+
+    private fun jets(
+        builder: SceneBuilder,
+        palette: Palette,
+        level: Level,
+        camera: Camera,
+        timeSeconds: Double,
+    ) {
+        val outer = builder.batch(
+            Layer.Hazard, palette.accent, Primitive.Segment,
+            strokeWidth(TILE_SIZE * ZOOM * JET_OUTER),
+        )
+        val core = builder.batch(
+            Layer.Hazard, palette.hazardGlow, Primitive.Segment,
+            strokeWidth(TILE_SIZE * ZOOM * JET_CORE),
+        )
+        val pool = builder.batch(Layer.Hazard, palette.accent, Primitive.Rect)
+
+        level.jets.forEach { jet ->
+            if (!jet.isOnAt(timeSeconds)) return@forEach
+            val x = (TileMap.toWorld(jet.column) - camera.x) * ZOOM + TILE_SIZE * ZOOM / 2.0
+            val top = (TileMap.toWorld(jet.topRow) - camera.y) * ZOOM
+            val bottom = (TileMap.toWorld(jet.bottomRow + 1) - camera.y) * ZOOM
+            outer.segment(x, top, x, bottom)
+            core.segment(x, top, x, bottom)
+            // The pool of light it throws on the floor, which is what makes a lit jet read as
+            // lighting the room rather than as a bright stripe drawn over it.
+            pool.rect(
+                x - TILE_SIZE * ZOOM * JET_POOL / 2.0,
+                bottom - TILE_SIZE * ZOOM * JET_POOL_HEIGHT,
+                TILE_SIZE * ZOOM * JET_POOL,
+                TILE_SIZE * ZOOM * JET_POOL_HEIGHT,
+            )
+        }
+    }
+
+    // ---- things in the world ----------------------------------------------------------------
+
+    /**
+     * A pickup shows what it is and how rare it is (PROD-044). Both were an eight-pixel square in
+     * one of two blues, so a player could tell neither without walking into it.
+     */
+    private fun pickups(
+        builder: SceneBuilder,
+        palette: Palette,
+        sim: GameSimulation,
+        camera: Camera,
+    ) {
+        val halo = builder.batch(Layer.Items, palette.glow[palette.glow.size - 1], Primitive.Dot)
+        val weapons = builder.batch(Layer.Items, palette.accent, Primitive.Rect)
+        val powerups = builder.batch(Layer.Items, palette.hazardGlow, Primitive.Rect)
+
+        sim.items.forEach { item ->
+            val weapon = item.weapon
+            val powerup = item.powerup
+            val look = when {
+                weapon != null -> PickupLook.of(weapon)
+                powerup != null -> PickupLook.of(powerup)
+                else -> return@forEach
+            }
+            val x = (item.position.x - camera.x) * ZOOM
+            val y = (item.position.y - camera.y) * ZOOM
+            val size = PICKUP_PX * look.scale
+
+            halo.dot(x, y, size * HALO)
+            // A weapon is a bar, a powerup is a block. Shape carries the kind; size carries rarity.
+            if (look.weapon) {
+                weapons.rect(x - size, y - size / 3.0, size * 2.0, size * 2.0 / 3.0)
+            } else {
+                powerups.rect(x - size * 0.7, y - size * 0.7, size * 1.4, size * 1.4)
+            }
+        }
+    }
+
+    private fun enemies(
+        builder: SceneBuilder,
+        palette: Palette,
+        sim: GameSimulation,
+        camera: Camera,
+        timeSeconds: Double,
+    ) {
+        val player = centreOfPlayer(sim)
+
+        sim.enemies.forEach { enemy ->
+            if (!enemy.alive) return@forEach
+            // The simulation anchors an enemy at the top-left of a 14 px box, in a 16 px cell whose
+            // floor is one tile below. Drawing from that anchor put a Brute's feet eight pixels
+            // under the floor and its whole figure seven pixels left of what a shot has to hit.
+            val x = (enemy.position.x + ENEMY_HALF - camera.x) * ZOOM
+            val ground = (enemy.position.y + TILE_SIZE - camera.y) * ZOOM
+            if (x < -OFF_SCREEN || x > camera.viewWidth * ZOOM + OFF_SCREEN) return@forEach
+
+            val look = EnemyLooks.of(enemy.archetype, sim.level.mapIndex)
+            val aim = engagement(enemy, look, player)
+            when (look.form) {
+                EnemyForm.Biped -> biped(builder, palette, look, enemy, aim, x, ground)
+                EnemyForm.Hover -> hover(builder, palette, look, enemy, x, ground, timeSeconds)
+                EnemyForm.Fixed -> fixed(builder, palette, look, enemy, aim, x, ground)
+            }
+        }
+    }
+
+    private fun centreOfPlayer(sim: GameSimulation) = Vec2(
+        sim.player.x + Physics.Default.width / 2.0,
+        sim.player.y + sim.player.height(Physics.Default) / 2.0,
+    )
+
+    /**
+     * Where an armed enemy is looking, as a unit vector — the player when it is close enough to
+     * fire on, and the way it is patrolling otherwise.
+     *
+     * Purely presentational: it reads the simulation and writes nothing back (ENG-062). An armed
+     * enemy that stared down its patrol line while shooting the player behind it was a promise
+     * `plan.md` §15.5 made and the first implementation did not keep. The range is the
+     * simulation's own, so what a figure looks like it is doing is what it is doing.
+     */
+    private fun engagement(enemy: LiveEnemy, look: EnemyLook, player: Vec2): Vec2 {
+        val patrol = Vec2(enemy.facing.toDouble(), 0.0)
+        if (!look.armed) return patrol
+        val offset = player - Vec2(enemy.position.x + ENEMY_HALF, enemy.position.y + ENEMY_HALF)
+        val range = GameSimulation.SHOOTER_RANGE
+        if (offset.lengthSquared > range * range) return patrol
+        return offset.normalisedOr(patrol)
+    }
+
+    private fun biped(
+        builder: SceneBuilder,
+        palette: Palette,
+        look: EnemyLook,
+        enemy: LiveEnemy,
+        aim: Vec2,
+        x: Double,
+        ground: Double,
+    ) {
+        // A shooter turns to face what it is shooting at; everything else walks its patrol. The
+        // full direction goes to the pose, not just its sign — a shooter firing upward has to look
+        // like it, since its projectile leaves on that diagonal.
+        val facing = if (aim.x < 0.0) -1 else 1
+        val pose = Actor.pose(
+            Motion(
+                speedX = enemy.facing * look.strideRate * REFERENCE_SPEED,
+                onGround = true,
+                facing = facing,
+                stridePx = enemy.stridePx * look.strideRate,
+                weaponAim = if (look.armed) aim else null,
+                scale = look.height / Physics.Default.standingHeight,
+            ),
+        )
+        figure(builder, palette, pose, x, ground, look, Palettes.ENEMY_BODY)
+    }
+
+    /** A legless pod. Nothing else in the game leaves the ground, so nothing else reads like it. */
+    private fun hover(
+        builder: SceneBuilder,
+        palette: Palette,
+        look: EnemyLook,
+        enemy: LiveEnemy,
+        x: Double,
+        ground: Double,
+        timeSeconds: Double,
+    ) {
+        val size = look.height * ZOOM
+        val bob = TrigTable.sinDegrees(timeSeconds * HOVER_DEGREES_PER_SECOND) * size * HOVER_BOB
+        // Held clear of the floor rather than resting on it: nothing else in the game does that,
+        // and it is the whole reason the pod reads as airborne.
+        val centreY = ground - size * (POD_HEIGHT + HOVER_CLEARANCE) + bob
+        // Banking: the thrust trails the direction of travel, which is what a hovering thing does
+        // to move sideways and the only cue that distinguishes drifting left from drifting right.
+        val bank = -enemy.facing * size * HOVER_BANK
+
+        builder.batch(Layer.Actors, Palettes.ENEMY_BODY, Primitive.Rect)
+            .rect(x - size * look.bulk / 2.0, centreY, size * look.bulk, size * POD_HEIGHT)
+        plating(builder, look, x, centreY, size)
+        builder.batch(Layer.ActorGlow, palette.glow[look.glowTone], Primitive.Dot)
+            .dot(x + enemy.facing * size * EYE_OFFSET, centreY + size * POD_HEIGHT / 2.0, size * EYE)
+        // Thruster plumes, which is the whole reason it reads as airborne rather than as a floating
+        // block: two short segments under it, angled outward.
+        val plume = builder.batch(
+            Layer.ActorFront, palette.accent, Primitive.Segment, strokeWidth(size * PLUME_WIDTH),
+        )
+        plume.segment(
+            x - size * PLUME_SPREAD, centreY + size * POD_HEIGHT,
+            x - size * PLUME_SPREAD * 1.6 + bank, centreY + size * (POD_HEIGHT + PLUME_LENGTH),
+        )
+        plume.segment(
+            x + size * PLUME_SPREAD, centreY + size * POD_HEIGHT,
+            x + size * PLUME_SPREAD * 1.6 + bank, centreY + size * (POD_HEIGHT + PLUME_LENGTH),
+        )
+    }
+
+    /** A fixed base with a sweeping head. Nothing else in the game is bolted down. */
+    private fun fixed(
+        builder: SceneBuilder,
+        palette: Palette,
+        look: EnemyLook,
+        enemy: LiveEnemy,
+        aim: Vec2,
+        x: Double,
+        ground: Double,
+    ) {
+        val size = look.height * ZOOM
+        val baseHeight = size * BASE_HEIGHT
+        val feet = ground
+
+        builder.batch(Layer.Actors, Palettes.ENEMY_DARK, Primitive.Rect)
+            .rect(
+                x - size * look.bulk * BASE_WIDTH, feet - baseHeight,
+                size * look.bulk * BASE_WIDTH * 2.0, baseHeight,
+            )
+        // Behind the head, so it reads as emerging from the housing rather than bolted onto it.
+        val head = feet - baseHeight - size * TURRET_HEAD / 2.0
+        // The head sweeps: the barrel follows whatever the emplacement is tracking, rather than
+        // pointing along a patrol direction a bolted-down thing never has.
+        builder.batch(
+            Layer.ActorBehind, Palettes.ENEMY_PLATE, Primitive.Segment,
+            strokeWidth(size * BARREL_WIDTH),
+        ).segment(x, head, x + aim.x * size * BARREL, head + aim.y * size * BARREL)
+        builder.batch(Layer.ActorHead, Palettes.ENEMY_BODY, Primitive.Rect)
+            .rect(
+                x - size * TURRET_HEAD / 2.0, head - size * TURRET_HEAD / 2.0,
+                size * TURRET_HEAD, size * TURRET_HEAD,
+            )
+        plating(builder, look, x, head - size * TURRET_HEAD / 2.0, size)
+        builder.batch(Layer.ActorGlow, palette.glow[look.glowTone], Primitive.Dot)
+            .dot(x + aim.x * size * EYE_OFFSET, head + aim.y * size * EYE_OFFSET, size * EYE)
+    }
+
+    /**
+     * Draws a posed figure.
+     *
+     * Every limb is one stroked segment, so a whole figure is six segments, two rectangles and two
+     * dots — and all of them land in batches shared with every other figure on screen.
+     */
+    private fun figure(
+        builder: SceneBuilder,
+        palette: Palette,
+        pose: Pose,
+        originX: Double,
+        originY: Double,
+        look: EnemyLook?,
+        bodyStyle: String,
+        limbStyle: String = Palettes.ENEMY_DARK,
+        trimStyle: String = Palettes.ENEMY_PLATE,
+        armStyle: String = Palettes.ENEMY_PLATE,
+        eyeStyle: String? = null,
+    ) {
+        val bulk = look?.bulk ?: 1.0
+        val thickness = pose.height * ZOOM * LIMB * bulk
+
+        // Three widths per figure, snapped, so a crowd of actors shares three batches rather than
+        // breaking the stroke path once per limb.
+        val legWidth = strokeWidth(thickness)
+        val armWidth = strokeWidth(thickness * ARM)
+        val torsoWidth = strokeWidth(thickness * TORSO * bulk)
+
+        val legs = builder.batch(Layer.ActorBehind, limbStyle, Primitive.Segment, legWidth)
+        val rearArms = builder.batch(Layer.ActorBehind, limbStyle, Primitive.Segment, armWidth)
+        val body = builder.batch(Layer.Actors, bodyStyle, Primitive.Segment, torsoWidth)
+        // Arms get their own tone. Drawn in the body's colour they simply disappeared into the
+        // torso, so the weapon read as floating unattached in front of the figure.
+        val arms = builder.batch(Layer.ActorFront, armStyle, Primitive.Segment, armWidth)
+
+        fun link(from: Vec2, to: Vec2, batch: DrawBatch) {
+            batch.segment(
+                originX + from.x * ZOOM, originY + from.y * ZOOM,
+                originX + to.x * ZOOM, originY + to.y * ZOOM,
+            )
+        }
+
+        // Legs first, so the torso overlaps them rather than the other way round.
+        link(pose.hip, pose.leadKnee, legs)
+        link(pose.leadKnee, pose.leadFoot, legs)
+        link(pose.hip, pose.rearKnee, legs)
+        link(pose.rearKnee, pose.rearFoot, legs)
+        link(pose.hip, pose.neck, body)
+        link(pose.rearShoulder, pose.rearElbow, rearArms)
+        link(pose.rearElbow, pose.rearHand, rearArms)
+        link(pose.leadShoulder, pose.leadElbow, arms)
+        link(pose.leadElbow, pose.leadHand, arms)
+
+        val headX = originX + pose.head.x * ZOOM
+        val headY = originY + pose.head.y * ZOOM
+        val headRadius = pose.headRadius * ZOOM * (look?.headScale ?: 1.0)
+        builder.batch(Layer.ActorHead, bodyStyle, Primitive.Dot).dot(headX, headY, headRadius)
+
+        val glow = eyeStyle ?: palette.glow[look?.glowTone ?: palette.glow.size - 1]
+        builder.batch(Layer.ActorGlow, glow, Primitive.Dot).dot(
+            headX + headRadius * EYE_LEAD * (if (pose.leadHand.x >= pose.hip.x) 1.0 else -1.0),
+            headY,
+            headRadius * EYE_SIZE,
+        )
+
+        if (look != null) {
+            // Centred on the torso, not on the head: the head carries the figure's forward lean,
+            // so plating hung off it slid ahead of the body it is supposed to be armouring.
+            val torsoX = originX + (pose.hip.x + pose.neck.x) / 2.0 * ZOOM
+            plating(builder, look, torsoX, originY - pose.height * ZOOM, pose.height * ZOOM)
+        }
+
+        if (look != null && look.armed) {
+            builder.batch(Layer.ActorFront, trimStyle, Primitive.Segment, armWidth).segment(
+                originX + pose.leadHand.x * ZOOM,
+                originY + pose.leadHand.y * ZOOM,
+                originX + (pose.leadHand.x + pose.weaponAim.x * pose.height * BARREL_REACH) * ZOOM,
+                originY + (pose.leadHand.y + pose.weaponAim.y * pose.height * BARREL_REACH) * ZOOM,
+            )
+        }
+    }
+
+    /**
+     * Armour and protrusions, which is where an enemy's toughness is actually visible (PROD-042).
+     *
+     * Both counts come from [EnemyLook], which derives them from the health the enemy carries, so a
+     * tougher enemy is plated and spiked without this code knowing anything about difficulty.
+     */
+    private fun plating(
+        builder: SceneBuilder,
+        look: EnemyLook,
+        centreX: Double,
+        topY: Double,
+        size: Double,
+    ) {
+        if (look.plates > 0) {
+            val plates = builder.batch(Layer.ActorTrim, Palettes.ENEMY_PLATE, Primitive.Rect)
+            repeat(look.plates) { index ->
+                val width = size * PLATE_WIDTH * look.bulk
+                plates.rect(
+                    centreX - width / 2.0,
+                    topY + size * PLATE_TOP + index * size * PLATE_PITCH,
+                    width,
+                    size * PLATE_HEIGHT,
+                )
+            }
+        }
+        if (look.spikes > 0) {
+            val spikes = builder.batch(
+                Layer.ActorTrim, Palettes.ENEMY_PLATE, Primitive.Segment,
+                strokeWidth(size * SPIKE_WIDTH),
+            )
+            repeat(look.spikes) { index ->
+                val side = if (index % 2 == 0) -1.0 else 1.0
+                val y = topY + size * (PLATE_TOP + index * SPIKE_PITCH)
+                spikes.segment(
+                    centreX + side * size * SPIKE_BASE,
+                    y,
+                    centreX + side * size * SPIKE_TIP,
+                    y - size * SPIKE_RISE,
+                )
+            }
+        }
+    }
+
+    private fun bosses(
+        builder: SceneBuilder,
+        palette: Palette,
+        sim: GameSimulation,
+        camera: Camera,
+    ) {
+        listOf(sim.miniboss to false, sim.boss to true).forEach { (live, isMain) ->
+            if (live.fight.defeated) return@forEach
+            val look = EnemyLooks.boss(sim.level.mapIndex, isMain)
+            val x = (live.position.x - camera.x) * ZOOM
+            val feet = (live.position.y - camera.y) * ZOOM
+
+            val pose = Actor.pose(
+                Motion(
+                    speedX = 0.0,
+                    onGround = true,
+                    facing = if (sim.player.x < live.position.x) -1 else 1,
+                    scale = look.height / Physics.Default.standingHeight,
+                ),
+            )
+            val body = when {
+                live.telegraphing -> palette.hazardGlow
+                !live.fight.vulnerable -> Palettes.ENEMY_DARK
+                else -> palette.accent
+            }
+            figure(builder, palette, pose, x, feet, look, body)
+            crown(builder, palette, look, x, feet - look.height * ZOOM)
+            healthBar(builder, palette, x, feet - look.height * ZOOM - BAR_GAP, look.height * ZOOM, live)
+        }
+    }
+
+    /** What makes a boss unmistakable at a glance. Nothing else in the game wears one. */
+    private fun crown(
+        builder: SceneBuilder,
+        palette: Palette,
+        look: EnemyLook,
+        centreX: Double,
+        topY: Double,
+    ) {
+        val size = look.height * ZOOM
+        val batch = builder.batch(
+            Layer.ActorTrim, palette.glow[palette.glow.size - 1], Primitive.Segment,
+            strokeWidth(size * CROWN_WIDTH),
+        )
+        repeat(look.crown) { index ->
+            val offset = (index - (look.crown - 1) / 2.0) * size * CROWN_PITCH
+            batch.segment(
+                centreX + offset, topY,
+                centreX + offset, topY - size * CROWN_HEIGHT,
+            )
+        }
+    }
+
+    private fun healthBar(
+        builder: SceneBuilder,
+        palette: Palette,
+        centreX: Double,
+        y: Double,
+        width: Double,
+        live: LiveBoss,
+    ) {
+        builder.batch(Layer.Effects, Palettes.ENEMY_DARK, Primitive.Rect)
+            .rect(centreX - width / 2.0, y, width, BAR_HEIGHT)
+        builder.batch(Layer.Effects, palette.hazardGlow, Primitive.Rect)
+            .rect(centreX - width / 2.0, y, width * live.healthFraction, BAR_HEIGHT)
+    }
+
+    private fun projectiles(
+        builder: SceneBuilder,
+        palette: Palette,
+        sim: GameSimulation,
+        camera: Camera,
+    ) {
+        val mine = builder.batch(Layer.Effects, palette.glow[palette.glow.size - 1], Primitive.Dot)
+        val theirs = builder.batch(Layer.Effects, palette.hazard, Primitive.Dot)
+        sim.projectiles.forEach { shot ->
+            val batch = if (shot.fromPlayer) mine else theirs
+            batch.dot(
+                (shot.position.x - camera.x) * ZOOM,
+                (shot.position.y - camera.y) * ZOOM,
+                shot.radius * ZOOM * SHOT_SCALE,
+            )
+        }
+    }
+
+    /** The swing arc (PROD-033), as bars along the arc — no path API and no transform. */
+    private fun swing(
+        builder: SceneBuilder,
+        palette: Palette,
+        sim: GameSimulation,
+        camera: Camera,
+        muzzle: Vec2,
+    ) {
+        val swing = sim.lastSwing ?: return
+        val batch = builder.batch(
+            Layer.Effects, palette.hazardGlow, Primitive.Segment, strokeWidth(SWING_WIDTH),
+        )
+        val half = swing.arcDegrees / 2.0
+        val reach = swing.reachPx * swing.strength
+
+        var previous: Vec2? = null
+        for (step in 0..SWING_SEGMENTS) {
+            val offset = -half + swing.arcDegrees * step / SWING_SEGMENTS
+            val direction = TrigTable.rotate(swing.direction, offset)
+            // Drawn from where the hand is now rather than where it was on the tick the swing
+            // resolved: over the 0.16 s it lingers a running player travels nearly 40 px, and an
+            // arc left behind in world space visibly detaches from the figure that made it. The
+            // direction and reach are the ones that actually resolved damage.
+            val point = Vec2(
+                (muzzle.x + direction.x * reach - camera.x) * ZOOM,
+                (muzzle.y + direction.y * reach - camera.y) * ZOOM,
+            )
+            previous?.let { batch.segment(it.x, it.y, point.x, point.y) }
+            previous = point
+        }
+    }
+
+    /**
+     * Where the player is drawn this frame, in world coordinates: the middle of the body.
+     *
+     * The **feet** are interpolated, not the top-left corner. Crouching re-anchors `y` by the
+     * twelve-pixel difference between the two stance heights, so interpolating the corner and then
+     * adding the new height threw the figure a whole stance-height off the floor for the frames
+     * either side of a crouch — 42 screen pixels at this zoom. The feet are continuous across a
+     * stance change by construction, because that is the point the movement model anchors.
+     *
+     * Exposed as [drawnCentre] because the camera has to follow the same point. It did not: it
+     * followed the stance-dependent corner, so at the vertical dead-zone edge a crouch moved the
+     * whole world by that same 42 pixels while the player stood still. Fixing the figure and
+     * leaving the camera alone fixed half a defect.
+     */
+    /**
+     * The point the camera follows: the standing head height above the interpolated feet.
+     *
+     * **Not the body's centre**, which is what it followed after the round-six correction — that
+     * subtracts the *current* stance height, so crouching moved it six world pixels (21 on screen)
+     * while the feet stayed put, and at the vertical dead-zone edge the whole view lurched. This
+     * uses the standing height always, so a stance change cannot move it at all, and it reproduces
+     * the framing the camera had before any of this: the top of a standing player's head.
+     */
+    fun drawnFollow(sim: GameSimulation, alpha: Double): Vec2 =
+        Vec2(drawnMuzzle(sim, alpha).x, drawnFeet(sim, alpha) - Physics.Default.standingHeight)
+
+    private fun drawnFeet(sim: GameSimulation, alpha: Double): Double {
+        val physics = Physics.Default
+        val previousFeet = sim.previousPlayer.y + sim.previousPlayer.height(physics)
+        val feet = sim.player.y + sim.player.height(physics)
+        return previousFeet + (feet - previousFeet) * alpha
+    }
+
+    private fun drawnMuzzle(sim: GameSimulation, alpha: Double): Vec2 {
+        val state = sim.player
+        val previous = sim.previousPlayer
+        val physics = Physics.Default
+        val previousFeet = previous.y + previous.height(physics)
+        val feet = previousFeet + (state.y + state.height(physics) - previousFeet) * alpha
+        return Vec2(
+            previous.x + (state.x - previous.x) * alpha + physics.width / 2.0,
+            feet - state.height(physics) / 2.0,
+        )
+    }
+
+    private fun player(
+        builder: SceneBuilder,
+        palette: Palette,
+        sim: GameSimulation,
+        camera: Camera,
+        muzzle: Vec2,
+    ) {
+        val state = sim.player
+        val pose = Actor.pose(motionOf(sim))
+        val x = (muzzle.x - camera.x) * ZOOM
+        val feet = (muzzle.y + state.height(Physics.Default) / 2.0 - camera.y) * ZOOM
+
+        figure(
+            builder, palette, pose, x, feet,
+            look = null,
+            bodyStyle = PLAYER_BODY,
+            limbStyle = PLAYER_LIMB,
+            trimStyle = palette.accent,
+            armStyle = PLAYER_ARM,
+            // Fixed rather than themed. The player has to be the one figure on screen that is never
+            // in doubt, and against a dark map full of enemies in the same faction colours a themed
+            // eye put them in the same read as everything trying to kill them.
+            eyeStyle = PLAYER_EYE,
+        )
+
+        sim.lastShot?.let { flash ->
+            val hand = Vec2(x + pose.leadHand.x * ZOOM, feet + pose.leadHand.y * ZOOM)
+            builder.batch(Layer.Effects, palette.glow[palette.glow.size - 1], Primitive.Dot)
+                .dot(hand.x, hand.y, FLASH_PX * flash.strength)
+            builder.batch(
+                Layer.Effects, palette.hazardGlow, Primitive.Segment, strokeWidth(FLASH_WIDTH),
+            ).segment(
+                hand.x, hand.y,
+                hand.x + flash.direction.x * FLASH_REACH * flash.strength,
+                hand.y + flash.direction.y * FLASH_REACH * flash.strength,
+            )
+        }
+    }
+
+    /** What the player's rig needs, read off the simulation and nothing else (ENG-062). */
+    fun motionOf(sim: GameSimulation): Motion {
+        val state = sim.player
+        return Motion(
+            speedX = state.vx,
+            verticalSpeed = state.vy,
+            onGround = state.onGround,
+            crouched = state.stance == io.github.ksean.cyberslop.physics.Stance.Crouch,
+            facing = sim.facing,
+            stridePx = sim.playerStridePx,
+            secondsSinceShot = sim.lastShot
+                ?.let { it.totalSeconds - it.secondsLeft } ?: Double.MAX_VALUE,
+            secondsSinceSwing = sim.lastSwing
+                ?.let { it.totalSeconds - it.secondsLeft } ?: Double.MAX_VALUE,
+            // The simulation's own windows, so the arm finishes its sweep on the tick the swing
+            // stops being drawn rather than snapping back partway through it.
+            shotSeconds = sim.lastShot?.totalSeconds ?: Actor.FIRE_SECONDS,
+            swingSeconds = sim.lastSwing?.totalSeconds ?: Actor.SWING_SECONDS,
+            swingDirection = sim.lastSwing?.direction ?: Vec2.Right,
+            // The weapon points where the game is aiming it. The player never chooses a direction,
+            // so the held weapon is the only thing that tells them what has been locked onto.
+            weaponAim = sim.aimDirection,
+        )
+    }
+
+    /**
+     * The corridor the spine swept, for development.
+     *
+     * Here rather than in the browser layer for the same reason as everything else: it is geometry
+     * and a colour, and the renderer is not allowed to choose either (ENG-060).
+     */
+    private fun masks(builder: SceneBuilder, level: Level, camera: Camera) {
+        val first = (TileMap.toTile(camera.x) - 1).coerceAtLeast(0)
+        val last = (TileMap.toTile(camera.x + camera.viewWidth) + 1)
+            .coerceAtMost(level.widthTiles - 1)
+        val top = (TileMap.toTile(camera.y) - 1).coerceAtLeast(0)
+        val bottom = (TileMap.toTile(camera.y + camera.viewHeight) + 1)
+            .coerceAtMost(level.tiles.height - 1)
+
+        val batch = builder.batch(Layer.Debug, ARC_MASK, Primitive.Rect)
+        val size = TILE_SIZE * ZOOM
+        for (x in first..last) {
+            for (y in top..bottom) {
+                if (!level.arcMask[x, y]) continue
+                batch.rect(
+                    (TileMap.toWorld(x) - camera.x) * ZOOM,
+                    (TileMap.toWorld(y) - camera.y) * ZOOM,
+                    size,
+                    size,
+                )
+            }
+        }
+    }
+
+    // ---- heads-up display --------------------------------------------------------------------
+
+    private fun hud(
+        builder: SceneBuilder,
+        palette: Palette,
+        model: HudModel,
+        width: Double,
+        height: Double,
+    ) {
+        val panel = builder.batch(Layer.Hud, HUD_BACK, Primitive.Rect)
+        val barWidth = width * HUD_BAR_FRACTION
+
+        panel.rect(HUD_MARGIN, HUD_MARGIN, barWidth, HUD_BAR_HEIGHT)
+        builder.batch(Layer.HudOverlay, HUD_HEALTH, Primitive.Rect)
+            .rect(HUD_MARGIN, HUD_MARGIN, barWidth * model.healthFraction, HUD_BAR_HEIGHT)
+
+        builder.text(
+            TextItem(
+                "${model.health}/${model.maxHealth}",
+                HUD_MARGIN + HUD_TEXT_INSET,
+                HUD_MARGIN + HUD_BAR_HEIGHT - HUD_TEXT_INSET,
+                HUD_SMALL, HUD_TEXT, bold = true,
+            ),
+        )
+        builder.text(
+            TextItem(
+                model.weaponName,
+                HUD_MARGIN,
+                HUD_MARGIN + HUD_BAR_HEIGHT + HUD_LINE,
+                HUD_BODY, palette.accent, bold = true,
+            ),
+        )
+        builder.text(
+            TextItem(
+                "Map ${model.mapIndex}/${model.mapCount} — ${model.themeName}",
+                width - HUD_MARGIN,
+                HUD_MARGIN + HUD_LINE,
+                HUD_BODY, HUD_TEXT, TextAlign.Right,
+            ),
+        )
+        builder.text(
+            TextItem(
+                "Scrap ${model.scrap}",
+                width - HUD_MARGIN,
+                HUD_MARGIN + HUD_LINE * 2,
+                HUD_SMALL, palette.glow[palette.glow.size - 1], TextAlign.Right,
+            ),
+        )
+
+        // The build, which the HUD never showed at all — in a game whose progression is loot.
+        val empty = builder.batch(Layer.Hud, HUD_BACK, Primitive.Rect)
+        val pips = builder.batch(Layer.HudOverlay, palette.accent, Primitive.Rect)
+        model.powerups.forEachIndexed { index, stack ->
+            val y = HUD_MARGIN + HUD_BAR_HEIGHT + HUD_LINE * (index + 2)
+            builder.text(TextItem(stack.name, HUD_MARGIN, y, HUD_SMALL, HUD_TEXT))
+            repeat(io.github.ksean.cyberslop.loot.Powerup.MAX_STACKS) { pip ->
+                val batch = if (pip < stack.stacks) pips else empty
+                batch.rect(
+                    HUD_MARGIN + HUD_PIP_X + pip * (HUD_PIP + HUD_PIP_GAP),
+                    y - HUD_PIP,
+                    HUD_PIP,
+                    HUD_PIP,
+                )
+            }
+        }
+
+        model.bossName?.let { name ->
+            val barLeft = width / 2.0 - width * BOSS_BAR_FRACTION / 2.0
+            val barTop = height - HUD_MARGIN - HUD_BAR_HEIGHT
+            builder.batch(Layer.Hud, HUD_BACK, Primitive.Rect)
+                .rect(barLeft, barTop, width * BOSS_BAR_FRACTION, HUD_BAR_HEIGHT)
+            builder.batch(Layer.HudOverlay, palette.hazardGlow, Primitive.Rect)
+                .rect(
+                    barLeft, barTop,
+                    width * BOSS_BAR_FRACTION * model.bossFraction, HUD_BAR_HEIGHT,
+                )
+            builder.text(
+                TextItem(
+                    name, width / 2.0, barTop - HUD_TEXT_INSET,
+                    HUD_BODY, palette.hazardGlow, TextAlign.Centre, bold = true,
+                ),
+            )
+        }
+    }
+
+    private val STROKE_LADDER = doubleArrayOf(
+        1.5, 2.0, 2.75, 3.5, 4.5, 6.0, 8.0, 10.5, 14.0, 18.0, 24.0, 32.0, 42.0, 56.0,
+    )
+
+    // Layout and proportion. Everything here is either a screen pixel or a fraction of a figure.
+    private const val BACKDROP_HORIZON = 0.72
+    private const val WINDOW_INSET = 0.30
+    private const val WINDOW_FILL = 0.34
+
+    /**
+     * How much of the camera's vertical travel the skyline takes, and how far it may ever slide.
+     *
+     * Un-damped, the horizon left the screen entirely the first time the player dropped down a
+     * shaft: the backdrop is the far distance, and the far distance does not swing through a third
+     * of the view because someone fell two tiles.
+     */
+    private const val VERTICAL_PARALLAX = 0.30
+    private const val VERTICAL_LIMIT = 0.18
+    private const val HAZE_PX = 6.0
+    private const val EDGE_PX = 4.0
+    private const val SEAM_PX = 2.0
+    private const val ARENA_PX = 3.0
+    private const val JET_OUTER = 0.75
+    private const val JET_CORE = 0.3
+    private const val JET_POOL = 2.6
+    private const val JET_POOL_HEIGHT = 0.18
+    private const val PICKUP_PX = 5.0
+    private const val HALO = 1.6
+    private const val OFF_SCREEN = 120.0
+    private const val REFERENCE_SPEED = 70.0
+
+    /** Matches the simulation's own enemy half-extent, used to find an enemy's centre. */
+    private const val ENEMY_HALF = 7.0
+    private const val LIMB = 0.09
+    private const val TORSO = 2.0
+    private const val ARM = 0.8
+    private const val EYE_LEAD = 0.45
+    private const val EYE_SIZE = 0.35
+    private const val BARREL_REACH = 0.5
+    private const val PLATE_WIDTH = 0.34
+    private const val PLATE_HEIGHT = 0.05
+    private const val PLATE_TOP = 0.26
+    private const val PLATE_PITCH = 0.09
+    private const val SPIKE_PITCH = 0.11
+    private const val SPIKE_BASE = 0.10
+    private const val SPIKE_TIP = 0.26
+    private const val SPIKE_RISE = 0.12
+    private const val SPIKE_WIDTH = 0.04
+    private const val HOVER_DEGREES_PER_SECOND = 220.0
+    private const val HOVER_BOB = 0.18
+    private const val HOVER_BANK = 0.20
+    private const val HOVER_CLEARANCE = 0.30
+    private const val POD_HEIGHT = 0.55
+    private const val EYE_OFFSET = 0.22
+    private const val EYE = 0.13
+    private const val PLUME_SPREAD = 0.24
+    private const val PLUME_LENGTH = 0.34
+    private const val PLUME_WIDTH = 0.10
+    private const val BASE_HEIGHT = 0.42
+    private const val BASE_WIDTH = 0.42
+    private const val TURRET_HEAD = 0.52
+    private const val BARREL = 0.7
+    private const val BARREL_WIDTH = 0.14
+    private const val CROWN_PITCH = 0.11
+    private const val CROWN_HEIGHT = 0.16
+    private const val CROWN_WIDTH = 0.05
+    private const val BAR_GAP = 10.0
+    private const val BAR_HEIGHT = 6.0
+    private const val SHOT_SCALE = 0.7
+    private const val SWING_SEGMENTS = 10
+    private const val SWING_WIDTH = 4.0
+    private const val FLASH_PX = 7.0
+    private const val FLASH_REACH = 22.0
+    private const val FLASH_WIDTH = 3.0
+
+    /**
+     * The player's own colours, fixed rather than themed.
+     *
+     * They are public because they are how the player is identified — by a viewer glancing at the
+     * screen, and by a test picking the player's own geometry out of a composed frame.
+     */
+    const val PLAYER_BODY = "#4a6a86"
+    const val PLAYER_LIMB = "#2a3a4a"
+    const val PLAYER_ARM = "#38566d"
+    const val PLAYER_EYE = "#67e8f9"
+
+    /** The development overlay's colour. Never part of what a player sees. */
+    private const val ARC_MASK = "#1e3a5f"
+    private const val HUD_BACK = "#0d1018"
+    private const val HUD_HEALTH = "#39d98a"
+    private const val HUD_TEXT = "#c7d2e0"
+    private const val HUD_MARGIN = 16.0
+    private const val HUD_BAR_HEIGHT = 16.0
+    private const val HUD_BAR_FRACTION = 0.22
+    private const val BOSS_BAR_FRACTION = 0.44
+    private const val HUD_LINE = 18.0
+    private const val HUD_BODY = 14.0
+    private const val HUD_SMALL = 11.0
+    private const val HUD_TEXT_INSET = 4.0
+    private const val HUD_PIP_X = 132.0
+    private const val HUD_PIP = 7.0
+    private const val HUD_PIP_GAP = 3.0
+
+}

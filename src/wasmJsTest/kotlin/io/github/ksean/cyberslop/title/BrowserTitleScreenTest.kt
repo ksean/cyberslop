@@ -64,6 +64,28 @@ class BrowserTitleScreenTest {
         assertEquals(listOf(TitleScreenAction.ContinueGame, TitleScreenAction.NewGame), chosen)
     }
 
+    /**
+     * PROD-048 restyled these screens. The restyle must not have cost the keyboard path or the
+     * accessible names PROD-004 requires, and decoration must not be reachable by tabbing.
+     */
+    @Test
+    fun `the restyle adds nothing to the keyboard path`() {
+        renderTitleScreen(root, stateWithSavedGame(available = true))
+
+        val tagline = root.querySelector(".tagline") as? HTMLElement
+        assertEquals("Ten maps. One way out.", tagline?.textContent)
+        assertEquals(
+            -1,
+            tagline?.tabIndex ?: -1,
+            "the tagline is focusable, so it sits between the title and the first action",
+        )
+        assertEquals(
+            listOf("Continue game", "New game"),
+            buttonNames(),
+            "the restyle changed what the actions are called",
+        )
+    }
+
     private fun stateWithSavedGame(available: Boolean): TitleScreenState =
         createTitleScreenState(SavedGameAvailability { available })
 

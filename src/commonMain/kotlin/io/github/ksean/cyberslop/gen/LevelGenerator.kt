@@ -105,9 +105,24 @@ object LevelGenerator {
                 continue
             }
 
+            // Only now, from the footholds the replay just proved. A pickup is placed on ground the
+            // witness stood on rather than on a mask that also holds abandoned proposals; and it is
+            // placed *after* the replay because the replay is what produces the proof.
+            //
+            // This is the one field that differs between the object replayed and the object
+            // returned. `WitnessReplayTest` asserts that adding pickups cannot change a replay,
+            // which is what keeps the single replay honest.
+            val withPickups = populated.withPickups(
+                StaticDrops.place(
+                    populated.level,
+                    replay.footholds,
+                    Rng.derive(attemptSeed, mapIndex, "cache"),
+                ),
+            )
+
             return GeneratedLevel(
-                populated.level,
-                populated.witness,
+                withPickups.level,
+                withPickups.witness,
                 GenerationReport(
                     attempts = attempt,
                     repairs = 0,
@@ -123,13 +138,22 @@ object LevelGenerator {
     }
 
     private class Built(val level: Level, val witness: Witness) {
-        fun withEnemies(enemies: List<io.github.ksean.cyberslop.entity.EnemySpawn>) = Built(
+        fun withEnemies(enemies: List<io.github.ksean.cyberslop.entity.EnemySpawn>) =
+            copy(enemies = enemies)
+
+        fun withPickups(pickups: List<io.github.ksean.cyberslop.world.PickupSite>) =
+            copy(pickups = pickups)
+
+        private fun copy(
+            enemies: List<io.github.ksean.cyberslop.entity.EnemySpawn> = level.enemies,
+            pickups: List<io.github.ksean.cyberslop.world.PickupSite> = level.pickups,
+        ) = Built(
             Level(
                 mapIndex = level.mapIndex, theme = level.theme, tiles = level.tiles,
                 floorMask = level.floorMask, arcMask = level.arcMask,
                 spawnColumn = level.spawnColumn, spawnRow = level.spawnRow,
                 miniboss = level.miniboss, boss = level.boss, jets = level.jets,
-                enemies = enemies, gateColumn = level.gateColumn,
+                enemies = enemies, pickups = pickups, gateColumn = level.gateColumn,
             ),
             witness,
         )

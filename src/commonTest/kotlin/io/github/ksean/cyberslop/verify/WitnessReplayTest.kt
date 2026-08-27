@@ -1,7 +1,9 @@
 package io.github.ksean.cyberslop.verify
 
 import io.github.ksean.cyberslop.gen.LevelGenerator
+import io.github.ksean.cyberslop.world.Level
 import kotlin.test.Test
+import kotlin.test.assertEquals
 import kotlin.test.assertFalse
 import kotlin.test.assertTrue
 
@@ -52,5 +54,48 @@ class WitnessReplayTest {
 
     private companion object {
         val SEED = 0xC0FFEEuL
+    }
+
+    /**
+     * The generator replays the level **before** it places static pickups, because the replay is
+     * what proves where a pickup may stand. That is only honest if a pickup cannot change a replay.
+     *
+     * The concern is not hypothetical: this project has already had a finding for replaying a
+     * different object than the one it returned. This is the assertion that keeps the single replay
+     * sound rather than the second replay that would otherwise be needed.
+     */
+    @Test
+    fun `adding pickups cannot change a replay`() {
+        val generated = LevelGenerator.generate(SEED, 1)
+        val level = generated.level
+        assertTrue(level.pickups.isNotEmpty(), "the level placed no pickups, so nothing is proved")
+
+        val bare = Level(
+            mapIndex = level.mapIndex, theme = level.theme, tiles = level.tiles,
+            floorMask = level.floorMask, arcMask = level.arcMask,
+            spawnColumn = level.spawnColumn, spawnRow = level.spawnRow,
+            miniboss = level.miniboss, boss = level.boss, jets = level.jets,
+            enemies = level.enemies, pickups = emptyList(), gateColumn = level.gateColumn,
+        )
+
+        val withPickups = WitnessReplay.replay(level, generated.witness)
+        val without = WitnessReplay.replay(bare, generated.witness)
+
+        assertEquals(without, withPickups, "a pickup changed what the witness replay produced")
+    }
+
+    /** PROD-047's reachability, discharged by the tape rather than by a mask. */
+    @Test
+    fun `every static pickup stands on ground the witness stood on`() {
+        val generated = LevelGenerator.generate(SEED, 1)
+        val footholds = WitnessReplay.replay(generated.level, generated.witness).footholds
+
+        assertTrue(footholds.isNotEmpty(), "the replay recorded no footholds at all")
+        generated.level.pickups.forEach { site ->
+            assertTrue(
+                Foothold(site.column, site.row) in footholds,
+                "a pickup at ${site.column},${site.row} is not on the verified route",
+            )
+        }
     }
 }
