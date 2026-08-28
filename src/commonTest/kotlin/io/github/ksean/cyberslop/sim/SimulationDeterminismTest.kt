@@ -50,6 +50,36 @@ class SimulationDeterminismTest {
         mutated("items") { it.items.add(GroundItem(Vec2.Zero, null, null)) }
         mutated("bosses") { it.boss.fight.engage() }
         mutated("boss rest") { it.miniboss.restSecondsLeft += 0.1 }
+        mutated("boss melee index") { it.boss.meleeIndex++ }
+        mutated("boss ranged index") { it.boss.rangedIndex++ }
+        mutated("boss choice rng") { it.boss.rng.nextULong() }
+        mutated("lifesteal budget") { it.lifestealBudget -= 1.0 }
+        mutated("pending burst") { it.pendingBurst = PendingBurst(2, 0.05, Vec2.Right, it.autoFire.weapon) }
+        // Round-1 finding: a payload is every field spawning or landing reads, not a marker that one exists.
+        val damper = io.github.ksean.cyberslop.combat.DamagePipeline.resolve(
+            it_weapon(), io.github.ksean.cyberslop.loot.PowerupSlots.empty().collect(io.github.ksean.cyberslop.loot.PowerupId.KineticDamper).first,
+        )
+        val ricochet = io.github.ksean.cyberslop.combat.DamagePipeline.resolve(
+            it_weapon(), io.github.ksean.cyberslop.loot.PowerupSlots.empty().collect(io.github.ksean.cyberslop.loot.PowerupId.RicochetRom).first,
+        )
+        fun payloadDiffers(family: String, a: (GameSimulation) -> Unit, b: (GameSimulation) -> Unit) {
+            val left = simulate().also(a).digest()
+            val right = simulate().also(b).digest()
+            assertNotEquals(left, right, "$family is not read by the digest")
+        }
+        payloadDiffers(
+            "projectile knockback payload",
+            { it.projectiles.add(LiveProjectile(Vec2.Zero, Vec2.Right, 1.0, 0, 1.0, passesTerrain = false, fromPlayer = true, weapon = it.autoFire.weapon)) },
+            { it.projectiles.add(LiveProjectile(Vec2.Zero, Vec2.Right, 1.0, 0, 1.0, passesTerrain = false, fromPlayer = true, weapon = damper)) },
+        )
+        payloadDiffers(
+            "burst bounce payload",
+            { it.pendingBurst = PendingBurst(2, 0.05, Vec2.Right, it.autoFire.weapon) },
+            { it.pendingBurst = PendingBurst(2, 0.05, Vec2.Right, ricochet) },
+        )
+        mutated("projectile bounces") {
+            it.projectiles.add(LiveProjectile(Vec2.Zero, Vec2.Right, 1.0, 0, 1.0, passesTerrain = false, fromPlayer = true, bouncesLeft = 1))
+        }
     }
 
     /** A hit indicator is presentation only (PROD-071): it never touches the digest. */
@@ -73,6 +103,8 @@ class SimulationDeterminismTest {
         assertNotEquals(opened, sim.digest(), "a gate tile written back to solid left the digest unchanged")
     }
 
+    private fun it_weapon() = io.github.ksean.cyberslop.combat.Weapons.startingWeapon
+
     private fun simulate(): GameSimulation {
         val sim = GameSimulation(level, RunState.begin(SEED), SEED)
         repeat(TICKS) { tick ->
@@ -87,7 +119,7 @@ class SimulationDeterminismTest {
         val SEED = 0xD1CE5uL
         const val TICKS = 720
         const val RUN_TICKS = 300
-        const val GOLDEN = 7583559373744013130uL
+        const val GOLDEN = 7529129653326272212uL
 
         /** Generated once: nothing the tape does writes to the tiles, and generation is the slow part. */
         val level by lazy { LevelGenerator.generate(SEED, 1).level }

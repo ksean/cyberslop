@@ -125,8 +125,22 @@ No telegraph may be shorter than 0.4 s, enforced in the constructor. An attack d
 once, on the first tick of its active window, if the player is inside its hit condition — so each
 attack's listed dodge is the input that removes the player from that geometry, and a player who
 does nothing is hit. Between attacks the boss
-rests 0.9 s (0.8 s before its first) and walks toward the player with a gait; attacks cycle
-round-robin through the current phase's list. Bosses resist slows entirely.
+rests 0.9 s (0.8 s before its first) and walks toward the player with a gait. Bosses resist slows
+entirely.
+
+**Choosing the next attack (PROD-072).** When a rest ends the boss chooses between its phase's
+**melee** attacks (Slam, Sweep, Rush — `AttackVisual.ranged == false`) and its **ranged** ones
+(Volley) by how far the player stands, measured as the distance the hit condition uses (boss feet
+to player centre): the probability of a ranged attack is `RANGED_WEIGHT_NEAR = 0.2` at or inside
+`MELEE_REACH = 80 px` (the Slam and Sweep reach), `RANGED_WEIGHT_FAR = 0.8` at or beyond
+`RANGED_PREFERRED_PX = 128 px` (the Volley reach), and linear between. Within the chosen kind the
+attacks still cycle round-robin, each kind on its own index, so no attack of a phase starves. A
+phase that holds one kind only — every mini-boss phase, the main boss's first — has nothing to
+choose and cycles as before. The draw comes from the boss's own derived stream
+(`Rng.derive(seed, mapIndex, "boss")`, ENG-053), so it neither reads nor disturbs the loot and
+crit stream; the stream's state and both indices are in the digest (P-40). The choice never
+touches a telegraph, a hit condition or a dodge: a far player who sees a Volley telegraph still
+moves aside, and the rest between attacks is unchanged.
 
 **Awards as a floor.** The starter cache never holds the bottle it exists to replace. A main
 boss's weapon award guarantees Chromed; its two extra draws raise the odds of better and nothing
@@ -250,10 +264,18 @@ player kept the better weapon. Optional loot is genuinely required past the earl
   scrap), the auto-fire accumulator, the loot RNG state, every enemy in list order (position,
   velocity, health, facing, engagement, cooldown, wind-up and its aim, slow, stun, burn, bleed),
   every projectile in list order (position, velocity, damage, pierce, life, ownership), every ground
-  item, each boss (position, health, engagement, attack, elapsed, rest, attack index, reward flag),
+  item, the pending burst (rounds left, seconds to the next, aim, payload), each boss (position,
+  health, engagement, attack, elapsed, rest, melee and ranged attack indices, its attack-choice
+  RNG state, reward flag),
   the exit state and the elapsed tick — with doubles encoded by their IEEE bits and lists by length
   then elements. Presentation-only fields (stride distance, swing and flash visuals, aim direction)
   are excluded. After N ticks of a fixed tape on a fixed seed it matches a committed golden value on
   both targets, and a mutation test per state family changes it.
 - Shooters and turrets are at most 35 % of any map's population; every map holds at least three
   archetypes; enemies stand on the route rather than pooling at the arena.
+- **P-44** Boss attack choice: a phase-three main boss with the player inside `MELEE_REACH`
+  opens with a ranged attack in about 20 % of attacks over a long fixed-seed run (within ±5
+  points) and with the player at or beyond `RANGED_PREFERRED_PX` in about 80 %; a phase that holds
+  one kind never chooses the other; within a kind the attacks cycle in registry order; a pinned
+  seed's first twelve choices match one committed sequence on both targets; a mini-boss always Slams; every
+  telegraph, hit condition and dodge case of P-17 and P-35 is unchanged.

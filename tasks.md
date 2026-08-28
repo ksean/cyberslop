@@ -138,7 +138,7 @@ seeds the main-boss powerup is ≥ T2 and the weapon ≥ T3 (`DropTable.rollPowe
 ### DIFF-8 — Determinism digest — done
 
 `SimulationDeterminismTest` (commonTest): a 720-tick tape on map 1 matches a committed golden
-(`7583559373744013130`, re-pinned after CPS) and a mutation in each family — player/run,
+(`7529129653326272212`, re-pinned after RBH) and a mutation in each family — player/run,
 auto-fire accumulator, loot RNG, enemies, engagement, projectiles, items, bosses, boss rest — changes
 it. `GameSimulation.digest()` per P-40; `internal` hooks on `AutoFire.remaining`, `lootRng`,
 `LiveBoss.restSecondsLeft/attackIndex`; `Rng.state` readable.
@@ -388,6 +388,187 @@ decision 9 and step 10.
 - [ ] **Gate 3 reached the plan's three-round cap with round 3 still returning (non-major)
       findings**, all fixed above. As at gate 2, ENG-072 says rounds continue until one returns
       nothing load-bearing; the plan caps each gate at three. A fourth round is the user's call.
+
+### RBH — Range-aware bosses, life steal, bounce, burst fire, hurt flash, health bars (plan step 11)
+
+**Approval:** given by the user after reviewing phase one — "approve and proceed" — with no
+change to either option (the Siphon is fixed rather than duplicated; Ricochet ROM bounces off any
+terrain face). The request ("Update bosses to use ranged
+attacks more often when the player is far away, and melee attacks more often when the player is
+near. Add a weapon powerup that can steal life, a weapon powerup that causes projectiles to bounce
+when coming into contact with the floor. Machine gun type weapons should shoot multiple projectiles
+one after another in a straight line, rather than spreading by default. Enemies should briefly
+flash red when they take damage. Even non-boss enemies should have health bars when below full
+health. Implement using adversarial review") directs the implementation and the review once the
+specification below is approved; the approval is recorded on this line before any test is written.
+
+**Two findings the user should weigh before approving** (the spec takes the first option of each):
+
+1. *Life steal already exists.* Red Market Siphon (T2, 2/3.5/4.5 %) is in the registry with an
+   icon, but heals only through `applyHit` — swings, blasts, chains — while a **projectile
+   landing bypasses it** (`advanceProjectiles` → `damageEnemy`), so every ranged and psychic
+   projectile weapon steals nothing, and the 12 HP/s cap is not implemented. The spec makes the
+   Siphon steal on every hit (PROD-073). **Alternative:** keep that fix and add a second, distinct
+   powerup (e.g. life on kill) — say so and the registry grows to 19.
+2. *Ricochet ROM is dead.* "Bounces at 85 %" resolves to `ResolvedWeapon.ricochets`, which nothing
+   reads. The spec makes it the terrain-bounce powerup (PROD-074): reflect off a floor, ceiling
+   or wall, 85 % damage per bounce, 1/2/3 bounces. **Alternative:** floor-only bounces (a wall
+   still stops the shot) — say so; or a new entry and Ricochet ROM deleted.
+
+Specs amended: `product.md` PROD-072..077; `enemies.md` "Choosing the next attack", P-40 digest
+families, P-44; `combat.md` spread-vs-burst, SMG and Minigun rows, Siphon and Ricochet ROM rows,
+life steal, bounce, caps, P-45, P-46, Known gaps; `presentation.md` hurt flash, health bars, P-47;
+`plan.md` step 11.
+
+#### RBH-1 — Boss attack choice by distance (PROD-072, P-44) — done
+
+- [x] Red then green: `BossAttackChoiceTest` (5) — near 15–25 % ranged, far 75–85 %, melee cycle
+      Slam/Sweep/Rush in order, phase one and the mini-boss never Volley, same seed same
+      sequence. `LiveBoss(spec, arena, tiles, rng)` with `Rng.derive(seed, mapIndex, "boss")` /
+      `"miniboss"`; `chooseAttack` + `rangedWeight`; `meleeIndex`/`rangedIndex` replace
+      `attackIndex`; a one-kind phase draws nothing. `BossBehaviourTest` untouched and green.
+      Digest: both indices and `rng.state`; `SimulationDeterminismTest` mutation cases.
+
+#### RBH-2 — Life steal on every hit (PROD-073, P-45) — done
+
+- [x] Red then green: `LifestealTest` (9): projectile, swing, blast, chain, Thermite splash heal
+      the fraction; 4 HP per-hit cap (Kessler ×3 stacks); 12 HP per-second budget (one Kessler
+      strike over six turrets); burn ticks heal nothing; never above max; nothing without the
+      Siphon. `GameSimulation.stealLife` called from `damageEnemy` and `damageBoss` (the two
+      places every hit passes; the old `applyHit` heal deleted so nothing heals twice);
+      `lifestealBudget` refilled per tick, in the digest. Found on the way and recorded in
+      combat.md Known gaps: a projectile landing applies neither crit, falloff nor Thermite's
+      on-hit blast (pre-existing; not changed).
+
+#### RBH-3 — Terrain bounce (PROD-074, P-45) — done
+
+- [x] Red then green: `ProjectileBounceTest` (7): floor reverses `vy` keeping `vx`, 85 % damage,
+      lifetime and pierce carried, spent on the contact after the last bounce with an impact;
+      ×3 survives three; a wall reverses `vx`; a bounced shot hits a (stunned, airborne) Flyer on
+      its way back; a Neural Spike orb and an enemy shot never bounce. `ResolvedWeapon.bounces`
+      (was the dead `ricochets`), `LiveProjectile.bouncesLeft` and `damage` now `var`,
+      `GameSimulation.bounce` (axis probes `(new.x, old.y)` / `(old.x, new.y)`; a corner reverses
+      both), `BOUNCE_DAMAGE = 0.85`. Digest: `bouncesLeft`. Fixture lesson: a Turret placed in
+      mid-air falls (only Flyers ignore terrain).
+
+#### RBH-4 — Burst fire for machine guns (PROD-075, P-46) — done
+
+- [x] Red then green: `WeaponRegistryTest` burst invariant (the SMG is the only burst weapon; it
+      declares no spread and `0.05 × (3 + 2) < 0.35 × 0.75`; the Minigun no longer declares a
+      bloom it never applied); `BurstFireTest` (6): one round on the trigger tick, the rest at the
+      interval, parallel to the trigger aim while the player walks, each from the muzzle of its
+      own tick, each with a fresh flash; the Shotgun still fans five; Fork Bomb makes four; a
+      trigger with rounds pending drops them. `WeaponSpec.burstIntervalSeconds`, `PendingBurst`,
+      `GameSimulation.advanceBurst`/`spawnRound`. Digest: the pending burst. The Minigun keeps its
+      cooldown as its cadence (an interval on it could not fit its 0.042 s cooldown floor with
+      Fork Bomb) — combat.md says so.
+
+#### RBH-5 — Hurt flash and health bars (PROD-076, PROD-077, P-47) — done
+
+- [x] Red then green: `HurtFlashTest` (4, sim): a hit starts the flash, it decays to zero inside
+      the window, a burn tick does not flash, a hit boss flashes, the flash is outside the digest.
+      `HurtFlashSceneTest` (4, render): every form's figure primitives move wholly to
+      `Palettes.HURT` and the eye does not; a hurt boss flashes unless telegraphing; a 40 %
+      enemy adds exactly a back rect of `ENEMY_SIZE × ZOOM` and a 40 % fill above its figure, a
+      full one none; 600 half-hurt damaged enemies open the same batches as 10.
+      `LiveEnemy.hurtSecondsLeft/maxHealth/healthFraction`, `LiveBoss.hurtSecondsLeft`,
+      `Palettes.HURT`, `Scene.hurtOr`, `plating(style)`, `healthBar(fraction)`.
+      **Measured:** an all-hurt crowd opens one batch *fewer* (the hover body and turret base
+      rects merge), a mixed crowd up to fifteen more — a constant; `SceneTest`'s bound test now
+      half-hurts its crowd and `MAX_BATCHES` is 120 (measured 105); presentation.md and P-47
+      state the invariance as 10 vs 600 rather than "the same as untouched".
+
+#### RBH-gate — `./scripts/check.sh`, then gate 4
+
+- [x] `RoutePressureTest` / `BossPressureTest` / `ThreatScoreTest` re-measured under the new
+      boss selection: every floor-covered map (1–3) still won on every seed; route pressure per
+      map 6.1, 4.3, 8.1, 18.4, 25.5, 31.9, 32.4, 32.5, 32.6, 32.6 — thirds 6.19 → 25.26 → 32.54,
+      rising; `ThreatScore` unchanged by construction (bosses excluded). No retune.
+- [x] Check green on both targets (JVM, wasm browser tests, distribution) before gate 4; 498 JVM tests.
+- [x] Gate 4, round 1 (codex gpt-5.6-sol, high, read-only; 8 findings). Dispositions:
+  - MAJOR the digest hashed a burst payload as id + damage and a projectile payload without
+    knockback, while spawning reads pierce, reach, homing, hitbox and bounces — **confirmed**.
+    Fixed: `Digest.addPayload` encodes every resolved field for both; `SimulationDeterminismTest`
+    compares a Damper payload against a bare one and a Ricochet burst against a bare one.
+    Golden re-pinned (`7529129653326272212`).
+  - MAJOR a Railgun (23 px/tick) can cross a 16 px wall between two endpoint samples, so it
+    tunnelled before this change and would skip a bounce after it — **confirmed** (pre-existing
+    for terrain stops; the bounce inherited it). Fixed: `GameSimulation.move` walks a step in
+    pieces of at most half a tile (`MAX_PROJECTILE_STEP`); `ProjectileBounceTest` fires a 24
+    px/tick shot 4 px short of a one-tile wall, stopped without a bounce and reflected with one;
+    P-45 states the rule.
+  - MODERATE "rolling per-second cap" vs a token bucket that lets 24 HP land inside a second —
+    **confirmed** as a spec contradiction. Fixed in the spec: it is a 12 HP budget refilling at
+    12 HP/s, by design; P-45 asserts ten seconds heal ≤ 132 (`LifestealTest`, map 10 so max
+    health does not cap the fixture).
+  - MODERATE the Minigun's Fork Bomb rounds leave together, against PROD-075's "one after
+    another" — **confirmed** as a wording gap, code kept: an interval cannot fit inside the
+    Minigun's 0.042 s cooldown floor (`0.35 × 0.12`) with three Fork stacks, and a round a tick
+    later on the same line lands a tick later on the same line. PROD-075 restated: the rounds of
+    one activation; a single-round weapon satisfies it by cadence; combat.md gives the reason.
+  - MODERATE life stolen from attempted damage (overkill on a 1 HP enemy healed the cap) and
+    the budget charged for healing the player could not receive — **confirmed**. Fixed:
+    `damageEnemy`/`damageBoss` pass the damage actually taken; `stealLife` heals `min(…,
+    missing)` and spends only that. `LifestealTest` overkill and 1-HP-short cases; the tests'
+    "dealt" clamps enemy health at zero.
+  - MODERATE the SMG's first follow-up round left a tick late (`0.05 − 3/60 = 7e-18 > 0`) —
+    **confirmed**. Fixed: `BURST_EPSILON`; `BurstFireTest` asserts the exact per-tick counts
+    `1 1 1 2 2 2 3 3`; P-46 names ticks 4 and 7.
+  - MODERATE a boss's crown kept its glow through the flash — **confirmed**. Fixed:
+    `crown(style)`; `HurtFlashSceneTest` counts glow-styled `ActorTrim` primitives falling to
+    zero; presentation.md names the crown.
+  - MODERATE P-44's "same sequence on both targets" compared two runs on one target —
+    **confirmed**. Fixed: the first twelve choices of seed 9 are pinned as a literal in
+    `BossAttackChoiceTest` (commonTest, so the browser runner is held to it too).
+- [x] `./scripts/check.sh` green after round 1 (JVM, wasm, distribution).
+- [x] Gate 4, round 2 (7 findings; the reviewer confirmed seven of round 1's eight fixes complete).
+  Dispositions:
+  - MAJOR a hit landing later in the tick than the blow that killed the player healed them back
+    — **confirmed** (projectiles resolve in list order; `playerDied` is read after the tick).
+    Fixed: `stealLife` returns on `run.dead`; `LifestealTest` lands an enemy shot then a player
+    shot in one tick and asserts the death stands; combat.md says so.
+  - MODERATE round 1's rate fix left PROD-073 and the caps paragraph saying "per second" beside a
+    token bucket — **confirmed**. Fixed: PROD-073 and the caps paragraph name the budget; the
+    field's comment no longer says "rolling".
+  - MODERATE a trigger on the tick a pending round was due let that round leave first (reachable
+    via Killstreak Cache) — **confirmed**. Fixed: the tick drops the pending burst when the
+    trigger fires, before `advanceBurst`; `BurstFireTest` clears the cooldown so the trigger
+    and the due round coincide and asserts two rounds, not three; P-46 restated.
+  - MODERATE a spread weapon spanned `(n − 1)/n` of its declared angle (five pellets over 24°,
+    two nails over 6°) — **confirmed**, pre-existing, made explicit by the amended spec. Fixed:
+    the step is `spread / (n − 1)`; `BurstFireTest` measures the Shotgun's outer pellets at 30°;
+    combat.md gives the five angles.
+  - MODERATE the Railgun's and Minigun's wind-ups are declared, scored and never paid —
+    **confirmed**, pre-existing; recorded in combat.md Known gaps, not changed (outside the
+    request; the Minigun row's wind-up stays as the registry declares it).
+  - MODERATE the 60-per-weapon cap is unimplemented and enemy `fire()` bypassed the 300 cap —
+    **confirmed**, pre-existing. Fixed the bypass (`fire` withholds at the cap; `EnemyAttackTest`
+    fills the scene and proves the turret's shot is withheld); the per-weapon cap is recorded as
+    a Known gap, not implemented.
+  - MINOR the pressure re-measurement item was still open — **confirmed**. Fixed: recorded above
+    with the measured route thirds.
+- [x] `./scripts/check.sh` green after round 2 (JVM, wasm, distribution).
+- [x] Gate 4, round 3 (4 findings, none MAJOR; "no additional load-bearing implementation
+  defect found"; every round-2 fix confirmed present). Dispositions:
+  - MODERATE the Minigun's Fork Bomb rounds still leave together against PROD-075's "one after
+    another" — **rejected**, with the evidence recorded at round 1: the Minigun's activation is
+    one round and its cadence *is* the sequence; an interval on it cannot fit its 0.042 s
+    cooldown floor with three Fork stacks (a 0.05 s burst would be discarded by the next
+    trigger and lose the rounds); the request's "rather than spreading" is met — the extras
+    leave along one line. PROD-075 states the single-round case explicitly. **The user may
+    overrule**: the alternative is one Fork round per tick on the Minigun and a relaxed
+    "spent before the next trigger" invariant.
+  - MODERATE the hurt flash excludes burn and bleed ticks, narrowing "when they take damage" —
+    **rejected**: the narrowing was in the phase-one spec the user approved, with its reason
+    (a burning enemy would be red for three seconds and the flash would then mark nothing).
+  - MINOR the registry row and `stealLife`'s comment still said "12 HP/s" / "rolling" —
+    **confirmed**. Fixed: the row names the budget; the comment names the token bucket.
+  - MINOR no life-steal case targeted the boss path — **confirmed**. Fixed: `LifestealTest`
+    heals from a boss hit (capped) and from a 1 HP boss's overkill.
+- [x] `./scripts/check.sh` green after round 3 (JVM, wasm, distribution).
+- [ ] **Gate 4 closed at the plan's three-round cap.** Round 3 returned nothing load-bearing
+      in the implementation; its two MODERATE findings are rejected design decisions the user
+      may overrule (above). Per ENG-072 a fourth round is the user's call.
 
 ## Deferred
 

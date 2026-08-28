@@ -172,12 +172,18 @@ class GameSimulation(
     /** How long the player has been grounded and clear of committed columns; see [playerExposed]. */
     private var exposedSeconds: Double = LANDING_GRACE
 
+    /** The life-steal budget (PROD-073): a token bucket of 12 HP refilling at 12 HP/s, spent by each heal. */
+    internal var lifestealBudget: Double = LIFESTEAL_PER_SECOND
+
+    /** The rounds of the last machine-gun trigger still to leave (PROD-075). */
+    internal var pendingBurst: PendingBurst? = null
+
     val enemies = mutableListOf<LiveEnemy>()
     val projectiles = mutableListOf<LiveProjectile>()
     val items = mutableListOf<GroundItem>()
 
-    val miniboss = LiveBoss(Bosses.miniboss(level.mapIndex), level.miniboss, level.tiles)
-    val boss = LiveBoss(Bosses.boss(level.mapIndex), level.boss, level.tiles)
+    val miniboss = LiveBoss(Bosses.miniboss(level.mapIndex), level.miniboss, level.tiles, Rng.derive(seed, level.mapIndex, "miniboss"))
+    val boss = LiveBoss(Bosses.boss(level.mapIndex), level.boss, level.tiles, Rng.derive(seed, level.mapIndex, "boss"))
 
     /** Declared above `init`, which places static pickups and therefore draws from it. */
     private val runPool = DropTable.runPool(Rng.derive(seed, 0, "pool"), level.mapIndex)
@@ -299,7 +305,13 @@ class GameSimulation(
         // hit it: resolved after the projectiles, the tick on which the player entered a committed
         // column still carried the previous tick's exposure and could hurt.
         advanceExposure()
-        autoFire.tick(TICK_SECONDS, muzzle, aim).forEach { emit(it, muzzle, aim) }
+        refillLifesteal()
+        // A trigger discards whatever burst was pending — before a round of it due this very
+        // tick can leave, or the discard would be a tick late (P-46).
+        val shots = autoFire.tick(TICK_SECONDS, muzzle, aim)
+        if (shots.isNotEmpty()) pendingBurst = null
+        advanceBurst(muzzle)
+        shots.forEach { emit(it, muzzle, aim) }
         advanceProjectiles()
         advanceStatuses()
         advanceEnemies()
@@ -335,7 +347,11 @@ class GameSimulation(
         add(player.x); add(player.y); add(player.vx); add(player.vy)
         add(player.onGround); add(player.stance.ordinal); add(player.touchedLethal)
         add(facing); add(elapsedTicks); add(exitReached); add(exposedSeconds)
-        add(autoFire.remaining); add(lootRng.state)
+        add(autoFire.remaining); add(lootRng.state); add(lifestealBudget)
+        pendingBurst.let { b ->
+            add(b?.roundsLeft ?: -1)
+            if (b != null) { add(b.secondsToNext); add(b.direction); addPayload(b.weapon) }
+        }
         add(enemies.size)
         enemies.forEach { e ->
             add(e.position); add(e.vy); add(e.health); add(e.facing); add(e.engaged)
@@ -347,15 +363,8 @@ class GameSimulation(
         projectiles.forEach { p ->
             add(p.position); add(p.velocity); add(p.damage); add(p.pierceLeft); add(p.secondsLeft)
             add(p.passesTerrain); add(p.fromPlayer); add(p.homingTurn); add(p.homingRadius); add(p.radius)
-            // The payload a player's shot carries to its hit: every resolved field that changes what
-            // landing does, keyed by the weapon it resolved from.
-            val w = p.weapon
-            add(w?.spec?.id?.ordinal ?: -1)
-            if (w != null) {
-                add(w.damagePerProjectile); add(w.critChance); add(w.critMultiplier); add(w.chainTargets); add(w.ricochets)
-                add(w.hitboxScale); add(w.knockbackScale); add(w.stunChance); add(w.slowFraction)
-                add(w.blastFraction); add(w.igniteFraction); add(w.lifestealFraction)
-            }
+            add(p.bouncesLeft)
+            addPayload(p.weapon)
         }
         add(items.size)
         items.forEach { i ->
@@ -364,7 +373,7 @@ class GameSimulation(
         listOf(miniboss to minibossRewarded, boss to bossRewarded).forEach { (b, rewarded) ->
             add(b.position); add(b.fight.health); add(b.fight.engaged); add(b.facing); add(b.aimedX)
             add(b.currentAttack?.name?.hashCode() ?: -1); add(b.attackElapsed); add(b.restSecondsLeft)
-            add(b.attackIndex); add(rewarded)
+            add(b.meleeIndex); add(b.rangedIndex); add(b.rng.state); add(rewarded)
         }
         // The exit state is geometry: the tiles `openGate` clears, not a flag standing in for them.
         val floor = level.boss.floorRow
@@ -386,6 +395,22 @@ class GameSimulation(
         fun add(i: Int) = add(i.toLong().toULong())
         fun add(b: Boolean) = add(if (b) 1uL else 0uL)
         fun add(v: Vec2) { add(v.x); add(v.y) }
+
+        /**
+         * The build a player's shot or pending burst carries (PROD-070): every resolved field that
+         * changes what spawning or landing does, keyed by the weapon it resolved from.
+         */
+        fun addPayload(w: ResolvedWeapon?) {
+            add(w?.spec?.id?.ordinal ?: -1)
+            if (w == null) return
+            add(w.damagePerProjectile); add(w.cooldown); add(w.projectileCount); add(w.pierce)
+            add(w.critChance); add(w.critMultiplier); add(w.chainTargets); add(w.bounces)
+            val seek = w.homing as? Homing.Seek
+            add(seek?.turnDegreesPerSecond ?: 0.0); add(seek?.radiusPx ?: 0.0)
+            add(w.hitboxScale); add(w.reachScale); add(w.knockbackScale); add(w.stunChance)
+            add(w.killRefundChance); add(w.slowFraction); add(w.blastFraction); add(w.igniteFraction)
+            add(w.lifestealFraction)
+        }
     }
 
     /** Live targets for auto-aim: what is actually there now, not where things started. */
@@ -488,39 +513,69 @@ class GameSimulation(
         if (points.size > 1) showHit(HitShape.Chain(points))
     }
 
+    /**
+     * A machine gun fires one round now and queues the rest (PROD-075); anything else fans all of
+     * its projectiles at once across the spread. A new trigger always replaces a pending burst, so
+     * a burst can never carry a stale build.
+     */
     private fun spawnProjectiles(shot: Shot, origin: Vec2) {
-        if (projectiles.size >= MAX_PROJECTILES) return
         val weapon = shot.weapon
+        val interval = weapon.spec.burstIntervalSeconds
+        if (interval > 0.0) {
+            pendingBurst = PendingBurst(weapon.projectileCount - 1, interval, shot.direction, weapon)
+            spawnRound(weapon, origin, shot.direction, offsetDegrees = 0.0)
+            return
+        }
+        // Fanned evenly across the whole spread: the outermost projectiles sit on its edges.
+        val count = weapon.projectileCount
+        repeat(count) { index ->
+            val offset = if (count == 1) 0.0 else (index - (count - 1) / 2.0) * (weapon.spec.spreadDegrees / (count - 1))
+            spawnRound(weapon, origin, shot.direction, offset)
+        }
+    }
+
+    /** Fires the next pending round when it is due, from the muzzle as it is now, along the trigger aim. */
+    private fun advanceBurst(muzzle: Vec2) {
+        val burst = pendingBurst ?: return
+        val due = burst.secondsToNext - TICK_SECONDS
+        // A round due within rounding is due: three ticks off 0.05 s leaves 7e-18, not a fourth tick.
+        if (due > BURST_EPSILON) {
+            pendingBurst = burst.copy(secondsToNext = due)
+            return
+        }
+        lastShot = MuzzleFlash(burst.direction, FLASH_VISIBLE_SECONDS, FLASH_VISIBLE_SECONDS)
+        spawnRound(burst.weapon, muzzle, burst.direction, offsetDegrees = 0.0)
+        pendingBurst = if (burst.roundsLeft > 1) {
+            burst.copy(roundsLeft = burst.roundsLeft - 1, secondsToNext = due + burst.weapon.spec.burstIntervalSeconds)
+        } else {
+            null
+        }
+    }
+
+    private fun spawnRound(weapon: ResolvedWeapon, origin: Vec2, direction: Vec2, offsetDegrees: Double) {
+        if (projectiles.size >= MAX_PROJECTILES) return
         val speed = if (weapon.spec.projectileSpeed > 0.0) {
             weapon.spec.projectileSpeed * weapon.reachScale
         } else {
             DEFAULT_PROJECTILE_SPEED
         }
         val homing = weapon.homing as? Homing.Seek
-
-        repeat(weapon.projectileCount) { index ->
-            val offset = if (weapon.projectileCount == 1) {
-                0.0
-            } else {
-                (index - (weapon.projectileCount - 1) / 2.0) *
-                    (weapon.spec.spreadDegrees / weapon.projectileCount)
-            }
-            projectiles.add(
-                LiveProjectile(
-                    position = origin,
-                    velocity = TrigTable.rotate(shot.direction, offset) * speed,
-                    damage = weapon.damagePerProjectile,
-                    pierceLeft = weapon.pierce.coerceAtMost(MAX_PIERCE),
-                    secondsLeft = lifetimeOf(weapon),
-                    passesTerrain = weapon.spec.cls == WeaponClass.Psychic,
-                    fromPlayer = true,
-                    homingTurn = homing?.turnDegreesPerSecond ?: 0.0,
-                    homingRadius = homing?.radiusPx ?: 0.0,
-                    radius = PROJECTILE_RADIUS * weapon.hitboxScale,
-                    weapon = weapon,
-                ),
-            )
-        }
+        projectiles.add(
+            LiveProjectile(
+                position = origin,
+                velocity = TrigTable.rotate(direction, offsetDegrees) * speed,
+                damage = weapon.damagePerProjectile,
+                pierceLeft = weapon.pierce.coerceAtMost(MAX_PIERCE),
+                secondsLeft = lifetimeOf(weapon),
+                passesTerrain = weapon.spec.cls == WeaponClass.Psychic,
+                fromPlayer = true,
+                homingTurn = homing?.turnDegreesPerSecond ?: 0.0,
+                homingRadius = homing?.radiusPx ?: 0.0,
+                radius = PROJECTILE_RADIUS * weapon.hitboxScale,
+                weapon = weapon,
+                bouncesLeft = if (weapon.spec.cls == WeaponClass.Psychic) 0 else weapon.bounces,
+            ),
+        )
     }
 
     // ---- hit resolution -----------------------------------------------------------------------
@@ -566,10 +621,7 @@ class GameSimulation(
 
         when (target) {
             is Target.Enemy -> damageEnemy(target.enemy, amount, weapon, direction)
-            is Target.Boss -> {
-                target.boss.fight.damage(amount)
-                if (weapon.slowFraction > 0.0) Unit // Bosses resist slow entirely.
-            }
+            is Target.Boss -> damageBoss(target.boss, amount, weapon) // Bosses resist slow entirely.
         }
 
         if (weapon.blastFraction > 0.0) {
@@ -579,11 +631,32 @@ class GameSimulation(
                 }
             }
         }
+    }
 
-        val healed = amount * weapon.lifestealFraction
-        if (healed > 0.0) {
-            run = run.copy(health = (run.health + minOf(healed, LIFESTEAL_CAP)).coerceAtMost(run.maxHealth))
-        }
+    private fun damageBoss(boss: LiveBoss, amount: Double, weapon: ResolvedWeapon) {
+        val before = boss.fight.health
+        if (!boss.fight.damage(amount)) return
+        boss.hurtSecondsLeft = HURT_FLASH_SECONDS
+        stealLife(before - boss.fight.health, weapon)
+    }
+
+    /**
+     * Life steal on every hit (PROD-073): a fraction of the damage dealt, capped per hit and by
+     * the budget — a token bucket of [LIFESTEAL_PER_SECOND] refilling at that rate — and never
+     * above max health. Damage over time never arrives here.
+     */
+    private fun stealLife(dealt: Double, weapon: ResolvedWeapon) {
+        // A hit landing after the blow that killed the player in the same tick heals nobody.
+        if (run.dead) return
+        val missing = run.maxHealth - run.health
+        val healed = minOf(dealt * weapon.lifestealFraction, LIFESTEAL_CAP, lifestealBudget, missing)
+        if (healed <= 0.0) return
+        lifestealBudget -= healed
+        run = run.copy(health = run.health + healed)
+    }
+
+    private fun refillLifesteal() {
+        lifestealBudget = minOf(LIFESTEAL_PER_SECOND, lifestealBudget + LIFESTEAL_PER_SECOND * TICK_SECONDS)
     }
 
     private fun damageEnemy(
@@ -621,7 +694,10 @@ class GameSimulation(
                 direction * (weapon.spec.knockback * weapon.knockbackScale * TICK_SECONDS)
         }
 
+        val dealt = minOf(total, enemy.health)
         enemy.health -= total
+        enemy.hurtSecondsLeft = HURT_FLASH_SECONDS
+        stealLife(dealt, weapon)
         if (!enemy.alive) onKilled(enemy)
     }
 
@@ -630,13 +706,8 @@ class GameSimulation(
     private fun advanceProjectiles() {
         projectiles.forEach { projectile ->
             if (projectile.homingTurn > 0.0) steer(projectile)
-            projectile.position = projectile.position + projectile.velocity * TICK_SECONDS
             projectile.secondsLeft -= TICK_SECONDS
-
-            if (!projectile.passesTerrain && blocked(projectile.position)) {
-                projectile.secondsLeft = 0.0
-                return@forEach
-            }
+            if (!move(projectile)) return@forEach
 
             if (projectile.fromPlayer) {
                 forEachTargetNear(projectile.position, projectile.radius) { target ->
@@ -644,7 +715,7 @@ class GameSimulation(
                     when (target) {
                         is Target.Enemy ->
                             damageEnemy(target.enemy, projectile.damage, projectile.weapon ?: autoFire.weapon, projectile.velocity)
-                        is Target.Boss -> target.boss.fight.damage(projectile.damage)
+                        is Target.Boss -> damageBoss(target.boss, projectile.damage, projectile.weapon ?: autoFire.weapon)
                     }
                     projectile.pierceLeft--
                 }
@@ -657,6 +728,48 @@ class GameSimulation(
         }
         projectiles.forEach { if (it.spent) spent.add(HitIndicator(HitShape.Impact(it.position, it.velocity, it.fromPlayer), FLASH_VISIBLE_SECONDS, FLASH_VISIBLE_SECONDS)) }
         projectiles.removeAll { it.spent }
+    }
+
+    /**
+     * Moves a projectile one tick, in pieces no longer than half a tile so a fast shot cannot cross
+     * a wall between two samples (a Railgun covers 23 px a tick against 16 px tiles). Returns false
+     * where terrain spent it.
+     */
+    private fun move(projectile: LiveProjectile): Boolean {
+        val step = projectile.velocity * TICK_SECONDS
+        val pieces = maxOf(1, kotlin.math.ceil(step.length / MAX_PROJECTILE_STEP).toInt())
+        repeat(pieces) {
+            val before = projectile.position
+            projectile.position = before + projectile.velocity * (TICK_SECONDS / pieces)
+            if (projectile.passesTerrain || !blocked(projectile.position)) return@repeat
+            if (projectile.bouncesLeft > 0) {
+                bounce(projectile, before)
+            } else {
+                projectile.secondsLeft = 0.0
+                return false
+            }
+        }
+        return true
+    }
+
+    /**
+     * Reflects a projectile off the terrain it just entered (PROD-074): the axis it crossed into the
+     * solid tile along is reversed — both when it entered a corner on both — it is put back where
+     * it was before the step, and it keeps [BOUNCE_DAMAGE] of its damage.
+     */
+    private fun bounce(projectile: LiveProjectile, before: Vec2) {
+        val after = projectile.position
+        val enteredAlongX = blocked(Vec2(after.x, before.y))
+        val enteredAlongY = blocked(Vec2(before.x, after.y))
+        val corner = !enteredAlongX && !enteredAlongY
+        val v = projectile.velocity
+        projectile.velocity = Vec2(
+            if (enteredAlongX || corner) -v.x else v.x,
+            if (enteredAlongY || corner) -v.y else v.y,
+        )
+        projectile.position = before
+        projectile.damage *= BOUNCE_DAMAGE
+        projectile.bouncesLeft--
     }
 
     private fun steer(projectile: LiveProjectile) {
@@ -710,6 +823,7 @@ class GameSimulation(
     }
 
     private fun decayVisuals(enemy: LiveEnemy) {
+        enemy.hurtSecondsLeft = (enemy.hurtSecondsLeft - TICK_SECONDS).coerceAtLeast(0.0)
         enemy.lastSwing = enemy.lastSwing?.let { it.copy(secondsLeft = it.secondsLeft - TICK_SECONDS) }
             ?.takeIf { it.secondsLeft > 0.0 }
         enemy.lastShot = enemy.lastShot?.let { it.copy(secondsLeft = it.secondsLeft - TICK_SECONDS) }
@@ -770,6 +884,7 @@ class GameSimulation(
     private fun fire(enemy: LiveEnemy) {
         val shot = EnemyAttacks.SHOT
         enemy.cooldownLeft = shot.cooldownSeconds
+        if (projectiles.size >= MAX_PROJECTILES) return
         val origin = centreOfEnemy(enemy)
         val direction = (enemy.attackTarget - origin).normalisedOr(enemy.attackDirection)
         enemy.lastShot = MuzzleFlash(direction, FLASH_VISIBLE_SECONDS, FLASH_VISIBLE_SECONDS)
@@ -954,6 +1069,7 @@ class GameSimulation(
                 live.fight.engage()
             }
             val damage = live.tick(TICK_SECONDS, target)
+            live.hurtSecondsLeft = (live.hurtSecondsLeft - TICK_SECONDS).coerceAtLeast(0.0)
             if (damage > 0.0 && playerExposed()) hurt(damage)
         }
 
@@ -1181,9 +1297,17 @@ class GameSimulation(
         const val SLOW_SECONDS = 2.0
         const val STUN_SECONDS = 0.5
         const val LIFESTEAL_CAP = 4.0
+        const val LIFESTEAL_PER_SECOND = 12.0
+        /** What a projectile keeps of its damage at each terrain bounce. */
+        const val BOUNCE_DAMAGE = 0.85
+        private const val BURST_EPSILON = 1e-9
+        /** A projectile step is walked in pieces no longer than this, so no shot crosses a tile unseen. */
+        const val MAX_PROJECTILE_STEP = TILE_SIZE / 2.0
         const val FULL_CIRCLE = 360.0
         const val SWING_VISIBLE_SECONDS = 0.16
         const val FLASH_VISIBLE_SECONDS = 0.10
+        /** How long a hit enemy or boss is drawn red (PROD-076). */
+        const val HURT_FLASH_SECONDS = 0.12
         const val EXIT_CLEARANCE = 6
     }
 }

@@ -2,6 +2,7 @@ package io.github.ksean.cyberslop.sim
 
 import io.github.ksean.cyberslop.combat.ResolvedWeapon
 
+import io.github.ksean.cyberslop.core.Rng
 import io.github.ksean.cyberslop.core.Vec2
 import io.github.ksean.cyberslop.entity.AttackVisual
 import io.github.ksean.cyberslop.entity.BossAttack
@@ -76,7 +77,14 @@ class LiveEnemy(
     var lastSwing: SwingVisual? = null
     var lastShot: MuzzleFlash? = null
 
+    /** Seconds of hurt flash left (PROD-076): presentation only, outside the digest. */
+    var hurtSecondsLeft: Double = 0.0
+
+    /** What the enemy spawned with, which is what its health bar is measured against (PROD-077). */
+    val maxHealth: Double = health
+
     val alive: Boolean get() = health > 0.0
+    val healthFraction: Double get() = (health / maxHealth).coerceIn(0.0, 1.0)
     val stunned: Boolean get() = stunSecondsLeft > 0.0
     val windingUp: Boolean get() = windUpLeft > 0.0
 
@@ -108,7 +116,13 @@ data class BossTarget(val centre: Vec2, val onGround: Boolean, val crouched: Boo
  * during which nothing is dangerous, and each with a hit condition its listed dodge defeats
  * (`specs/enemies.md`).
  */
-class LiveBoss(val spec: BossSpec, val arena: Arena, private val tiles: TileMap) {
+class LiveBoss(
+    val spec: BossSpec,
+    val arena: Arena,
+    private val tiles: TileMap,
+    /** The attack-choice stream (PROD-072): the boss's own, so it never disturbs loot or crit rolls. */
+    internal val rng: Rng = Rng(0uL),
+) {
     val fight = BossFight(spec)
 
     /** The boss's feet, standing on the arena floor. */
@@ -151,10 +165,15 @@ class LiveBoss(val spec: BossSpec, val arena: Arena, private val tiles: TileMap)
     /** Distance walked, for the gait (presentational, like an enemy's), and whether it stepped this tick. */
     var stridePx: Double = 0.0
         private set
+
+    /** Seconds of hurt flash left (PROD-076): presentation only, outside the digest. */
+    var hurtSecondsLeft: Double = 0.0
     var moving: Boolean = false
         private set
 
-    internal var attackIndex = 0
+    /** Round-robin positions, one per kind, so choosing by distance starves no attack. */
+    internal var meleeIndex = 0
+    internal var rangedIndex = 0
     internal var restSecondsLeft = OPENING_REST
 
     val healthFraction: Double get() = (fight.health / spec.maxHealth).coerceIn(0.0, 1.0)
@@ -179,9 +198,7 @@ class LiveBoss(val spec: BossSpec, val arena: Arena, private val tiles: TileMap)
             approach(delta, target.centre)
             restSecondsLeft -= delta
             if (restSecondsLeft <= 0.0) {
-                val attacks = fight.currentPhase().attacks
-                currentAttack = attacks[attackIndex % attacks.size]
-                attackIndex++
+                currentAttack = chooseAttack((target.centre - position).length)
                 attackElapsed = 0.0
                 aimedX = target.centre.x
             }
@@ -205,6 +222,22 @@ class LiveBoss(val spec: BossSpec, val arena: Arena, private val tiles: TileMap)
         if (!isDangerous || wasDangerous) return 0.0
 
         return if (hits(target, attack)) attack.damage else 0.0
+    }
+
+    /**
+     * Ranged more often on a far player, melee more often on a near one (`specs/enemies.md`,
+     * "Choosing the next attack"). A phase holding one kind draws nothing from the stream.
+     */
+    private fun chooseAttack(distance: Double): BossAttack {
+        val attacks = fight.currentPhase().attacks
+        val melee = attacks.filter { !it.visual.ranged }
+        val ranged = attacks.filter { it.visual.ranged }
+        val useRanged = when {
+            melee.isEmpty() -> true
+            ranged.isEmpty() -> false
+            else -> rng.nextDouble() < rangedWeight(distance)
+        }
+        return if (useRanged) ranged[rangedIndex++ % ranged.size] else melee[meleeIndex++ % melee.size]
     }
 
     /**
@@ -258,6 +291,19 @@ class LiveBoss(val spec: BossSpec, val arena: Arena, private val tiles: TileMap)
         private const val CLOSE_ENOUGH = 8.0
         /** Half the width of the band a Volley covers around where it was aimed. */
         const val VOLLEY_WIDTH = 24.0
+
+        /** Inside the Slam and Sweep reach a ranged opener is the exception. */
+        const val MELEE_REACH = 80.0
+        /** At the Volley's reach and beyond a melee opener is. */
+        const val RANGED_PREFERRED_PX = 128.0
+        const val RANGED_WEIGHT_NEAR = 0.2
+        const val RANGED_WEIGHT_FAR = 0.8
+
+        /** Probability of a ranged attack at [distance]: linear between the two reaches. */
+        fun rangedWeight(distance: Double): Double {
+            val t = ((distance - MELEE_REACH) / (RANGED_PREFERRED_PX - MELEE_REACH)).coerceIn(0.0, 1.0)
+            return RANGED_WEIGHT_NEAR + (RANGED_WEIGHT_FAR - RANGED_WEIGHT_NEAR) * t
+        }
     }
 }
 
@@ -323,10 +369,22 @@ data class HitIndicator(
     val strength: Double get() = (secondsLeft / totalSeconds).coerceIn(0.0, 1.0)
 }
 
+/**
+ * The rounds of a machine-gun activation still to leave (PROD-075): how many, when the next is
+ * due, the aim recorded at the trigger, and the build that pulled it. Simulation state, digested.
+ */
+data class PendingBurst(
+    val roundsLeft: Int,
+    val secondsToNext: Double,
+    val direction: Vec2,
+    val weapon: ResolvedWeapon,
+)
+
 class LiveProjectile(
     var position: Vec2,
     var velocity: Vec2,
-    val damage: Double,
+    /** Falls by [GameSimulation.BOUNCE_DAMAGE] at each bounce. */
+    var damage: Double,
     var pierceLeft: Int,
     var secondsLeft: Double,
     val passesTerrain: Boolean,
@@ -336,6 +394,8 @@ class LiveProjectile(
     val radius: Double = 6.0,
     /** The build that fired a player's shot: its hit effects land as fired, whatever is held when it lands (PROD-070). */
     val weapon: ResolvedWeapon? = null,
+    /** Terrain contacts this projectile can still reflect off (PROD-074). */
+    var bouncesLeft: Int = 0,
 ) {
     val spent: Boolean get() = secondsLeft <= 0.0 || pierceLeft < 0
 }

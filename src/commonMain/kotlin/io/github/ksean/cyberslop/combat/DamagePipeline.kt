@@ -15,7 +15,8 @@ data class ResolvedWeapon(
     val critChance: Double,
     val critMultiplier: Double,
     val chainTargets: Int,
-    val ricochets: Int,
+    /** Terrain bounces a projectile survives (Ricochet ROM, PROD-074). */
+    val bounces: Int,
     val homing: Homing,
     /** Mass Driver widens what a hit covers; it does not secretly add damage. */
     val hitboxScale: Double,
@@ -88,7 +89,7 @@ object DamagePipeline {
             critChance = min(spec.critChance + slots.magnitudeOf(PowerupId.FractureLens), MAX_CRIT_CHANCE),
             critMultiplier = BASE_CRIT_MULTIPLIER + slots.magnitudeOf(PowerupId.GuillotineCodec),
             chainTargets = slots.magnitudeOf(PowerupId.ArcCascade).toInt(),
-            ricochets = slots.magnitudeOf(PowerupId.RicochetRom).toInt(),
+            bounces = slots.magnitudeOf(PowerupId.RicochetRom).toInt(),
             homing = resolveHoming(spec, slots),
             hitboxScale = 1.0 + hitboxBonus,
             reachScale = 1.0 + slots.magnitudeOf(PowerupId.RangerOptics),

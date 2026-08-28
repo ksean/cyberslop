@@ -195,6 +195,9 @@ class SceneTest {
     fun `a frame is bounded by a handful of batches`() {
         val sim = simulation()
         growTo(sim, MANY)
+        // Half the crowd hurt and all of it damaged: the hurt flash opens a red batch per figure
+        // batch kind beside the untouched ones, and every bar is on screen (PROD-076, PROD-077).
+        sim.enemies.forEachIndexed { i, e -> if (i % 2 == 0) e.hurtSecondsLeft = 0.1; e.health = e.maxHealth * 0.5 }
 
         val frame = Scene.compose(sim, camera(), backdrop(sim), hudOf(sim), 0.0, SceneBuilder())
 
@@ -1222,8 +1225,10 @@ class SceneTest {
          * the two item layers, where a rectangle used to cost 3. The ceiling is what it is because
          * the design opens a batch per ladder width per colour, and five rarity scales put eight
          * ladder widths in play; what matters is that a frame with one drop and a frame with a
-         * hundred open the same ones.
+         * hundred open the same ones. Raised again to 120 for the hurt flash (PROD-076): a frame
+         * holding hurt and unhurt figures of every form opens up to fifteen red batches beside
+         * their own, **measured** at 105 on the same worst-case frame.
          */
-        const val MAX_BATCHES = 100
+        const val MAX_BATCHES = 120
     }
 }

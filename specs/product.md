@@ -84,6 +84,10 @@ powerups collected by walking over them, and permadeath with persistent unlocks.
   tiles that, averaged over the early, middle and late thirds of the run, is strictly increasing —
   while that loadout still survives the route and wins the boss fight on every map the loot floor
   covers.
+- **PROD-072:** A boss whose current phase holds both melee and ranged attacks must choose by
+  distance: the further the player stands from it, the more often it opens with a ranged attack;
+  the nearer, the more often with a melee one. The choice is made when an attack begins and holds
+  for that attack; it never shortens a telegraph or removes a dodge.
 
 ## Weapons, powerups and loot
 
@@ -107,6 +111,18 @@ powerups collected by walking over them, and permadeath with persistent unlocks.
   the previous weapon converts to Scrap, and every powerup held is cleared and converts to Scrap.
   A guaranteed award that pairs a weapon with a powerup applies the weapon first, so the powerup
   lands on the new weapon.
+- **PROD-073:** A powerup must exist that steals life: every point of damage the held weapon
+  deals to an enemy or boss — by swing, projectile, blast, chain or splash — heals the player by a
+  fraction of it, capped per hit and by a budget that refills at a fixed rate per second, never
+  above maximum health.
+- **PROD-074:** A powerup must exist that makes the weapon's projectiles bounce: a projectile
+  that would stop against the floor (or any other terrain face) instead reflects off it, up to a
+  number of bounces the powerup sets, and goes on to hit what it meets.
+- **PROD-075:** A machine-gun weapon must fire the rounds of one activation one after another
+  along one straight line — the aim held when the trigger fell — never as a fan; a weapon whose
+  activation is already a single round (the Minigun) satisfies this by its cadence, and any
+  extra round a powerup adds to it leaves along the same line. Spread stays the mechanic of
+  weapons that are spread weapons by nature (a shotgun, a nailgun).
 - **PROD-046:** One slain rank-and-file enemy in five drops something at every map index, three in
   ten of those a weapon. Mini-bosses and main bosses award loot on every death and are outside this
   rate.
@@ -137,6 +153,10 @@ powerups collected by walking over them, and permadeath with persistent unlocks.
   every map. Across the whole archetype × map grid, armour plates and protrusions are non-decreasing
   in health; within one map, drawn size and luminance are also non-decreasing in health.
 - **PROD-043:** A boss is drawn distinctly from a trash enemy, and a mini-boss from a main boss.
+- **PROD-076:** An enemy or boss that takes a hit must flash red briefly at the moment of the hit;
+  the flash never hides a boss's telegraph colour.
+- **PROD-077:** Every living enemy below full health shows a health bar above it, as bosses
+  already do; an enemy at full health shows none.
 - **PROD-044:** A pickup on the ground shows the specific item it is and its rarity tier.
 - **PROD-045:** The HUD shows remaining health, the equipped weapon, the powerups held with their
   stack counts, and the current map index and sub-theme.

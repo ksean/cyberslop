@@ -77,6 +77,9 @@ object Palettes {
     const val ENEMY_PLATE = "#585e70"
     const val ENEMY_DARK = "#23262f"
 
+    /** What an enemy or boss is drawn in for the hurt flash (PROD-076); nothing else uses it. */
+    const val HURT = "#ff3b30"
+
     fun of(theme: ThemeId): Palette = palettes.getValue(theme)
 
     /**

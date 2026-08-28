@@ -23,6 +23,21 @@ class WeaponRegistryTest {
         assertEquals(2.0, bottle.cooldown)
     }
 
+    /** P-46: a machine gun bursts in a straight line; a burst is always spent before the next trigger. */
+    @Test
+    fun `burst weapons declare no spread and finish inside the cooldown floor`() {
+        val bursting = Weapons.all.filter { it.burstIntervalSeconds > 0.0 }
+        assertEquals(listOf(WeaponId.GanglordSmg), bursting.map { it.id })
+        bursting.forEach { spec ->
+            assertEquals(0.0, spec.spreadDegrees, "${spec.name} both bursts and spreads")
+            val longest = spec.burstIntervalSeconds * (spec.projectileCount + 3 - 1)
+            assertTrue(longest < spec.cooldown * 0.35, "${spec.name}'s burst ($longest s) outlasts its cooldown floor")
+        }
+        assertEquals(0.0, Weapons.of(WeaponId.DebtCollectorMinigun).spreadDegrees, "the minigun still blooms")
+        assertTrue(Weapons.of(WeaponId.RiotbreakerShotgun).spreadDegrees > 0.0)
+        assertTrue(Weapons.of(WeaponId.TenementNailgun).spreadDegrees > 0.0)
+    }
+
     @Test
     fun `identifiers are unique`() {
         assertEquals(Weapons.all.size, Weapons.all.map { it.id }.toSet().size)

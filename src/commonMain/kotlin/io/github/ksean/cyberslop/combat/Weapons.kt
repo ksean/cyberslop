@@ -48,7 +48,7 @@ object Weapons {
         ranged(WeaponId.TenementNailgun, "Tenement Nailgun", Tier.Street, 4.0, 0.7, 600.0,
             projectiles = 2, spread = 12.0, pierce = 1),
         ranged(WeaponId.GanglordSmg, "Ganglord SMG", Tier.Scav, 4.0, 0.75, 700.0,
-            projectiles = 3, spread = 10.0),
+            projectiles = 3, burst = 0.05),
         ranged(WeaponId.RiotbreakerShotgun, "Riotbreaker Shotgun", Tier.Scav, 6.0, 1.5, 640.0,
             projectiles = 5, spread = 30.0,
             falloff = Falloff.Linear(5.0 * METRE, 9.0 * METRE, minimum = 0.5)),
@@ -58,8 +58,9 @@ object Weapons {
             onHit = listOf(HitEffect.BlastOnHit(radius = 2.5 * METRE, damageFraction = 0.6))),
         ranged(WeaponId.SableCorpRailgun, "Sable Corp Railgun", Tier.Blacksite, 95.0, 1.7, 1400.0,
             pierce = Int.MAX_VALUE, windUp = 0.4),
+        // Its cooldown is already a burst: one straight round every 0.12 s (PROD-075).
         ranged(WeaponId.DebtCollectorMinigun, "\"Debt Collector\" Minigun", Tier.Blacksite, 7.0, 0.12,
-            820.0, spread = 20.0, windUp = 0.6),
+            820.0, windUp = 0.6),
         WeaponSpec(
             id = WeaponId.KesslerOrbitalUplink, name = "Kessler Orbital Uplink",
             cls = WeaponClass.Ranged, tier = Tier.Ascended, damage = 120.0, cooldown = 1.2,
@@ -132,12 +133,12 @@ object Weapons {
     @Suppress("LongParameterList")
     private fun ranged(
         id: WeaponId, name: String, tier: Tier, damage: Double, cooldown: Double, speed: Double,
-        projectiles: Int = 1, spread: Double = 0.0, pierce: Int = 0, windUp: Double = 0.0,
+        projectiles: Int = 1, spread: Double = 0.0, burst: Double = 0.0, pierce: Int = 0, windUp: Double = 0.0,
         falloff: Falloff = Falloff.None, onHit: List<HitEffect> = emptyList(),
     ) = WeaponSpec(
         id = id, name = name, cls = WeaponClass.Ranged, tier = tier, damage = damage,
         cooldown = cooldown, rangePx = 20.0 * METRE, projectileSpeed = speed,
-        projectileCount = projectiles, spreadDegrees = spread, pierce = pierce,
+        projectileCount = projectiles, spreadDegrees = spread, burstIntervalSeconds = burst, pierce = pierce,
         windUpSeconds = windUp, falloff = falloff, onHit = onHit,
         pattern = FirePattern.Projectile(gravity = 0.0, lifetimeSeconds = 2.0),
     )

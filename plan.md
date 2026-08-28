@@ -103,6 +103,11 @@ and the loot-floor expectations only.
 10. **Contact, pickup reset, shot indicators.** Decision 9, one owner, three sub-steps in
     `tasks.md` (CPS-1..3) each red then green, then `./scripts/check.sh`, then gate 3: adversarial
     review of the whole change, findings dispositioned, up to three rounds.
+11. **Range-aware bosses, life steal, bounce, burst fire, hurt flash, health bars.** PROD-072..077,
+    P-44..P-47; one owner, five sub-steps in `tasks.md` (RBH-1..5) each red then green, then
+    `./scripts/check.sh`, then gate 4: adversarial review, findings dispositioned, up to three
+    rounds. *(done; gate 4 ran its three rounds — see tasks.md; two rejected design findings
+    are the user's call)*
 
 ## Agents
 
@@ -110,7 +115,7 @@ and the loot-floor expectations only.
 |---|---|---|
 | Main agent | Claude | every step but 6a; integrates 6a |
 | Sub-agent A | Claude (general-purpose, own worktree) | step 6a — `combat/Weapons.kt`, `WeaponRegistryTest`, `LootFloorTest` comments only; reported one out-of-scope fixture failure rather than editing it |
-| Adversarial reviewer | `codex exec --model gpt-5.6-sol -c model_reasoning_effort=high --sandbox read-only` | gate 1 after step 1; gate 2 after step 9; gate 3 after step 10; three lenses per ENG-071; up to three rounds each |
+| Adversarial reviewer | `codex exec --model gpt-5.6-sol -c model_reasoning_effort=high --sandbox read-only` | gate 1 after step 1; gate 2 after step 9; gate 3 after step 10; gate 4 after step 11; three lenses per ENG-071; up to three rounds each |
 
 The sub-agent receives the relevant spec sections verbatim and the files it owns, runs the focused
 tests then `./gradlew jvmTest`, and does not run `check.sh` or touch files outside its scope. The

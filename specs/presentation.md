@@ -146,6 +146,22 @@ with the enemy's health. Plates and spikes are monotone across the whole grid; d
 would force every archetype to the same height. Bosses reuse the rig at `MINIBOSS_SCALE = 2.6` and
 `BOSS_SCALE = 3.7` with a crown of plating and a health bar (PROD-043).
 
+**Hurt flash (PROD-076).** A hit — a swing, a projectile landing, a blast, a chain jump, splash;
+not a burn or bleed tick — sets `hurtSecondsLeft = HURT_FLASH_SECONDS = 0.12 s` on the enemy or
+boss, a presentation-only field decayed by the simulation like `lastSwing` and outside the digest.
+While it is positive the figure's body, limbs, head, plating and (for a boss) crown are drawn in `Palettes.HURT`
+(`#ff3b30`) instead of their own styles — every form (biped, hover, fixed) — and the eye glow is
+unchanged. A boss's telegraph colour wins over the flash: a telegraphing boss stays in the
+telegraph colour however hard it is hit, because the tell is a fairness signal. The flash is a
+style swap, so a frame holding both hurt and unhurt figures opens at most one extra batch per
+figure batch kind (fifteen at the worst), a constant that no number of enemies moves (P-23).
+
+**Health bars (PROD-077).** A living rank-and-file enemy whose health is below its archetype's
+maximum for the map draws the boss's bar above its figure: a dark back rect and a fill rect of
+`healthFraction` of the width, width `ENEMY_SIZE × ZOOM`, on `Layer.Effects` in the same two
+styles as a boss's, so every bar on screen shares the boss's two batches. An enemy at full health
+draws none.
+
 ## Item icons
 
 An icon is a list of `Stroke(x1, y1, x2, y2, weight)` and `Dot(x, y, r)` ops in a local `[-1, 1]²`
@@ -168,8 +184,8 @@ a segment is closed under rotation and a rectangle is not. Orientation by a unit
   psychic weapon has neither.
 
 Icons vary in geometry, not style, so the item layers open at most 24 batches with all forty-four
-on screen. The whole worst-case frame (600 enemies, every icon on the ground, a full build in the
-HUD) opens about 90 batches. Whether an icon is *recognisable* is a human judgement made against
+on screen. The whole worst-case frame (600 enemies, half of them in the hurt flash, every icon on
+the ground, a full build in the HUD) opens about 105 batches. Whether an icon is *recognisable* is a human judgement made against
 the icon sheet, not a test.
 
 ## HUD and screens
@@ -207,6 +223,15 @@ visually hidden live region for run state. Focus loss clears input and pauses.
   — and an orbit hits inside that radius and not beyond it; an indicator's stroke width falls
   across its window; every indicator is gone after the flash window; the digest (P-40) is unchanged
   by any indicator.
+- **P-47** Hurt flash and health bars: an enemy hit this tick is drawn in `Palettes.HURT` on
+  every figure batch (body, limbs, head) and its eye glow is not; a burn tick does not flash it;
+  it returns to its own styles after `HURT_FLASH_SECONDS`; a hit boss flashes, crown included,
+  unless it is telegraphing, in which case the telegraph colour is drawn; the hover and fixed forms flash
+  too; a full-health enemy draws no bar, an enemy at 40 % draws a back rect of `ENEMY_SIZE ×
+  ZOOM` and a fill of 40 % of it above its figure; a frame of 600 half-hurt, damaged enemies
+  opens the same number of batches as one of 10 (the flash opens at most one red batch per
+  figure batch kind — a constant — and the bars share the boss's two); the digest is unchanged
+  by the flash.
 - **P-27** Icon totality and distinctness: every id resolves to an icon, purely; no two icons are
   equal as geometry; every op is inside the box; every icon has at least three strokes spanning at
   least 60 % of the box's longer axis.

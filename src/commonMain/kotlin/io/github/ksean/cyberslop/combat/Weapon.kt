@@ -66,6 +66,12 @@ data class WeaponSpec(
     val projectileSpeed: Double,
     val projectileCount: Int = 1,
     val spreadDegrees: Double = 0.0,
+    /**
+     * Seconds between the rounds of one activation (PROD-075). Positive makes a machine gun: the
+     * trigger fires one round and the rest follow in a straight line; zero fires them all at once
+     * across [spreadDegrees].
+     */
+    val burstIntervalSeconds: Double = 0.0,
     val pierce: Int = 0,
     val knockback: Double = 0.0,
     val critChance: Double = DEFAULT_CRIT_CHANCE,

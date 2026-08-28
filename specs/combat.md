@@ -17,8 +17,26 @@ while (cooldownLeft <= 0) { fire(); cooldownLeft += resolved.cooldown }
 ## Weapon model
 
 `combat.WeaponSpec` declares id, name, class, tier, damage, cooldown, range, projectile speed and
-count, spread, pierce, knockback, crit chance (base 5 %), anchor (`Self` | `Cursor`), wind-up,
-falloff, homing, on-hit effects, on-fire effects and fire pattern.
+count, spread, burst interval, pierce, knockback, crit chance (base 5 %), anchor (`Self` |
+`Cursor`), wind-up, falloff, homing, on-hit effects, on-fire effects and fire pattern.
+
+**Spread and burst are alternatives (PROD-075).** A multi-projectile weapon with a `spread`
+fires its projectiles at once, fanned evenly across the spread angle around the aim with the
+outermost on its edges (five pellets at 30° sit at −15°, −7.5°, 0°, 7.5°, 15°) — a shotgun, a
+nailgun. A weapon with a `burstIntervalSeconds > 0` is a **machine gun**: the trigger fires its
+first round and queues the rest, one every interval, each leaving the muzzle where it is *then*
+along the aim recorded when the trigger fell, so the rounds trail one another in a straight line
+whatever the target does in the meantime. A burst weapon declares no spread. Every round is a
+whole projectile of the build that pulled the trigger (`LiveProjectile.weapon`, PROD-070) and
+draws its own muzzle flash; Fork Bomb's extra projectiles join the burst rather than a fan. The
+Minigun's cooldown is already one round every 0.12 s, so it declares no interval and no spread:
+its rounds — Fork Bomb's included — leave together along the aim: an interval on it could not
+fit inside its 0.042 s cooldown floor, and a Fork Bomb round that left a tick later would only
+land a tick later on the same line. The
+registry keeps `burstIntervalSeconds × (maxProjectiles − 1)` below the weapon's cooldown floor
+(`0.35 × cooldown`, maxProjectiles counting three Fork Bomb stacks), so a burst is always spent
+before the next trigger; the trigger tick nevertheless discards any pending rounds so a burst can
+never carry a stale build. The pending burst is simulation state and is in the digest (P-40).
 
 Class is load-bearing:
 
@@ -75,12 +93,12 @@ ranged mean.
 | Meatgrinder Halo | Melee | 5 | 40 | 0.35 | 114.3 | 2.8 m ring | Persistent saw ring |
 | Scrapline Zip Pistol | Ranged | 1 | 7 | 0.80 | 8.8 | 20 m | Single slug |
 | Tenement Nailgun | Ranged | 1 | 4×2 | 0.70 | 11.4 | 20 m | 12° spread, pierce 1 |
-| Ganglord SMG | Ranged | 2 | 4×3 | 0.75 | 16.0 | 20 m | Burst, 10° bloom |
+| Ganglord SMG | Ranged | 2 | 4×3 | 0.75 | 16.0 | 20 m | Machine gun: 3-round burst, 0.05 s apart, straight |
 | Riotbreaker Shotgun | Ranged | 2 | 6×5 | 1.50 | 20.0 | 20 m | 30° cone, falloff past 5 m |
 | Vulture Rail Carbine | Ranged | 3 | 28 | 1.00 | 28.0 | 20 m | Pierce 2 |
 | Ashfall Grenade Lobber | Ranged | 3 | 33 | 1.40 | 23.6 | 20 m | Blast 2.5 m at 60 % |
 | Sable Corp Railgun | Ranged | 4 | 95 | 1.70 | 55.9 | 20 m | Infinite pierce, 0.4 s wind-up |
-| "Debt Collector" Minigun | Ranged | 4 | 7 | 0.12 | 58.3 | 20 m | 0.6 s wind-up, 20° bloom |
+| "Debt Collector" Minigun | Ranged | 4 | 7 | 0.12 | 58.3 | 20 m | Machine gun: 0.6 s wind-up, one straight round per 0.12 s |
 | Kessler Orbital Uplink | Ranged | 5 | 120 | 1.20 | 100.0 | 30 m | Target-anchored strike, 0.35 s delay |
 | Neural Spike | Psychic | 1 | 10 | 1.10 | 9.1 | 16 m | Slow orb, weak seek |
 | Migraine Loop | Psychic | 2 | 13 | 0.85 | 15.3 | 12 m | Blast through terrain |
@@ -101,12 +119,12 @@ ranged mean.
 | Guillotine Codec | 1 | Crit multiplier (base ×2.0) | +0.50 | +0.85 | +1.10 | add |
 | Hollowpoint Firmware | 2 | Damage | +25 % | +45 % | +60 % | add |
 | Spike Driver | 2 | Pierce | +1 | +2 | +3 | add |
-| Red Market Siphon | 2 | Lifesteal (cap 4 HP/hit, 12 HP/s) | 2 % | 3.5 % | 4.5 % | add |
+| Red Market Siphon | 2 | Lifesteal on every hit (cap 4 HP/hit; 12 HP budget refilling at 12 HP/s) | 2 % | 3.5 % | 4.5 % | add |
 | Mass Driver | 2 | Hitbox / arc width | +25 % | +45 % | +60 % | mult |
 | Overclock Coil | 3 | Cooldown reduction | 12 % | 21 % | 28 % | mult |
 | Chill Protocol | 3 | Enemy speed, 2 s | −18 % | −30 % | −38 % | mult |
 | Burn Rig | 3 | Ignite, % damage/s for 3 s | 15 % | 25 % | 32 % | add |
-| Ricochet ROM | 3 | Bounces at 85 % | 1 | 2 | 3 | add |
+| Ricochet ROM | 3 | Projectiles bounce off terrain, 85 % damage per bounce | 1 | 2 | 3 | add |
 | Seeker Daemon | 4 | Homing turn rate (°/s) | 90 | 160 | 210 | add |
 | Arc Cascade | 4 | Chain targets | 1 @50 % | 2 @45 % | 3 @40 % | add |
 | Brownout Charge | 4 | Expected stun-seconds | 0.048 | 0.090 | 0.132 | add |
@@ -116,6 +134,28 @@ ranged mean.
 
 Each run draws **8 of the 18** powerups, tier-weighted, as its drop pool, so duplicates are common
 enough for stacking to happen.
+
+**Life steal (PROD-073).** Red Market Siphon heals the player by its fraction of every point of
+damage the held weapon **actually deals** to an enemy or a boss — a swing, a projectile landing,
+a blast, a chain jump, splash; overkill past zero health steals nothing — before the per-hit cap
+of `LIFESTEAL_CAP = 4 HP` and a **budget** of `LIFESTEAL_PER_SECOND = 12 HP` that refills at
+12 HP/s and is spent by each heal, so sustained healing never exceeds 12 HP/s and a burst can
+bank at most one second of it (a full budget then a full second's refill is 24 HP inside one
+second, by design: a token bucket, not a sliding window). A heal is what the player gains: it
+never passes max health and spends only what it gave. Damage over time (burn, bleed) heals
+nothing: it is not a hit. It is the build that fired a projectile that heals when it lands
+(PROD-070). A player killed earlier in a tick is not brought back by a hit landing later in it.
+The budget is simulation state and is in the digest.
+
+**Bounce (PROD-074).** Ricochet ROM gives a projectile `bounces` (1, 2, 3 by stack). A ranged
+projectile that would be spent on terrain instead **reflects** while it has bounces left: the axis
+it entered the solid tile along is reversed (a floor or ceiling reverses `vy`, a wall `vx`; a
+corner entered on both axes reverses both), the projectile is put back at its position before the
+step, its damage is multiplied by `BOUNCE_DAMAGE = 0.85`, its bounce count falls by one, and its
+lifetime and pierce carry on. Psychic projectiles pass through terrain and never bounce; enemy
+and boss shots never bounce. A bounced projectile that meets an enemy hits it as any projectile
+does, and the last bounce leaves its impact tracer where it finally stops (PROD-071). The bounce
+count is on `LiveProjectile` and in the digest.
 
 ## Damage formula and caps
 
@@ -128,9 +168,10 @@ cooldown    = clamp(base × Π speedMults, max(0.08, base × 0.35), base × 2.0)
 
 Caps, each tested: crit chance ≤ 75 %; cooldown floor `max(0.08 s, 0.35 × base)`; enemy speed
 floor 40 %, multiple slows take the max rather than the product; bosses are immune to slows; live projectiles ≤ 60 per weapon and 300 per
-scene (a performance bound); chain, ricochet, fork and blast each carry a per-activation target
-set, blasts cannot trigger blasts, free recasts cannot recurse; lifesteal is capped per hit and per
-second.
+scene (a performance bound); chain, fork and blast each carry a per-activation target
+set, blasts cannot trigger blasts, free recasts cannot recurse; a projectile bounces at most its
+bounce count times and never against an enemy; lifesteal is capped per hit and by its budget
+(12 HP, refilling at 12 HP/s, never more than one second banked).
 
 ## Drops and rarity
 
@@ -167,6 +208,28 @@ Scrap per displaced item by tier: 8, 20, 45, 100, 240.
   mean ranged DPS; the bottle's DPS stays below map 1's required rate.
 - **P-25** Kill drop rate is 0.20 at every map index, three in ten of them weapons; static drops
   average 2.0 ± 0.15 per map over a seed cohort, each count in {1, 2, 3}.
+- **P-44** Boss attack choice (enemies.md).
+- **P-45** Life steal and bounce (a projectile step is walked in pieces of at most half a tile,
+  so a 24 px-per-tick shot fired 4 px short of a one-tile wall is stopped by it, or reflected off
+  it with a bounce left): with Red Market Siphon a melee swing, a projectile landing, a
+  Migraine Loop blast, a Ghostwire Tether jump and Thermite splash each heal exactly the fraction
+  of the damage dealt, capped at 4 HP per hit; ten seconds of ceaseless hits heal at most eleven
+  seconds of budget (132 HP); a hit that would deal 120 to an enemy with 1 HP steals from 1; a
+  player 1 HP short spends 1 HP of budget; a burn tick heals nothing; healing never exceeds max
+  health; without the powerup nothing heals.
+  With Ricochet ROM at one stack a projectile fired into the floor reflects with `vy` reversed,
+  `vx` kept and 85 % of its damage, keeps its remaining lifetime and pierce, and is spent on its
+  second terrain contact; at three stacks it survives three; a wall reverses `vx`; a bounced
+  projectile still damages an enemy it meets; a psychic projectile never bounces; an enemy shot
+  never bounces; the bounce count is in the digest.
+- **P-46** Burst fire: the Ganglord SMG's trigger tick spawns one projectile and the next two
+  follow exactly three ticks (0.05 s) apart — ticks 4 and 7 after a tick-1 trigger — each along the aim of the trigger tick (a target that moved between rounds
+  does not bend them), each leaving the muzzle of its own tick, each with a muzzle flash; the
+  Minigun declares no spread and no interval; a spread weapon (Riotbreaker Shotgun) still fans
+  all its projectiles at once; Fork Bomb extends the burst; every burst weapon satisfies
+  `interval × (count + 3 − 1) < 0.35 × cooldown`; a burst pending at the next trigger is
+  discarded, a round of it due on the trigger tick included; the pending burst is in the digest;
+  the registry DPS column is unchanged.
 - **P-42** Weapon pickup: collecting any weapon — including one of lower tier and lower score than
   the held one — equips it; the previous weapon's Scrap and the Scrap of every cleared slot are
   paid; the slots are empty afterwards; a powerup collected next lands in the emptied build; a
@@ -179,5 +242,12 @@ Scrap per displaced item by tier: 8, 20, 45, 100, 240.
   and wipes their build; the loot floor accounts for guaranteed pickups but no test bounds how far
   an optional one can set a player back. Whether the drop table should stop rolling weapons below
   the held tier is a balance decision not yet taken.
-- `WeaponScore` does not weigh lifesteal, seeking, slowing, reach, knockback, stun or kill refunds,
-  so a guaranteed award can displace a slot whose unmeasured effect was worth keeping.
+- `WeaponScore` does not weigh lifesteal, bounce, seeking, slowing, reach, knockback, stun or kill
+  refunds, so a guaranteed award can displace a slot whose unmeasured effect was worth keeping.
+- A projectile landing applies neither crit, falloff nor Thermite Payload's on-hit blast (only
+  instant patterns and swings do). Pre-existing; recorded here rather than changed under PROD-073.
+- The Railgun's and Minigun's declared wind-ups are not paid: `AutoFire` fires on the cooldown
+  alone, while `WeaponScore` charges the wind-up on every activation. Pre-existing; surfaced by
+  gate 4 and not changed under PROD-075.
+- The "≤ 60 live projectiles per weapon" cap is not implemented; only the 300-per-scene cap is,
+  now for enemy shots as well as the player's. Pre-existing; surfaced by gate 4.

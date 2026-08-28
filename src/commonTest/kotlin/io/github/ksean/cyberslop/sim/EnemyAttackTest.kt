@@ -15,6 +15,19 @@ import kotlin.test.assertTrue
 
 /** Telegraphed swings and shots, and the committed-span fairness rule (P-34; `specs/enemies.md`). */
 class EnemyAttackTest {
+    /** Round-2 finding (gate 4): the scene's projectile cap bounds enemy shots as well as the player's. */
+    @Test
+    fun `an enemy shot is withheld at the scene's projectile cap`() {
+        val sim = TestLevels.simulation()
+        val turret = TestLevels.enemyAt(sim, EnemyArchetype.Turret, column = 8)
+        repeat(GameSimulation.MAX_PROJECTILES) {
+            sim.projectiles.add(LiveProjectile(Vec2(-1000.0, -1000.0), Vec2.Zero, 0.0, 0, 100.0, passesTerrain = true, fromPlayer = true))
+        }
+        repeat(120) { sim.tick(InputFrame()) }
+        assertTrue(turret.cooldownLeft > 0.0 || turret.windingUp, "fixture: the turret never tried to fire")
+        assertEquals(GameSimulation.MAX_PROJECTILES, sim.projectiles.size, "an enemy shot passed the cap")
+    }
+
     @Test
     fun `an enemy overlapping the player outside a strike deals exactly its contact drain`() {
         val sim = TestLevels.simulation()

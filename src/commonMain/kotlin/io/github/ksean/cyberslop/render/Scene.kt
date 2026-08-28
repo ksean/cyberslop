@@ -413,6 +413,10 @@ object Scene {
                 EnemyForm.Hover -> hover(builder, palette, look, enemy, x, ground, timeSeconds)
                 EnemyForm.Fixed -> fixed(builder, palette, look, enemy, engagement(enemy, look, player), x, ground)
             }
+            // The boss's bar, for anyone who has been hurt (PROD-077); full health shows none.
+            if (enemy.health < enemy.maxHealth) {
+                healthBar(builder, palette, x, ground - look.height * ZOOM - BAR_GAP, GameSimulation.ENEMY_SIZE * ZOOM, enemy.healthFraction)
+            }
         }
     }
 
@@ -479,7 +483,14 @@ object Scene {
         ground: Double,
     ) {
         val pose = Actor.pose(enemyMotion(sim, enemy))
-        figure(builder, palette, pose, x, ground, look, Palettes.ENEMY_BODY)
+        val hurt = enemy.hurtSecondsLeft > 0.0
+        figure(
+            builder, palette, pose, x, ground, look,
+            bodyStyle = hurtOr(hurt, Palettes.ENEMY_BODY),
+            limbStyle = hurtOr(hurt, Palettes.ENEMY_DARK),
+            trimStyle = hurtOr(hurt, Palettes.ENEMY_PLATE),
+            armStyle = hurtOr(hurt, Palettes.ENEMY_PLATE),
+        )
 
         val glow = palette.glow[look.glowTone]
         val feet = Vec2(x, ground)
@@ -517,9 +528,10 @@ object Scene {
         // to move sideways and the only cue that distinguishes drifting left from drifting right.
         val bank = -enemy.facing * size * HOVER_BANK
 
-        builder.batch(Layer.Actors, Palettes.ENEMY_BODY, Primitive.Rect)
+        val hurt = enemy.hurtSecondsLeft > 0.0
+        builder.batch(Layer.Actors, hurtOr(hurt, Palettes.ENEMY_BODY), Primitive.Rect)
             .rect(x - size * look.bulk / 2.0, centreY, size * look.bulk, size * POD_HEIGHT)
-        plating(builder, look, x, centreY, size)
+        plating(builder, look, x, centreY, size, hurtOr(hurt, Palettes.ENEMY_PLATE))
         builder.batch(Layer.ActorGlow, palette.glow[look.glowTone], Primitive.Dot)
             .dot(x + enemy.facing * size * EYE_OFFSET, centreY + size * POD_HEIGHT / 2.0, size * EYE)
         // Thruster plumes, which is the whole reason it reads as airborne rather than as a floating
@@ -564,7 +576,8 @@ object Scene {
         val baseHeight = size * BASE_HEIGHT
         val feet = ground
 
-        builder.batch(Layer.Actors, Palettes.ENEMY_DARK, Primitive.Rect)
+        val hurt = enemy.hurtSecondsLeft > 0.0
+        builder.batch(Layer.Actors, hurtOr(hurt, Palettes.ENEMY_DARK), Primitive.Rect)
             .rect(
                 x - size * look.bulk * BASE_WIDTH, feet - baseHeight,
                 size * look.bulk * BASE_WIDTH * 2.0, baseHeight,
@@ -574,15 +587,15 @@ object Scene {
         // The head sweeps: the barrel follows whatever the emplacement is tracking, rather than
         // pointing along a patrol direction a bolted-down thing never has.
         builder.batch(
-            Layer.ActorBehind, Palettes.ENEMY_PLATE, Primitive.Segment,
+            Layer.ActorBehind, hurtOr(hurt, Palettes.ENEMY_PLATE), Primitive.Segment,
             strokeWidth(size * BARREL_WIDTH),
         ).segment(x, head, x + aim.x * size * BARREL, head + aim.y * size * BARREL)
-        builder.batch(Layer.ActorHead, Palettes.ENEMY_BODY, Primitive.Rect)
+        builder.batch(Layer.ActorHead, hurtOr(hurt, Palettes.ENEMY_BODY), Primitive.Rect)
             .rect(
                 x - size * TURRET_HEAD / 2.0, head - size * TURRET_HEAD / 2.0,
                 size * TURRET_HEAD, size * TURRET_HEAD,
             )
-        plating(builder, look, x, head - size * TURRET_HEAD / 2.0, size)
+        plating(builder, look, x, head - size * TURRET_HEAD / 2.0, size, hurtOr(hurt, Palettes.ENEMY_PLATE))
         builder.batch(Layer.ActorGlow, palette.glow[look.glowTone], Primitive.Dot)
             .dot(x + aim.x * size * EYE_OFFSET, head + aim.y * size * EYE_OFFSET, size * EYE)
         // The wind-up is a charge at the barrel's mouth, growing through the telegraph (PROD-063).
@@ -680,7 +693,7 @@ object Scene {
             // Centred on the torso, not on the head: the head carries the figure's forward lean,
             // so plating hung off it slid ahead of the body it is supposed to be armouring.
             val torsoX = originX + (pose.hip.x + pose.neck.x) / 2.0 * ZOOM
-            plating(builder, look, torsoX, originY - pose.height * ZOOM, pose.height * ZOOM)
+            plating(builder, look, torsoX, originY - pose.height * ZOOM, pose.height * ZOOM, trimStyle)
         }
 
         if (armed) {
@@ -726,9 +739,10 @@ object Scene {
         centreX: Double,
         topY: Double,
         size: Double,
+        style: String = Palettes.ENEMY_PLATE,
     ) {
         if (look.plates > 0) {
-            val plates = builder.batch(Layer.ActorTrim, Palettes.ENEMY_PLATE, Primitive.Rect)
+            val plates = builder.batch(Layer.ActorTrim, style, Primitive.Rect)
             repeat(look.plates) { index ->
                 val width = size * PLATE_WIDTH * look.bulk
                 plates.rect(
@@ -741,7 +755,7 @@ object Scene {
         }
         if (look.spikes > 0) {
             val spikes = builder.batch(
-                Layer.ActorTrim, Palettes.ENEMY_PLATE, Primitive.Segment,
+                Layer.ActorTrim, style, Primitive.Segment,
                 strokeWidth(size * SPIKE_WIDTH),
             )
             repeat(look.spikes) { index ->
@@ -770,14 +784,22 @@ object Scene {
             val feet = (live.position.y - camera.y) * ZOOM
 
             val pose = Actor.pose(bossMotion(sim, live))
+            // The telegraph colour is a fairness signal, so the hurt flash never covers it.
+            val hurt = live.hurtSecondsLeft > 0.0 && !live.telegraphing
             val body = when {
                 live.telegraphing -> palette.hazardGlow
+                hurt -> Palettes.HURT
                 !live.fight.vulnerable -> Palettes.ENEMY_DARK
                 else -> palette.accent
             }
-            figure(builder, palette, pose, x, feet, look, body)
-            crown(builder, palette, look, x, feet - look.height * ZOOM)
-            healthBar(builder, palette, x, feet - look.height * ZOOM - BAR_GAP, look.height * ZOOM, live)
+            figure(
+                builder, palette, pose, x, feet, look, body,
+                limbStyle = hurtOr(hurt, Palettes.ENEMY_DARK),
+                trimStyle = hurtOr(hurt, Palettes.ENEMY_PLATE),
+                armStyle = hurtOr(hurt, Palettes.ENEMY_PLATE),
+            )
+            crown(builder, palette, look, x, feet - look.height * ZOOM, hurtOr(hurt, palette.glow[palette.glow.size - 1]))
+            healthBar(builder, palette, x, feet - look.height * ZOOM - BAR_GAP, look.height * ZOOM, live.healthFraction)
             bossStrike(builder, palette, live, pose, Vec2(x, feet), camera)
         }
     }
@@ -860,10 +882,11 @@ object Scene {
         look: EnemyLook,
         centreX: Double,
         topY: Double,
+        style: String = palette.glow[palette.glow.size - 1],
     ) {
         val size = look.height * ZOOM
         val batch = builder.batch(
-            Layer.ActorTrim, palette.glow[palette.glow.size - 1], Primitive.Segment,
+            Layer.ActorTrim, style, Primitive.Segment,
             strokeWidth(size * CROWN_WIDTH),
         )
         repeat(look.crown) { index ->
@@ -875,19 +898,23 @@ object Scene {
         }
     }
 
+    /** A boss's bar (PROD-043), and any hurt enemy's (PROD-077): the same two batches for everyone. */
     private fun healthBar(
         builder: SceneBuilder,
         palette: Palette,
         centreX: Double,
         y: Double,
         width: Double,
-        live: LiveBoss,
+        fraction: Double,
     ) {
         builder.batch(Layer.Effects, Palettes.ENEMY_DARK, Primitive.Rect)
             .rect(centreX - width / 2.0, y, width, BAR_HEIGHT)
         builder.batch(Layer.Effects, palette.hazardGlow, Primitive.Rect)
-            .rect(centreX - width / 2.0, y, width * live.healthFraction, BAR_HEIGHT)
+            .rect(centreX - width / 2.0, y, width * fraction, BAR_HEIGHT)
     }
+
+    /** The hurt flash is a style swap (PROD-076), so it costs no batch a frame did not already open. */
+    private fun hurtOr(hurt: Boolean, own: String): String = if (hurt) Palettes.HURT else own
 
     private fun projectiles(
         builder: SceneBuilder,
