@@ -24,17 +24,25 @@ class IntentFilter {
     private var jumpHeld = false
     private var jumpInProgress = false
 
-    fun next(keys: Keys, grounded: Boolean): InputFrame {
+    /**
+     * [standingBlocked] is whether a ceiling is holding the player in a crouch. The movement model
+     * ignores a `jumpStart` while crouched, so without knowing this the filter would emit the start,
+     * spend the buffer, and the press would be lost at the boundary between the two (P-49).
+     */
+    fun next(keys: Keys, grounded: Boolean, standingBlocked: Boolean = false): InputFrame {
         ticksSinceGrounded = if (grounded) 0 else ticksSinceGrounded + 1
+        val crouched = keys.crouch || standingBlocked
+        // A jump held while the player cannot stand stays pending rather than expiring: releasing
+        // Down, or clearing the ceiling, is when it fires.
         ticksSinceJumpPressed =
-            if (keys.jump && !jumpHeld) 0 else ticksSinceJumpPressed + 1
+            if (keys.jump && (!jumpHeld || crouched)) 0 else ticksSinceJumpPressed + 1
         jumpHeld = keys.jump
 
         if (grounded) jumpInProgress = false
 
         val mayJump = ticksSinceGrounded <= COYOTE_TICKS
         val wantsJump = ticksSinceJumpPressed <= BUFFER_TICKS
-        val start = mayJump && wantsJump && !jumpInProgress && !keys.crouch
+        val start = mayJump && wantsJump && !jumpInProgress && !crouched
 
         if (start) {
             jumpInProgress = true

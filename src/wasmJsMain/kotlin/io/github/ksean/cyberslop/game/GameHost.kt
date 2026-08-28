@@ -4,6 +4,8 @@ import io.github.ksean.cyberslop.gen.LevelGenerator
 import io.github.ksean.cyberslop.input.BrowserInput
 import io.github.ksean.cyberslop.loop.RafLoop
 import io.github.ksean.cyberslop.physics.IntentFilter
+import io.github.ksean.cyberslop.physics.MovementModel
+import io.github.ksean.cyberslop.physics.Stance
 import io.github.ksean.cyberslop.physics.TICK_SECONDS
 import io.github.ksean.cyberslop.render.Camera
 import io.github.ksean.cyberslop.render.CanvasRenderer
@@ -36,7 +38,7 @@ class GameHost(
     private val saves: LocalStorageSaveStore,
 ) {
     private val input = BrowserInput(canvas)
-    private val filter = IntentFilter()
+    private var filter = IntentFilter()
 
     private var screen: ScreenState = ScreenState.Title
     private var meta: MetaProgression = MetaProgression()
@@ -71,6 +73,7 @@ class GameHost(
         canvas.focus()
 
         enter(restored?.first ?: RunState.begin(freshSeed()), playing.mapIndex)
+        input.detach()
         input.attach()
 
         loop = RafLoop(
@@ -85,6 +88,9 @@ class GameHost(
         val generated = LevelGenerator.generate(entering.seed, mapIndex)
         val sim = GameSimulation(generated.level, entering, entering.seed)
         simulation = sim
+        // Assist state belongs to one simulation: a jump held into a map change is not a jump on
+        // the next map, and a buffered press does not carry over.
+        filter = IntentFilter()
         // The view is measured in world units, so the zoom is a *smaller* view rather than a
         // transform. Nothing about following or clamping to the level changes.
         camera = Camera(
@@ -100,7 +106,10 @@ class GameHost(
         val sim = simulation ?: return
         if (screen !is ScreenState.Playing) return
 
-        val report = sim.tick(filter.next(input.keys(), sim.player.onGround))
+        val player = sim.player
+        val standingBlocked =
+            player.stance == Stance.Crouch && !MovementModel.canStand(player, sim.level.tiles)
+        val report = sim.tick(filter.next(input.keys(), player.onGround, standingBlocked))
 
         if (report.playerDied) {
             endRun(sim.run.scrap, ScreenEvent.PlayerDied(sim.run.scrap))

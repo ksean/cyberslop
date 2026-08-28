@@ -22,6 +22,29 @@ class IntentFilterTest {
     }
 
     @Test
+    fun `a jump held under a low ceiling starts once the player can stand`() {
+        val filter = IntentFilter()
+
+        val blocked = List(20) { filter.next(Keys(jump = true), grounded = true, standingBlocked = true) }
+        val clear = filter.next(Keys(jump = true), grounded = true, standingBlocked = false)
+        val after = filter.next(Keys(jump = true), grounded = false)
+
+        assertTrue(blocked.none { it.jumpStart }, "jumped while a ceiling forced the crouch")
+        assertTrue(clear.jumpStart, "the pending jump did not start when standing became possible")
+        assertFalse(after.jumpStart, "the pending jump started twice")
+    }
+
+    @Test
+    fun `a jump held while crouching starts when crouch is released`() {
+        val filter = IntentFilter()
+
+        repeat(20) { filter.next(Keys(crouch = true, jump = true), grounded = true) }
+        val released = filter.next(Keys(jump = true), grounded = true)
+
+        assertTrue(released.jumpStart, "the pending jump did not start on crouch release")
+    }
+
+    @Test
     fun `holding jump does not restart the jump every tick`() {
         val filter = IntentFilter()
 

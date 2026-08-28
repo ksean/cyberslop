@@ -189,6 +189,9 @@ function installBrowserEnvironment(hasSavedGame) {
     global.localStorage = fakeStorage(hasSavedGame)
     global.document = fakeDocument(root, canvas, bundleUrl)
     global.window = global
+    // Input wiring listens on the window; the smoke test never dispatches a key.
+    global.addEventListener = () => {}
+    global.removeEventListener = () => {}
     global.self = global
     global.location = { href: bundleUrl }
     global.process = undefined
@@ -238,6 +241,10 @@ function fakeDocument(root, canvas, bundleUrl) {
         getElementsByTagName() {
             return []
         },
+        addEventListener() {},
+        removeEventListener() {},
+        hasFocus: () => true,
+        hidden: false,
     }
 }
 
@@ -273,6 +280,10 @@ class FakeElement {
     }
 
     focus() {}
+
+    addEventListener() {}
+
+    removeEventListener() {}
 
     setAttribute(name, value) {
         this.attributes.set(name, String(value))

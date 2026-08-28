@@ -33,6 +33,27 @@ Coyote time and jump buffering live in `physics.IntentFilter`, which converts ra
 witness is a tape of `InputFrame`s, so replay is exact and assist-independent; assists can only add
 capability for a human pressing keys, never change what a recorded tape means.
 
+## Key state reaches the filter through a ledger
+
+Browser key events arrive between animation frames while the simulation samples once per fixed
+tick, so the two are joined by `physics.KeyLedger` (platform-independent, fed by
+`input/BrowserInput`). It holds the keys currently down and **latches every press until a sample
+consumes it**: a key pressed and released between two samples is reported as held for exactly one
+sample, so a tap can never be shorter than the simulation's ability to see it. A frame stall only
+delays the press; it cannot erase it.
+
+- Keys are identified by physical position (`KeyboardEvent.code`) and, failing that, by the
+  arrow `key` value, so the keypad's arrows work with NumLock off.
+- Held keys are released wholesale whenever a `keyup` might have been lost: on window blur, on the
+  page becoming hidden or being put away, and when the canvas loses focus. Window blur and a
+  hidden page also pause the loop; canvas focus loss does not.
+- A jump held while the player cannot stand — because Down is held or because a ceiling forces the
+  crouch — stays **pending** and starts on the first tick the player can stand. A crouched player
+  still never jumps; the press is simply not thrown away at the filter/model boundary.
+- Catch-up ticks in one animation frame (at most eight, ≈133 ms) all see the same key state. This is
+  bounded and accepted.
+- `IntentFilter` is scoped to one simulation: it is recreated with each map and each run.
+
 ## The measured envelope
 
 `physics.MovementEnvelope.measure(physics)` runs the real integrator against synthetic geometry and
@@ -71,6 +92,12 @@ Kotlin/Wasm and the JVM agree bit-for-bit on IEEE-754 `+ − × ÷ √`; they ma
   `MovementModel` for N ticks hash to a committed golden value on both targets. This covers the
   movement model only. Player position and velocity are written only by the movement model: no hit
   effect, fire effect, enemy contact, hazard or platform displaces the player.
+- **P-48** Press latching: a key pressed and released between two `KeyLedger` samples is held in
+  exactly one sample; a key still down is held in every sample; `releaseAll` empties the ledger.
+- **P-49** Pending jump: a jump held while standing is blocked, or while Down is held, produces no
+  `jumpStart` and then produces exactly one on the first tick the player can stand.
+- **P-50** Input wiring: in a browser, `keydown` marks a key held, `keyup` releases it, and canvas
+  blur, `pagehide` and window blur release every key.
 - **P-40** Simulation determinism: a digest of the whole rule-bearing simulation state after N
   ticks of a fixed tape on a fixed seed matches a committed golden value on both targets
   (enemies.md lists the fields). Presentation-only fields are excluded.

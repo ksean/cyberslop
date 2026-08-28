@@ -193,7 +193,8 @@ the icon sheet, not a test.
 The HUD shows health, the equipped weapon's icon and name, each held powerup's icon and stack
 count, and the map index and sub-theme (PROD-045). The title screen is a DOM screen with real
 buttons and accessible names; the canvas carries `role="application"`, an `aria-label` and a
-visually hidden live region for run state. Focus loss clears input and pauses.
+visually hidden live region for run state. Window focus loss and a hidden page clear held keys and
+pause; canvas focus loss clears held keys (`specs/simulation.md`, key ledger).
 
 ## Verified properties
 
