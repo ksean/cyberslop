@@ -4,6 +4,235 @@ Implementation work is tracked here. A task may move from **Waiting for approval
 
 ## Open
 
+### CYB-028 — The icon vocabulary, and the sheet that makes forty-four of them authorable
+
+- **Status:** Complete
+- **Specification:** [Change 0006](specs/changes/0006-weapon-and-pickup-iconography.md) — ENG-064, PROD-049
+- **Implementation approval:** Approved by the user on 2026-08-27 ("approve and proceed"), after reviewing phase one. This is the post-review approval `AGENTS.md` asks for — unlike change 0005's, which was given in advance and had to be recorded with that caveat for eight review rounds.
+- **Depends on:** Nothing
+
+TDD checkpoints:
+
+- [x] Add a failing test proving an icon's ops all lie inside the `[-1, 1]` box and that resolving an id twice returns the same geometry. Containment is enforced in `Icon`'s `init` rather than only asserted, so an icon that would bleed outside the box its scale maps cannot be constructed — and it **caught a real one on its first run**, a shotgun muzzle dot at `x = 0.94` with radius `0.08`.
+- [x] Add a failing test proving orientation by a unit vector is a **rigid motion**: every stroke keeps its length and every pair of strokes its angle, to floating-point tolerance. A sign error in `(u*ax - v*ay, u*ay + v*ax)` reflects instead of rotating, and a length-only assertion would not see it, so the test compares the signed cross product of two strokes as well.
+- [x] **Checkpoint restated, because the one that was planned is not provable.** It asked for a test that "resolving an icon calls nothing in `TrigTable`", which needs the table instrumented with a call counter that exists only for the test. What replaces it carries the same force and is real: the placement is cross-checked against `TrigTable.rotate` at six angles, so the hand-rolled arithmetic is proved to *be* a rotation rather than merely asserted not to call one. The second half — that no icon contains a `Rect` — is enforced by the sealed hierarchy having no such variant, which a test would only restate.
+- [x] Implement `render/Icon.kt`, `render/IconStyle.kt` and `render/IconPainter.kt`.
+- [x] Build the icon sheet before authoring any icon. **Moved from `commonMain` behind a `Layer.Debug` scene to `jvmTest`, which is the stronger form of the same guarantee**: `jvm()` is a verification-only target producing no deployable artifact (ENG-001), so the sheet is absent from the bundle by construction and the browser test that was planned to prove it unreachable is not needed. It draws through `SceneBuilder` and `FramePainter` — the same traversal the browser uses — into an `SvgPaintSink`, so what it shows is the frame's own batches in the frame's own order.
+- [x] Author three icons, render, settle the numbers. Four things came out of it and every one contradicted something the plan had asserted:
+- [x] Run the focused tests, then `./scripts/check.sh`. Green.
+
+**What rendering it changed.** All four were found by looking, none by a test — which is why this task
+was ordered first.
+
+- **A drop is drawn in screen pixels, not world pixels, and `plan.md` §16.4 had it wrong by 3.5x.**
+  `Scene.pickups` multiplies the *position* by `ZOOM` and then uses `PICKUP_PX * scale` directly, so
+  the 5.0 that produced an acceptable rectangle produced a **10 px** wide drop — a fifth of a tile —
+  and the plan's "35 px box at Street" assumed a zoom that is not applied. `PICKUP_PX` is now 14.0,
+  sized against the tile a drop lies on rather than against a number: a tile is 16 world pixels and
+  therefore 56 on screen, and a drop spans 28 px at Street to 53 px at Ascended.
+- **Fixed stroke widths were the wrong call, and the reason is only visible when drawn.** They were
+  chosen to hold the batch count down. Rendered, a weight that does not scale makes a Street drop and
+  an Ascended drop two different designs rather than one object at two sizes, and a `Slab` heavy
+  enough to read as a bottle's body at 28 px is more than half the icon's height at 53 px. Weights
+  are now a fraction of the icon's half-extent — `Hair` 0.07, `Line` 0.13, `Slab` 0.28, after two
+  passes that were each too fat.
+- **A single halo width swallows the icon it is meant to edge.** One halo wide enough to back a
+  `Slab` turned the broken bottle's three shards into one dark smear. The halo is now per weight,
+  a fixed fraction wider than the line it backs.
+- **Round caps extend a stroke by half its width at each end, and every gap has to be measured
+  against that rather than against the endpoints.** The first shotgun put a `Slab` receiver 0.12
+  below a `Line` barrel and they fused into one mass; the first bottle put its shards inside the
+  body's own cap and it read as a dart with fins.
+
+**Measured, replacing the plan's estimate.** The ground layer saturates at **20 batches** — reached
+by 30 icons on screen and unchanged at 300, while the primitives in them grow 500 to 5,000. §16.5
+estimated 11, and was low because it assumed three widths where proportional weights put **eight**
+distinct ladder steps in play across the five tiers. Constant in what matters, and larger than
+claimed; `plan.md` §16.5 now carries the measurement.
+
+### CYB-029 — The forty-four icons
+
+- **Status:** Complete
+- **Specification:** [Change 0006](specs/changes/0006-weapon-and-pickup-iconography.md) — PROD-049, PROD-050
+- **Implementation approval:** Approved by the user on 2026-08-27 ("approve and proceed"), after reviewing phase one.
+- **Depends on:** CYB-028
+
+TDD checkpoints:
+
+- [x] Add a failing test proving every `WeaponId` and every `PowerupId` resolves to an icon. Over `entries`, so a twenty-seventh weapon added later fails here rather than drawing nothing on the floor of a map; it also pins the two registries to the same size as `Weapons.all` and `Powerups.all`.
+- [x] Add a failing test proving no two icons are equal as geometry. 946 comparisons over small lists runs in milliseconds, so it stays in `commonTest` and runs on both targets rather than needing `jvmTest` (ENG-031).
+- [x] Add a failing test proving every icon carries at least three strokes and spans at least 60% of its box's longer axis. **Deliberately not enforced in `Icon`'s `init`**, unlike containment: containment is a correctness invariant of the coordinate system, where minimum ink is a claim about the *authored set* — putting it in the constructor would make every three-line test fixture illegal for no gain.
+- [x] Add a failing test proving casing is present on every powerup icon and absent from every weapon icon, and that the two outline colours differ in hue and in luminance.
+- [x] Implement `render/WeaponIcons.kt` and `render/PowerupIcons.kt` from `plan.md` §16.6, composed from shared parts — `grip`, `stock`, `muzzle`, `ring`, and `Icon.cased` — so that "every pistol has a grip" is a function rather than a coincidence.
+- [x] Render the sheet after each family and record what it changed.
+- [x] Run the focused tests, then `./scripts/check.sh`. Green.
+
+**What rendering it changed.** Three, and the first is the one worth keeping.
+
+- **Two icons can differ in every coordinate and still read as the same thing, and no test sees it.**
+  The Static Lash and the Ghostwire Tether both came out as "a blob with a zigzag" — distinct
+  geometry, distinct entries, `no two icons are the same geometry` green, and indistinguishable on
+  the sheet. Fixed by giving each the thing that actually identifies it: the lash is a **taper**,
+  Slab handle through Line body to Hair tip with a pommel and a spark; the tether is an anchor plate,
+  a slack wire, and a hook large enough to be the subject. This is exactly the gap `plan.md` §16.7
+  draws the line at, arriving in the first family authored.
+- **The Tenement Nailgun's magazine read as a broken wing** angled back and down. The nail strip now
+  sits on top, with the nails in it.
+- **The containment check caught a second out-of-box op**, the Static Lash's pommel at `x = -0.90`
+  with radius `0.10`. Two catches in two tasks from a `require` in a constructor.
+
+**What the sheet says about the set.** Forty-four distinct silhouettes, and the three families read
+apart before any individual one is recognised: a melee weapon is a mass on a handle, a ranged weapon
+is a barrel over a grip, a psychic weapon has neither. The casing does more work than expected — the
+eighteen powerups read as one family at a glance, which is the PROD-050 clause that does not depend
+on blue.
+
+### CYB-030 — Drops are drawn as what they are
+
+- **Status:** Complete
+- **Specification:** [Change 0006](specs/changes/0006-weapon-and-pickup-iconography.md) — PROD-044, PROD-050, PROD-051
+- **Implementation approval:** Approved by the user on 2026-08-27 ("approve and proceed"), after reviewing phase one.
+- **Depends on:** CYB-029
+
+TDD checkpoints:
+
+- [x] Add a failing test proving a ground weapon is drawn in the fixed red and a ground powerup in the fixed blue, and that neither colour is one any palette hands out. **It failed by naming the defect**: the drop layer's styles were `#ff8a3d` (the theme's accent) and `#b6f7b6`.
+- [x] Add a failing test proving that for each of the ten palettes and each of its nine background colours, at least one of the halo and the outline differs in Rec. 709 luminance by at least 40 (property 30). Asserted of the **pair**, and it reuses `Palette.luminanceOf` rather than writing a second one.
+- [x] Add a failing test proving no style a frame uses on `Layer.Items` is used by that frame on `Layer.Hazard` or `Layer.Effects`. **It failed with `[#b6f7b6] is used for both a drop and a hazard or projectile` — which is the acid colour, and is the defect stated as a measurement rather than as an opinion.**
+- [x] Add a failing test proving an Ascended drop is drawn larger than a Street drop and carries `tierOrdinal + 1` pips.
+- [x] Add a failing test proving the batch bound (property 31), counted through `PaintSink`.
+- [x] Implement it in `Scene.pickups`. `PickupLook` keeps rarity and gains no knowledge of geometry.
+- [x] Measure the real added batch count against `plan.md` §16.5's estimate and correct the plan to the measurement.
+- [x] Run the focused tests, then `./scripts/check.sh`. Green.
+
+**The batch-bound test was written wrong twice, which makes three times in this project.** It is worth
+recording plainly, because the pattern is not carelessness — it is that the property is easy to state
+and hard to shape.
+
+1. **One drop against forty-four.** Failed 157 against 124. Those frames hold different *mixes*:
+   forty-four drops span all five tiers where one spans one, a tier is a scale, and a scale picks a
+   ladder width.
+2. **Forty-four distinct icons against forty-four copies of two.** Failed 157 against 145 — same
+   count, still a different mix, because an icon that uses no `Slab` opens no `Slab` batch.
+3. **What is actually true**, and what is asserted now, is the shape `SceneTest` settled on for
+   enemies: hold the mix and grow the count — every one of the forty-four is on screen in both
+   frames, one has four times as many — **plus a ceiling**, that forty-four distinct shapes open no
+   more than 24 batches on the item layer. Equality where equality holds; a bound where only a bound
+   does.
+
+A guard caught a fourth mistake in the same test: at a 3.0-unit spacing the extra copies fell outside
+the cull, so the "crowded" frame drew 1.8x rather than 4x the primitives and the comparison would have
+been vacuous.
+
+**Two other things the work decided.**
+
+- **The rarity glow behind a pickup is gone, not restyled.** It was `palette.glow[last]`, which is
+  also an enemy's eye and a mine's core — so it fails PROD-051's second clause by construction, and
+  the test above would have caught it if the icons had not replaced it first. The halo does the
+  separating now, and does it against terrain the glow never helped with.
+- **Drops are culled off-screen like enemies.** They were not, which cost nothing when a drop was one
+  rectangle and costs about 17 primitives each now.
+
+**A real frame was rendered, not just a sheet.** `WorldFrameSheetTest` writes a composed game frame —
+terrain, backdrop, player, HUD and seven drops — through the same `FramePainter` the browser uses.
+Four red weapons and three blue modules read clearly against the skyline at the size the game draws
+them, and the pips are countable.
+
+### CYB-031 — The held weapon is its own icon
+
+- **Status:** Complete
+- **Specification:** [Change 0006](specs/changes/0006-weapon-and-pickup-iconography.md) — PROD-049
+- **Implementation approval:** Approved by the user on 2026-08-27 ("approve and proceed"), after reviewing phase one.
+- **Depends on:** CYB-030
+
+TDD checkpoints:
+
+- [x] Add a failing test proving the geometry drawn in the player's hand is the icon drawn for that weapon on the ground — not only the same stroke count, but the same multiset of stroke lengths up to the one scale the placement applies.
+- [x] Add a failing test proving the held icon turns with `sim.aimDirection`, including above and below.
+- [x] Replace the single reach-scaled segment in `Scene.figure` with the posed icon. `weaponReach` stays and still comes from the weapon's declared range, so a railgun is still longer than a bottle — it now scales a shape rather than a line. An enemy keeps the plain barrel: its weapon is an archetype trait rather than a `WeaponId`, so there is no icon to resolve, and inventing a mapping so both could share one path would be an abstraction with one caller (ENG-022).
+- [x] `PhysicsDeterminismTest` untouched and green on both targets.
+- [x] Run the focused tests, then `./scripts/check.sh`. Green.
+
+**MAJOR, found by rendering and invisible to every test: the halo painted over the icon.**
+
+Zooming into a composed frame showed every `Hair` stroke on the larger drops drawn **solid black** —
+the shotgun's barrel, the katana's blade, the railgun's rails. The cause is an ordering hazard that
+only appears with two rarities on screen at once:
+
+- A rarer drop is drawn larger, so its halo snaps to a **wider** ladder step and opens a new batch.
+- Its outline widths snap to steps a smaller drop already opened, so those strokes go into batches
+  that sit **earlier** in the frame.
+- Within a layer, `SceneBuilder` publishes in the order batches were opened. So the larger drop's
+  halo was painted *after* its own outline, and swallowed it.
+
+Every test was green: the geometry was right, the colours were right, the batch count was right.
+Only the drawn frame was wrong. **Fixed structurally rather than by ordering the calls more
+carefully** — the halo and the outline now go on two layers (`ItemHalo` under `Items`, and
+`ActorFront` under `ActorTrim` for the held weapon), and `IconPainter` refuses a pair that is not
+ordered. That is the same fix `Layer` itself was introduced for in change 0005, arriving a second
+time for the same underlying reason: *batching by style destroys paint order, and the repair is a
+layer, not a convention.*
+
+**Two smaller things.**
+
+- **The held icon is drawn at 0.72 of the plain barrel's reach.** An icon's box is square where a
+  weapon is long, so at the full reach a railgun stood as tall as the player's torso. Rendered at
+  1.0, 0.8 and 0.7 before settling.
+- **The aim test was wrong three times, and the third reason is worth keeping.** A swing sets the
+  pose's aim from the *arm* rather than from the weapon's aim — correctly, since a swinging weapon
+  follows the arm — and the broken bottle swings on its cooldown whether or not anything is in
+  reach. The first two versions were measuring that arm and calling it the aim. It now settles past
+  the opening swing and asserts `Action.None` before measuring, so what it measures is named.
+
+### CYB-032 — Icons in the HUD
+
+- **Status:** Complete
+- **Specification:** [Change 0006](specs/changes/0006-weapon-and-pickup-iconography.md) — PROD-045, PROD-049
+- **Implementation approval:** Approved by the user on 2026-08-27 ("approve and proceed"), after reviewing phase one.
+- **Depends on:** CYB-029
+
+> **This is the one part of change 0006 the owner did not literally ask for.** The request was about
+> drops and about weapons; the display was not named. It was flagged as strikeable at approval and
+> was not struck, so it is built. It is what makes the other two teach: a player who has seen the
+> Overclock Coil in their own build recognises the next one lying on the floor.
+
+TDD checkpoints:
+
+- [x] Add a failing test proving the HUD model exposes the equipped weapon's id and each held powerup's id, so the browser layer resolves no icon of its own (ENG-060).
+- [x] Add a failing test proving the display's icons are the same geometry as the ground's — counted on the display's own layers, since the same frame draws the weapon in the player's hand in the same red.
+- [x] Draw the weapon's icon beside its name and each powerup's beside its stack count, in the kind's outline colour.
+- [x] Confirm the announcement PROD-004 relies on is unchanged; a test pins the weapon's name still being in it.
+- [x] Run the focused tests, then `./scripts/check.sh`. Green.
+
+**Two adjustments, both from looking at the rendered display.** The icon is half a line high rather
+than a full one — at 9.0 a powerup's casing bracket reached into the row above it — and names start
+at a fixed column clear of the icon rather than at the panel margin.
+
+**`SceneTest`'s frame ceiling had to rise, and it was measured rather than nudged.** It failed at 74
+against a claim of 72. A deliberately worst-case frame — 600 enemies, all forty-four icons on the
+ground at once, a full five-slot build in the display and an Ascended weapon in hand — opens **90**
+batches, 23 of them on the two item layers where a rectangle used to cost 3. The ceiling is now 100,
+and the comment says what was measured and why the number is what it is. The property the test exists
+for is untouched: a frame with one drop and a frame with a hundred open the same batches.
+
+### CYB-033 — Adversarial review gate R8
+
+- **Status:** Approved for implementation
+- **Specification:** [Change 0006](specs/changes/0006-weapon-and-pickup-iconography.md)
+- **Implementation approval:** Approved by the user on 2026-08-27 ("approve and proceed"). **Running a review round additionally requires the owner to direct it explicitly**, which approval of the implementation tasks does not by itself supply, so this task stays unstarted until they do.
+- **Depends on:** CYB-028, CYB-029, CYB-030, CYB-031
+
+- [ ] Run `./scripts/check.sh` green before spending a round.
+- [ ] Round 1: `codex exec --model gpt-5.6-sol -c model_reasoning_effort=xhigh --sandbox read-only`, briefed on all three lenses — specification, implementation, and absence — per `plan.md` §10.2. Record every finding below with what was verified and what was done.
+- [ ] Close each round's agent shells by recorded pid before starting the next, per `.claude/skills/adversarial-review/close-agents.sh`. The self-matching waiter left five shells running for a day last time.
+- [ ] Rounds continue until a round returns nothing load-bearing. R7 took eleven.
+
+**Two things R7 will look for here, recorded now so they are not discovered late.** The batch bound
+has been asserted about the wrong thing twice — once as a proxy the renderer did not deliver, once as
+a number true by definition — so property 31 is written to count at the sink from the start. And the
+luminance claim in property 30 is about the drawn pair rather than the outline colour, because the
+outline alone fails it on `ArcologyVault` by construction.
+
 ### CYB-021 — Loot density: one drop per five kills, two static drops per map
 
 - **Status:** Complete

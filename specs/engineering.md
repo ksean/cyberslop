@@ -35,6 +35,7 @@ The initial toolchain is Kotlin 2.4.10 and Gradle 9.4.0, a current pairing withi
 - **ENG-061:** The number of drawing-state changes issued per frame must be bounded by the number of style batches in the frame and must not grow with the number of entities drawn. Per-sprite canvas transform state must not be used.
 - **ENG-062:** Animation must be a pure function of simulation state and elapsed simulation time. It must not read a clock or ambient randomness, and no animation state may change what the simulation does.
 - **ENG-063:** Presentation must not add a runtime asset dependency. Everything drawn must be produced by code from the browser's own 2D context.
+- **ENG-064:** Item icon geometry must live in `commonMain` as one registry, and every place an item is drawn must resolve its shape from that registry rather than describe it again. An icon must be expressible in the draw list's existing primitives such that orienting it requires neither a canvas transform nor a trigonometric call; a direction supplied as a unit vector must be applied by arithmetic on that vector. The number of style batches icons contribute to a frame must be a constant, independent of how many icons the frame draws and of how many distinct icons exist. *(Added by [change 0006](changes/0006-weapon-and-pickup-iconography.md).)*
 
 ## Code quality
 

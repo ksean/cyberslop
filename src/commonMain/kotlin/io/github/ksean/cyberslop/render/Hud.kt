@@ -1,9 +1,11 @@
 package io.github.ksean.cyberslop.render
 
 import io.github.ksean.cyberslop.combat.Tier
+import io.github.ksean.cyberslop.combat.WeaponId
 import io.github.ksean.cyberslop.combat.WeaponSpec
 import io.github.ksean.cyberslop.gen.DifficultyCurve
 import io.github.ksean.cyberslop.loot.Powerup
+import io.github.ksean.cyberslop.loot.PowerupId
 import io.github.ksean.cyberslop.loot.PowerupTier
 import io.github.ksean.cyberslop.loot.Powerups
 import io.github.ksean.cyberslop.run.RunState
@@ -11,7 +13,13 @@ import io.github.ksean.cyberslop.sim.GameSimulation
 import io.github.ksean.cyberslop.world.ThemeId
 
 /** One held powerup, with how many times it is stacked (PROD-045). */
-data class HudStack(val name: String, val stacks: Int, val tier: PowerupTier) {
+data class HudStack(
+    /** So the display can resolve the same icon the ground draws (PROD-049, ENG-064). */
+    val id: PowerupId,
+    val name: String,
+    val stacks: Int,
+    val tier: PowerupTier,
+) {
     val maxed: Boolean get() = stacks >= Powerup.MAX_STACKS
 }
 
@@ -26,6 +34,7 @@ data class HudModel(
     val healthFraction: Double,
     val health: Int,
     val maxHealth: Int,
+    val weaponId: WeaponId,
     val weaponName: String,
     val weaponTier: Tier,
     val mapIndex: Int,
@@ -92,6 +101,7 @@ data class HudModel(
             healthFraction = (run.health / run.maxHealth).coerceIn(0.0, 1.0),
             health = run.health.toInt(),
             maxHealth = run.maxHealth.toInt(),
+            weaponId = run.loadout.weapon.id,
             weaponName = run.loadout.weapon.name,
             weaponTier = run.loadout.weapon.tier,
             mapIndex = run.mapIndex,
@@ -101,7 +111,7 @@ data class HudModel(
             // Ordered by strength so the build reads the same way twice running. A map's iteration
             // order is stable but says nothing a player would recognise.
             powerups = run.loadout.slots.held.entries
-                .map { (id, stacks) -> Powerups.of(id).let { HudStack(it.name, stacks, it.tier) } }
+                .map { (id, stacks) -> Powerups.of(id).let { HudStack(id, it.name, stacks, it.tier) } }
                 .sortedWith(compareByDescending<HudStack> { it.tier.ordinal }.thenBy { it.name }),
             bossName = bossName,
             bossFraction = bossFraction,

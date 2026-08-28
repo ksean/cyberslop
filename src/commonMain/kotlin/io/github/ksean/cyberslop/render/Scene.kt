@@ -36,6 +36,17 @@ object Scene {
     const val ZOOM = 3.5
 
     /**
+     * Half the width of a Street-tier drop, in **screen** pixels.
+     *
+     * Screen rather than world: the pickup draw multiplies the position by [ZOOM] and then uses this
+     * directly, so the 5.0 it held while a drop was a rectangle produced a 10 px wide bar — a fifth
+     * of a tile. An icon has to be read, not merely noticed, so it is sized against the tile it lies
+     * on: a tile is 16 world pixels and therefore 56 on screen, and a drop now spans 28 px at Street
+     * to 53 px at Ascended.
+     */
+    const val PICKUP_PX = 14.0
+
+    /**
      * Snaps a stroke width onto a bounded ladder.
      *
      * A batch is one `beginPath`/`stroke` pair, so its width is part of its identity — and a
@@ -85,7 +96,7 @@ object Scene {
         tiles(builder, palette, sim.level, camera)
         arenas(builder, palette, sim.level, camera)
         jets(builder, palette, sim.level, camera, timeSeconds)
-        pickups(builder, palette, sim, camera)
+        pickups(builder, sim, camera)
         enemies(builder, palette, sim, camera, timeSeconds)
         bosses(builder, palette, sim, camera)
         projectiles(builder, palette, sim, camera)
@@ -272,19 +283,24 @@ object Scene {
     // ---- things in the world ----------------------------------------------------------------
 
     /**
-     * A pickup shows what it is and how rare it is (PROD-044). Both were an eight-pixel square in
-     * one of two blues, so a player could tell neither without walking into it.
+     * A drop is drawn as the thing it is (PROD-044, PROD-049).
+     *
+     * It was a bar in the theme's `accent` and a block in `hazardGlow` — **the acid colour**, so
+     * every powerup in the game was drawn the same colour as the thing that kills you — with size
+     * carrying rarity and nothing carrying identity. A player crossing a map to reach a drop could
+     * not tell a railgun from a machete until they were standing on it, and PROD-030 makes contact
+     * irrevocable.
+     *
+     * The rarity glow that used to sit behind a pickup is gone with them. It was
+     * `palette.glow[last]`, which is also an enemy's eye and a mine's core, and PROD-051 does not
+     * allow a drop to be drawn in a colour the same frame gives an effect. The halo under the icon
+     * does the separating now, and does it against terrain the glow never helped with.
      */
     private fun pickups(
         builder: SceneBuilder,
-        palette: Palette,
         sim: GameSimulation,
         camera: Camera,
     ) {
-        val halo = builder.batch(Layer.Items, palette.glow[palette.glow.size - 1], Primitive.Dot)
-        val weapons = builder.batch(Layer.Items, palette.accent, Primitive.Rect)
-        val powerups = builder.batch(Layer.Items, palette.hazardGlow, Primitive.Rect)
-
         sim.items.forEach { item ->
             val weapon = item.weapon
             val powerup = item.powerup
@@ -293,17 +309,39 @@ object Scene {
                 powerup != null -> PickupLook.of(powerup)
                 else -> return@forEach
             }
+            val icon = when {
+                weapon != null -> WeaponIcons.of(weapon.id)
+                else -> PowerupIcons.of(powerup!!.id)
+            }
             val x = (item.position.x - camera.x) * ZOOM
             val y = (item.position.y - camera.y) * ZOOM
-            val size = PICKUP_PX * look.scale
+            if (x < -OFF_SCREEN || x > camera.viewWidth * ZOOM + OFF_SCREEN) return@forEach
 
-            halo.dot(x, y, size * HALO)
-            // A weapon is a bar, a powerup is a block. Shape carries the kind; size carries rarity.
-            if (look.weapon) {
-                weapons.rect(x - size, y - size / 3.0, size * 2.0, size * 2.0 / 3.0)
-            } else {
-                powerups.rect(x - size * 0.7, y - size * 0.7, size * 1.4, size * 1.4)
-            }
+            val scale = PICKUP_PX * look.scale
+            IconPainter.paint(builder, icon, look.weapon, x, y, scale, Layer.ItemHalo, Layer.Items)
+            tierPips(builder, look, x, y + scale + PIP_DROP)
+        }
+    }
+
+    /**
+     * Rarity, now that shape is spent on identity.
+     *
+     * Counted rather than compared: telling a 1.0-scale drop from a 1.3-scale one needs both on
+     * screen at once, where four pips against two needs neither a second drop nor colour.
+     */
+    private fun tierPips(builder: SceneBuilder, look: PickupLook, centreX: Double, y: Double) {
+        val count = look.tierOrdinal + 1
+        val halo = builder.batch(Layer.ItemHalo, IconStyles.HALO, Primitive.Dot)
+        val pips = builder.batch(
+            Layer.Items,
+            IconStyles.outlineOf(look.weapon),
+            Primitive.Dot,
+        )
+        val first = centreX - (count - 1) * PIP_PITCH / 2.0
+        for (index in 0 until count) {
+            val x = first + index * PIP_PITCH
+            halo.dot(x, y, PIP_PX + PIP_HALO)
+            pips.dot(x, y, PIP_PX)
         }
     }
 
@@ -482,6 +520,15 @@ object Scene {
         armed: Boolean = look?.armed == true,
         /** How far the weapon reaches, as a fraction of the figure's height. */
         weaponReach: Double = BARREL_REACH,
+        /**
+         * The icon to draw in the lead hand, for a figure holding a weapon from the registry.
+         *
+         * Null draws the plain barrel an enemy gets. An enemy's weapon is not a `WeaponId` — it is
+         * an archetype trait — so there is no icon to resolve for one, and inventing a mapping so
+         * that every figure could take the same path would be an abstraction with one caller
+         * (ENG-022).
+         */
+        heldIcon: Icon? = null,
     ) {
         val bulk = look?.bulk ?: 1.0
         val thickness = pose.height * ZOOM * LIMB * bulk
@@ -537,12 +584,37 @@ object Scene {
         }
 
         if (armed) {
-            builder.batch(Layer.ActorFront, trimStyle, Primitive.Segment, armWidth).segment(
-                originX + pose.leadHand.x * ZOOM,
-                originY + pose.leadHand.y * ZOOM,
-                originX + (pose.leadHand.x + pose.weaponAim.x * pose.height * weaponReach) * ZOOM,
-                originY + (pose.leadHand.y + pose.weaponAim.y * pose.height * weaponReach) * ZOOM,
-            )
+            val handX = originX + pose.leadHand.x * ZOOM
+            val handY = originY + pose.leadHand.y * ZOOM
+            val reach = pose.height * weaponReach * ZOOM
+            if (heldIcon == null) {
+                builder.batch(Layer.ActorFront, trimStyle, Primitive.Segment, armWidth)
+                    .segment(
+                        handX,
+                        handY,
+                        handX + pose.weaponAim.x * reach,
+                        handY + pose.weaponAim.y * reach,
+                    )
+            } else {
+                // The icon's own `+x` runs along the aim and its box is `[-1, 1]`, so an origin half
+                // a reach along the aim at half a reach of scale puts the grip in the hand and the
+                // muzzle exactly where the plain barrel ended. `weaponReach` still comes from the
+                // weapon's declared range, so a railgun is still longer than a bottle — it now
+                // scales a shape rather than a line.
+                val scale = reach / 2.0 * HELD_ICON
+                IconPainter.paint(
+                    builder,
+                    heldIcon,
+                    weapon = true,
+                    originX = handX + pose.weaponAim.x * scale,
+                    originY = handY + pose.weaponAim.y * scale,
+                    scale = scale,
+                    // Over the arm that holds it, under nothing else the actor draws.
+                    haloLayer = Layer.ActorFront,
+                    outlineLayer = Layer.ActorTrim,
+                    aim = pose.weaponAim,
+                )
+            }
         }
     }
 
@@ -776,6 +848,9 @@ object Scene {
             // something was the only one drawn empty-handed.
             armed = true,
             weaponReach = weaponReach(sim.run.loadout.weapon),
+            // The same geometry the drop was drawn with, so picking a weapon up teaches the player
+            // what that shape means on the floor of the next map (PROD-049).
+            heldIcon = WeaponIcons.of(sim.run.loadout.weapon.id),
             // Fixed rather than themed. The player has to be the one figure on screen that is never
             // in doubt, and against a dark map full of enemies in the same faction colours a themed
             // eye put them in the same read as everything trying to kill them.
@@ -862,6 +937,26 @@ object Scene {
 
     // ---- heads-up display --------------------------------------------------------------------
 
+    /**
+     * One icon in the display's left column, sitting on the same baseline as the name beside it.
+     *
+     * Halo and outline on two layers for the reason `IconPainter` states: on one, the order is
+     * whichever batch was opened first, and a display listing items of several rarities opens them
+     * in the wrong one.
+     */
+    private fun hudIcon(builder: SceneBuilder, icon: Icon, weapon: Boolean, line: Double) {
+        IconPainter.paint(
+            builder,
+            icon,
+            weapon,
+            HUD_MARGIN + HUD_ICON,
+            line - HUD_ICON_RISE,
+            HUD_ICON,
+            haloLayer = Layer.Hud,
+            outlineLayer = Layer.HudOverlay,
+        )
+    }
+
     private fun hud(
         builder: SceneBuilder,
         palette: Palette,
@@ -884,11 +979,15 @@ object Scene {
                 HUD_SMALL, HUD_TEXT, bold = true,
             ),
         )
+        // The weapon the player is carrying, drawn as the shape it was when it was on the floor —
+        // which is what makes the next one of those on the floor mean something (PROD-049).
+        val weaponLine = HUD_MARGIN + HUD_BAR_HEIGHT + HUD_LINE
+        hudIcon(builder, WeaponIcons.of(model.weaponId), weapon = true, line = weaponLine)
         builder.text(
             TextItem(
                 model.weaponName,
-                HUD_MARGIN,
-                HUD_MARGIN + HUD_BAR_HEIGHT + HUD_LINE,
+                HUD_MARGIN + HUD_ICON_COLUMN,
+                weaponLine,
                 HUD_BODY, palette.accent, bold = true,
             ),
         )
@@ -914,7 +1013,8 @@ object Scene {
         val pips = builder.batch(Layer.HudOverlay, palette.accent, Primitive.Rect)
         model.powerups.forEachIndexed { index, stack ->
             val y = HUD_MARGIN + HUD_BAR_HEIGHT + HUD_LINE * (index + 2)
-            builder.text(TextItem(stack.name, HUD_MARGIN, y, HUD_SMALL, HUD_TEXT))
+            hudIcon(builder, PowerupIcons.of(stack.id), weapon = false, line = y)
+            builder.text(TextItem(stack.name, HUD_MARGIN + HUD_ICON_COLUMN, y, HUD_SMALL, HUD_TEXT))
             repeat(io.github.ksean.cyberslop.loot.Powerup.MAX_STACKS) { pip ->
                 val batch = if (pip < stack.stacks) pips else empty
                 batch.rect(
@@ -971,8 +1071,11 @@ object Scene {
     private const val JET_CORE = 0.3
     private const val JET_POOL = 2.6
     private const val JET_POOL_HEIGHT = 0.18
-    private const val PICKUP_PX = 5.0
-    private const val HALO = 1.6
+
+    private const val PIP_PX = 2.0
+    private const val PIP_HALO = 1.25
+    private const val PIP_PITCH = 7.0
+    private const val PIP_DROP = 7.0
     private const val OFF_SCREEN = 120.0
     private const val REFERENCE_SPEED = 70.0
 
@@ -987,6 +1090,14 @@ object Scene {
     private const val WEAPON_REACH_TILES = 6.0
     private const val WEAPON_REACH_MIN = 0.35
     private const val WEAPON_REACH_MAX = 0.95
+
+    /**
+     * How much of the plain barrel's reach the held icon spans.
+     *
+     * Under one because an icon's box is square while a weapon is long: drawn at the full reach a
+     * railgun stood as tall as the player's torso. Rendered at 1.0, 0.8 and 0.7 against a frame.
+     */
+    private const val HELD_ICON = 0.72
     private const val PLATE_WIDTH = 0.34
     private const val PLATE_HEIGHT = 0.05
     private const val PLATE_TOP = 0.26
@@ -1047,6 +1158,19 @@ object Scene {
     private const val HUD_BODY = 14.0
     private const val HUD_SMALL = 11.0
     private const val HUD_TEXT_INSET = 4.0
+    /**
+     * Half the width of an icon in the display.
+     *
+     * Under half [HUD_LINE], so consecutive rows do not touch. At 9.0 a powerup's casing bracket
+     * reached into the row above it.
+     */
+    private const val HUD_ICON = 8.0
+
+    /** Where a name starts, clear of the icon in front of it. */
+    private const val HUD_ICON_COLUMN = 26.0
+
+    /** How far the icon's centre sits above the text baseline it shares. */
+    private const val HUD_ICON_RISE = 5.0
     private const val HUD_PIP_X = 132.0
     private const val HUD_PIP = 7.0
     private const val HUD_PIP_GAP = 3.0

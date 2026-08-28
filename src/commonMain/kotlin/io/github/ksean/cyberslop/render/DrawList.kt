@@ -20,6 +20,19 @@ enum class Layer {
     Haze,
     Terrain,
     Hazard,
+
+    /*
+     * An icon is drawn twice — a dark halo, then the coloured line over it — and which of those two
+     * is on top cannot be left to the order batches happen to be opened in.
+     *
+     * Found by rendering a frame with four drops of different rarities in it. A rarer drop is drawn
+     * larger, so its halo snaps to a wider ladder step and opens a *new* batch; its outline widths
+     * were already opened by the smaller drop, so they sit earlier in the frame. The result is a
+     * halo painted after an outline it is supposed to sit under, and every thin stroke on the
+     * larger icon came out solid black. Two layers make the order structural, which is the same fix
+     * [Layer] itself was introduced for.
+     */
+    ItemHalo,
     Items,
 
     /*

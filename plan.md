@@ -1,6 +1,6 @@
 # Cyberslop — Research & Development Plan
 
-**Status:** Version 3 — visual identity and loot density added (§15) · **Owner:** Sean Kennedy · **Created:** 2026-08-25
+**Status:** Version 4 — weapon and pickup iconography added (§16) · **Owner:** Sean Kennedy · **Created:** 2026-08-25
 
 This plan turns the Cyberslop concept into buildable, verifiable engineering work. It is the
 research artifact that *drives* the repository's spec-driven workflow in [`AGENTS.md`](AGENTS.md) —
@@ -18,6 +18,13 @@ in [`tasks.md`](tasks.md).
 > backdrop — and the loot density the owner set. It adds properties 23–26 and requirements
 > PROD-040..047 and ENG-060..062. It supersedes §6.7's trash drop-rate row, which is called out at
 > that row rather than left to be discovered.
+
+> **Version 4.** [§16](#16-weapon-and-pickup-iconography) gives each of the 26 weapons and 18 powerups
+> its own icon, drawn identically on the ground, in the player's hand and in the HUD, outlined in red
+> for a weapon and blue for a powerup. It adds properties 27–31 and requirements PROD-049..051 and
+> ENG-064, and amends PROD-044. It supersedes nothing: §15's pickup treatment — a bar or a block in
+> `palette.accent` or `palette.hazardGlow` — is replaced rather than reinterpreted, and the reason is
+> at §16 rather than left to be discovered.
 
 ---
 
@@ -1883,3 +1890,368 @@ corrections rather than tuning:
   edges, screen shake, hit flashes and particle work are pass two, and pass two is not scheduled here.
 - It does not touch audio, which remains M8's deferred item.
 
+*(One exception was carved out of that list in version 4. [§16](#16-weapon-and-pickup-iconography)
+draws each weapon and powerup as the object it is, because §15 left all forty-four collectables as
+one of two rectangles — a legibility defect against PROD-044 rather than a missing coat of paint. The
+rest of the pass-two list stands unscheduled.)*
+
+---
+
+## 16. Weapon and pickup iconography
+
+**Added in version 4**, after the owner asked that a drop look like the thing it is — *"a drop that is
+a bottle should look like a bottle, a drop that is a shotgun should look like a shotgun"* — with
+weapons outlined in red and powerups outlined in blue.
+
+§15 gave the world a palette, the player a rig and the enemies silhouettes, and then drew every one
+of the game's forty-four collectable items as one of two rectangles. A weapon is a bar in
+`palette.accent`; a powerup is a block in `palette.hazardGlow`, which is the **acid colour** — so on
+every map a powerup is drawn in the same colour as the thing that kills you. Size carries rarity and
+nothing carries identity. A player crossing a map to reach a drop cannot tell whether they are
+walking towards a railgun or a machete until they are standing on it, and PROD-030 makes contact
+irrevocable.
+
+This section is how forty-four items get forty-four silhouettes without breaking ENG-061, without a
+sprite atlas (§15.1 settled that), and without a canvas transform.
+
+### 16.1 One icon, drawn in three places
+
+The registries already exist and are the only source of identity: 26 `WeaponId` and 18 `PowerupId`.
+An **icon** is a small piece of geometry keyed by one of those ids, and it is drawn wherever the game
+refers to that item:
+
+| Where | Today | With icons |
+|---|---|---|
+| Lying on the ground | a bar or a block, sized by tier | its own icon, sized by tier |
+| Held in the player's hand | one stroked segment, length scaled from `rangePx` | its own icon, oriented along the aim |
+| Named in the HUD | text alone | text with its icon beside it |
+
+Drawing the same geometry in all three is not a tidiness argument. It is the only way *"a drop that
+is a shotgun looks like a shotgun"* stays true after the player picks it up — a drop and the weapon
+it becomes have to be the same object, or the pickup taught the player nothing.
+
+### 16.2 The vocabulary: line art, because line art rotates
+
+The draw list has three primitives (§15.3): `Rect`, `Segment` and `Dot`. An icon may use only
+**segments and dots**, and the reason is geometric rather than stylistic.
+
+An axis-aligned rectangle is not closed under rotation — rotate it and it is a quadrilateral, which
+`Rect` cannot express, and the only ways out are a canvas transform — §8.1's measured 7.61× trap,
+which this whole batching design exists to avoid — or four segments per rectangle anyway. A **segment is closed under rotation**: rotate its
+two endpoints and it is still a segment. A dot is rotation-invariant. So an icon built from segments
+and dots can be posed at any angle, at any scale, with no transform and no second geometry for the
+held case.
+
+And rotating it needs no trigonometry either, which matters under ENG-054. `Pose.weaponAim` is
+already a **unit vector** — the simulation computes it as `(aim - muzzle).normalisedOr(...)` — so
+rotating a local point is
+
+```
+worldX = u * aim.x - v * aim.y
+worldY = u * aim.y + v * aim.x
+```
+
+four multiplies and two adds. `TrigTable` is not consulted, because there is no angle anywhere in the
+path: the direction arrives as a vector and stays one.
+
+An icon is therefore a list of ops of two kinds, in a local box of `[-1, 1]²`, `y` down as
+everywhere else:
+
+| Op | Fields | Draws |
+|---|---|---|
+| `Stroke` | `x1, y1, x2, y2, weight` | a barrel, a blade, a haft, a coil, a casing edge |
+| `Dot` | `x, y, radius` | a muzzle, a lens, a spark, a rivet, a pip |
+
+**Three stroke weights, not a continuum.** `Hair`, `Line` and `Slab`. A katana whose blade, guard and
+grip are all one width is a stick; three weights are what let a cleaver read as heavy and a whip as
+thin. Three rather than free, because weight is part of a batch's identity exactly as stroke width
+already is, and a continuous weight would give almost every icon its own batch. Round caps mean a
+`Slab` stroke *is* a filled bar, which is how an icon gets solid mass without a `Rect` — and they
+extend a stroke by half its width at each end, so every gap inside an icon is measured against that
+rather than against the endpoints. The first shotgun drawn put a `Slab` receiver 0.12 below a `Line`
+barrel and the two fused into one mass.
+
+A weight is a **fraction of the icon's half-extent** — 0.07, 0.13 and 0.28 — not a fixed pixel width.
+Fixed widths were specified here first, to hold the batch count down, and building it showed that to
+be the wrong trade: a weight that does not scale makes a Street drop and an Ascended drop two
+different designs rather than one object at two sizes, and a `Slab` heavy enough to read as a
+bottle's body at 28 px is more than half the icon's height at 53 px. What it costs is in §16.5.
+
+### 16.3 Red, blue, and the two themes that fight them
+
+The owner set the colours: weapons red, powerups blue, and they do not move with the sub-theme —
+a red-outlined thing is a weapon on all ten maps or the rule teaches nothing. Two measurements were
+taken before committing to that, and both found something.
+
+**Measurement one — luminance against the terrain.** Rec. 709 luma (the `Palette.luminanceOf` the
+project already has, 0–255) of a candidate red `#ff2f2f` is 91.2 and of a candidate blue `#3d8bff` is
+130.8. Against every palette's tiles, backdrop and sky, the closest approaches are:
+
+| Colour | Nearest palette colour | Its luma | Separation |
+|---|---|---|---|
+| red 91.2 | `ArcologyVault.tileBody` `#5f5a41` | 89.3 | **2.0** |
+| red 91.2 | `NeonSlums.tileEdge` `#7a479b` | 87.9 | **3.3** |
+| red 91.2 | `SkybridgeRuin.tileBody` `#47566f` | 84.6 | **6.6** |
+| blue 130.8 | `SkybridgeRuin.tileEdge` `#7a8aa6` | 136.6 | **5.8** |
+
+A red icon lying on Arcology Vault's floor is, in luminance, *the floor*. Hue separates them for most
+players and separates them not at all in greyscale or for a player with low colour discrimination.
+Retuning the reds and blues per theme is not available — the whole point is that the colour is fixed —
+so the fix is structural: every icon is drawn **twice**, a thicker near-black halo underneath and the
+coloured line art on top.
+
+**What that buys is worth stating exactly, because the obvious version of the claim is false.** A
+near-black halo does not separate from a near-black sky: against `ReactorCore.sky` a halo at luma 6.1
+measures **0.1**. What the pair guarantees is that *at least one of its two lines* separates, and that
+is a quantity worth minimising over all ten palettes and all nine of their background colours rather
+than over the four rows above:
+
+| Drawn as | Worst separation, over 90 palette colours | Where |
+|---|---|---|
+| red outline alone | **2.0** | `ArcologyVault.tileBody` |
+| near-black halo alone | **0.1** | `ReactorCore.sky` |
+| red **with** a `#05060a` halo | **42.9** | `ArcologyVault.tileDeep` |
+| red **with** a `#000000` halo | **45.8** | `ReactorCore.tileBody` |
+| blue **with** a `#000000` halo | **65.5** | `RuinedCitySprawl.tileBody` |
+
+So the pair is worth roughly **23×** the outline alone at its worst, the worst case is red against a
+mid-dark tile at 45.8 of a 255 range, and the margin property 30 asserts is stated over the pair. The
+halo colour is a tuning parameter with about three points of worst-case in it; the mechanism is what
+matters.
+
+**Measurement two — hue against the theme's own accent.** RGB distance from the candidate outlines to
+each palette's `accent`:
+
+| Theme | `accent` | to red | to blue |
+|---|---|---|---|
+| ReactorCore | `#ff3b30` | **12.0** | 294.8 |
+| ServerStacks | `#3b82f6` | 291.4 | **12.9** |
+| SableRefinery | `#e2683a` | 64.9 | 259.3 |
+| SkybridgeRuin | `#ff7a1a` | 77.9 | 300.6 |
+
+On Reactor Core the drop outline is the theme's accent to within a rounding error, and `accent` is
+currently the colour of projectiles, fire-jet plumes, the exit marker and the player's own trim. On
+Server Stacks the same is true of blue. Two of ten maps therefore cannot carry kind on hue alone, and
+no choice of red or blue avoids it, because accents span the wheel by design (§15.6).
+
+So **kind is carried twice, structurally and by colour**: a powerup's icon sits inside a **module
+casing** — a bracketed chip outline — and a weapon's never does. That is the same doctrine PROD-042
+already applies to enemies, arrived at by measurement rather than by principle, and it is what
+PROD-050's second clause states. It is also the correct reading of the request: a powerup *is* a
+gadget, so drawing it as a cased module is not a compromise made for legibility, it is what the thing
+looks like.
+
+The change additionally stops using `hazardGlow` for a powerup. Drawing collectables in the acid
+colour was always wrong and the icons make it unnecessary.
+
+### 16.4 Rarity, after shape takes over
+
+Rarity is PROD-044 and it survives, but shape is now spent on identity, so it needs its own carrier.
+Two, kept because either alone is weak:
+
+- **Size**, as today — `PickupLook.scale` runs 1.0 to 1.9 across five tiers and continues to.
+- **Tier pips** — a row of `tierOrdinal + 1` dots under the icon, in the kind's own colour. Counting
+  is exact where comparing two sizes across a screen is not, it needs no second pickup to compare
+  against, and it survives colour removal because the signal is the number of dots. One dot batch for
+  every pickup on screen.
+
+The ground footprint had to grow, and by more than this section first said. **`PICKUP_PX` is in
+screen pixels, not world pixels** — `Scene.pickups` multiplies the *position* by `ZOOM` and then uses
+`PICKUP_PX * scale` directly — so the paragraph that stood here, claiming 5.0 gave a Street item a
+35 px box, was wrong by the whole zoom factor: it gave **10 px**, a fifth of a tile. Corrected by
+rendering it. `PICKUP_PX` is now 14.0, sized against the tile a drop lies on rather than against a
+number — a tile is 16 world pixels and therefore 56 on screen — so a drop spans **28 px at Street to
+53 px at Ascended**, and the five tier sizes are plainly distinguishable on the sheet.
+
+### 16.5 The batch arithmetic, stated before it is built
+
+ENG-061 is the constraint every part of §15 was shaped by, and forty-four distinct icons is exactly
+the shape of change that could break it. It does not, and the reason is worth being precise about:
+**icons vary in geometry, not in style.** Two different icons drawn at the same size in the same kind
+share every batch key — layer, colour, primitive, weight — and simply push different numbers into the
+same buffers. The batch count is a function of the *style* vocabulary, which is fixed:
+
+The first version of this section estimated eleven batches for the ground layer, on the assumption of
+one width per weight. Proportional weights (§16.2) put **eight** distinct ladder steps in play across
+the five tier scales instead of three, so the estimate was low. **Measured, with the icons built:**
+
+| Icons drawn on the ground layer | Batches | Primitives |
+|---|---|---|
+| 1 | 8 | 14 |
+| 3 | 13 | 50 |
+| 30 | **20** | 500 |
+| 300 | **20** | 5,000 |
+
+Composed into a real frame the item layers settle at **at most 24** batches with all forty-four
+distinct icons on screen at once, which is the ceiling property 31 pins. And the **whole frame**,
+measured on a deliberate worst case — 600 enemies, all forty-four icons on the ground, a full
+five-slot build in the display and an Ascended weapon in hand — opens **90** batches against the 52
+this work started from. Twenty-three of those are the two item layers, where a drop used to cost
+three. That is the real price of this change, and it is a constant: the same frame with one drop
+opens the same batches.
+
+**An icon needs its halo and its outline on two layers, and building it is what said so.** On one
+layer their order is whichever batch was opened first, and a frame holding drops of two rarities
+opens them in the wrong one: the larger icon's halo snaps to a wider ladder step and opens a *new*
+batch, while its outline widths were already opened by the smaller icon and sit earlier in the frame.
+Rendered, every thin stroke on the larger drop came out **solid black** — with every test green, the
+geometry right, the colours right and the batch count right. `ItemHalo` now sits under `Items`,
+`ActorFront` under `ActorTrim` for the held weapon, `Hud` under `HudOverlay` for the display, and
+`IconPainter` refuses a pair that is not ordered. It is the second time in this project that batching
+by style has destroyed paint order, and the second time the repair has been a layer rather than a
+convention.
+
+Twenty, saturating by thirty icons and unmoved at three hundred while the primitives inside them grow
+tenfold. That is the property, and it is what property 31 asserts: the batch count is a function of
+the fixed *style* vocabulary — eight ladder widths across halo, red and blue, plus dots — and not of
+what is on screen. The hand and the HUD add their own, so the constant this change adds to a frame
+measured at 52 is larger than the twenty-five first written here and is still a constant.
+
+The estimate is left above rather than replaced, because it being wrong is the interesting part:
+§15.8's property 23 was twice asserted about the wrong thing, and the discipline that catches that is
+measuring rather than believing.
+
+Cost that is *not* bounded, and is not claimed to be: the number of primitives. Measured above at
+about **17 per icon** — every stroke and dot drawn twice, halo then outline. Even thirty pickups on
+screen at once, far more than PROD-046's and PROD-047's rates produce, is 500 primitives against the
+~3,600 tile rectangles the same frame already writes. That is rasterization,
+which §8.1's open full-frame measurement covers and this section does not discharge.
+
+### 16.6 The forty-four
+
+Authored as compositions of shared parts — `grip`, `stock`, `muzzle`, `ring` and `Icon.cased` —
+rather than forty-four hand-rolled blobs, so that "every pistol has a grip" is a shared function and
+not a coincidence.
+
+The budget was written here as **at most eight strokes** per icon, and what was actually authored is
+**three to ten for a weapon and four to eight of contents inside a powerup's four-stroke casing** —
+the two ring weapons need six strokes before anything identifies them. The budget did its job anyway:
+it is the reason a broken bottle is three bars of rising weight rather than a traced outline, and the
+reason nothing in the set has interior detail that would vanish at 28 px.
+
+**Melee — a blade or a mass on a handle.**
+
+| Weapon | Silhouette |
+|---|---|
+| Broken Bottle | tapered neck, shoulder, body, three jagged spikes where the base broke off |
+| Rustline Machete | broad single-edge blade, straight spine, short wrapped grip |
+| Corpo Riot Baton | straight rod with a side handle, ribbed grip ticks |
+| Chrome Fang | two curved claws rising from a fist bar |
+| Static Lash | three-segment tapering whip with a spark dot at the tip |
+| Gutterjack Cleaver | heavy rectangular head, notched spine, stubby handle, finger hole |
+| Kill-Switch Katana | long slender blade, small square guard, long two-hand grip |
+| Chromewreck Maul | block head on a long haft, two head bands |
+| Meatgrinder Halo | a ring with four outward blades |
+
+**Ranged — a barrel, a receiver and a grip.**
+
+| Weapon | Silhouette |
+|---|---|
+| Scrapline Zip Pistol | short barrel, slide, angled grip, trigger guard |
+| Tenement Nailgun | boxy body, stubby barrel, top nail-strip magazine |
+| Ganglord SMG | compact receiver, short barrel, long curved magazine |
+| Riotbreaker Shotgun | long tube barrel over a parallel under-magazine, pump grip, straight stock |
+| Vulture Rail Carbine | long thin barrel, mid-mounted scope block, straight stock |
+| Ashfall Grenade Lobber | fat short barrel with a flared muzzle, drum, angled grip |
+| Sable Corp Railgun | very long barrel flanked by two rail bars, coil block, stock |
+| "Debt Collector" Minigun | three parallel barrels, rotor housing, feed chute |
+| Kessler Orbital Uplink | a dish on a tripod, with a beam line to a satellite dot |
+
+**Psychic — no barrel; a field, a wave or a wound.**
+
+| Weapon | Silhouette |
+|---|---|
+| Neural Spike | a needle on a socket base, pin dot |
+| Migraine Loop | concentric arcs around a small core dot |
+| Wetware Screamer | a horn cone with three expanding arcs |
+| Ghostwire Tether | a hooked line looping to an anchor dot, chain ticks |
+| Blackbox Chorus | a box with three antennae and a slot mouth |
+| Synapse Hemorrhage | a bulb with three branching cracks |
+| Null-Ego Singularity | a ring with an empty centre and inward ticks |
+| Voice of the Dead Net | a mask outline with a broadcast fan |
+
+**Powerups — every one inside a module casing (§16.3).**
+
+| Powerup | Contents of the casing |
+|---|---|
+| Fracture Lens | a lens oval with a crack across it |
+| Kinetic Damper | a spring coil between two plates |
+| Ranger Optics | a scope tube with a cross-hair |
+| Guillotine Codec | a blade over a bracket, with a row of code ticks |
+| Hollowpoint Firmware | a bullet outline with a hollow tip ring |
+| Spike Driver | a spike driven through a plate |
+| Red Market Siphon | a tube with a droplet falling into a vial |
+| Mass Driver | a heavy block on rails, with a drive arrow |
+| Overclock Coil | a zig-zag coil between two terminals |
+| Chill Protocol | a six-spoke frost star |
+| Burn Rig | a triple flame tongue over a burner bar |
+| Ricochet ROM | a chip with a reflected bounce path and a corner dot |
+| Seeker Daemon | a cross-hair ring with a dart curving into it |
+| Arc Cascade | a lightning fork with three branch ticks |
+| Brownout Charge | a broken circle around a vertical bar, one dim dot |
+| Fork Bomb | one line splitting into three, each ending in a dot |
+| Thermite Payload | a canister with a fuse and a heat plume |
+| Killstreak Cache | a crate with a four-stroke tally and a slash |
+
+### 16.7 What a test can prove here, and what it cannot
+
+*"A shotgun looks like a shotgun"* is a claim about a person, and no assertion in `commonTest` reaches
+it. This project has been caught twice asserting a proxy and calling it the property (§15.8), so the
+line is drawn explicitly.
+
+**Provable, and property 27–31 do:** every id has an icon; no two icons are the same geometry; an
+icon is a pure function of its id; every icon fits its box and carries at least three strokes
+spanning at least 60% of the box's longer axis, so none is silently empty; the ground icon, the held
+icon and the HUD icon are the same geometry; orienting is a rigid motion; kind maps totally onto
+casing and colour; the halo-plus-outline separates by luminance from every palette; no style used on
+`Layer.Items` appears on `Layer.Hazard` or `Layer.Effects`; and the batch count is unchanged between
+one icon and forty-four.
+
+**Not provable, and scheduled as human validation instead (§9.4):** whether the thing is recognisable.
+The mechanism is an **icon sheet** — a development page that renders all forty-four at all five tier
+sizes, in greyscale and in colour, over each of the ten palettes — reviewed by the owner. It is built
+**first**, before the forty-four are authored, because §15.9 records six defects found by rendering a
+sheet and none of them by a test, and because authoring forty-four icons without seeing them is how
+forty-four unreadable icons get authored. The sheet is a `Layer.Debug` scene and ships in no
+production path.
+
+### 16.8 New properties
+
+27. **Icon totality and distinctness (PROD-049).** Every `WeaponId` and every `PowerupId` resolves to
+    an icon; the resolution is a pure function of the id; no two icons are equal as geometry; every
+    op lies inside the `[-1, 1]` box; and every icon carries at least three strokes spanning at least
+    60% of the box's longer axis, so none can be silently empty, a single dot, or a smudge in one
+    corner.
+28. **One icon, three presentations (PROD-049).** The geometry drawn for an item lying on the ground,
+    the geometry drawn for it in the player's hand, and the geometry drawn for it in the HUD are the
+    same list of ops, differing only in scale and orientation. Orienting by a unit vector is a rigid
+    motion: every stroke keeps its length and every pair of strokes its angle, to floating-point
+    tolerance.
+29. **Kind survives colour removal (PROD-050).** Casing is present on every powerup icon and absent
+    from every weapon icon; the map from id to kind to outline colour is total; and the two outline
+    colours differ in hue and in luminance by a stated margin.
+30. **Legible on every map (PROD-051).** For each of the ten palettes and each of its nine background
+    colours, at least one of the halo and the outline differs in Rec. 709 luminance from that colour
+    by at least 40. Asserted of the **pair**, because neither line clears it alone: the red outline
+    measures 2.0 against `ArcologyVault.tileBody` and a near-black halo measures 0.1 against
+    `ReactorCore.sky`. Separately, no style a composed frame uses on `Layer.Items` is used by that
+    frame on `Layer.Hazard` or `Layer.Effects`, so a drop cannot be drawn in a hazard's or a
+    projectile's colour.
+31. **Icon batch bound (ENG-061, ENG-064; extends property 23).** A frame drawing one icon and a frame
+    drawing all forty-four issue the same number of drawing-state changes through `PaintSink`, counted
+    at the sink rather than assumed from the batch count — which is the mistake rounds one and two of
+    R7 found in property 23 twice over.
+
+### 16.9 What this section does not claim
+
+- It does not restyle the enemies, the world or the player. §15's pass-two list — grime, scanlines,
+  screen shake, hit flashes, particles — stays unscheduled; this is a legibility change that happens
+  to be visual, not the beginning of pass two.
+- **It does not touch projectiles.** A railgun slug and a nailgun nail are still the same dot, and
+  making a weapon's *fire* look like its icon is a larger surface — every `FirePattern`, not every
+  `WeaponId` — with its own performance question, since projectiles are the things there are hundreds
+  of. Recorded as a follow-up, deliberately out of scope.
+- It does not change what any weapon or powerup *does*. No registry field moves, no balance number
+  moves, and `LootFloor`, `WeaponScore` and every drop rate are untouched. The two open questions §12
+  records about them are neither closed nor worsened.
+- It does not measure a frame. §8.1's full-frame budget is still owed.

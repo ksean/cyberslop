@@ -731,10 +731,18 @@ class SceneTest {
         )
 
         /**
-         * Bounded by `layers x styles`: twelve layers over roughly a dozen and a half distinct
-         * colours, of which only a fraction ever co-occur. Generous, and still a constant that no
-         * number of entities can move.
+         * Bounded by `layers x styles x widths`: fourteen layers over roughly a dozen and a half
+         * distinct colours, of which only a fraction ever co-occur. Generous, and still a constant
+         * that no number of entities can move.
+         *
+         * Raised from 72 when item icons arrived (change 0006). **Measured** on a deliberately
+         * worst-case frame — 600 enemies, all forty-four icons on the ground at once, a full
+         * five-slot build in the display and an Ascended weapon in hand — at **90**: 23 of them on
+         * the two item layers, where a rectangle used to cost 3. The ceiling is what it is because
+         * the design opens a batch per ladder width per colour, and five rarity scales put eight
+         * ladder widths in play; what matters is that a frame with one drop and a frame with a
+         * hundred open the same ones.
          */
-        const val MAX_BATCHES = 72
+        const val MAX_BATCHES = 100
     }
 }
