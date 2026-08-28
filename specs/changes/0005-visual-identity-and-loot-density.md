@@ -1,7 +1,7 @@
 # Change 0005: Visual identity, animation and loot density
 
 - **Status:** Implemented on 2026-08-26
-- **Implementation approval:** Given in advance in the request that asked for the plan ("Once the plan is completed, proceed to implement the plan"). `AGENTS.md` asks for approval after the user has reviewed phase one; this was explicit but pre-emptive, and that difference is recorded in `tasks.md` rather than papered over.
+- **Implementation approval:** Ratified by the owner on 2026-08-27, after review, having seen the plan and the work. It was **first** given in advance, in the request that asked for the plan ("Once the plan is completed, proceed to implement the plan"), which is not the post-review approval `AGENTS.md` asks for — eight review rounds said so, and the record kept saying so rather than papering over it until the owner settled it.
 - **Created:** 2026-08-26
 
 ## Intent
@@ -79,21 +79,34 @@ design. Without the layer, two things far apart in depth that share a colour col
 and paint in the wrong order. Without the width, the renderer has to break its stroke path inside a
 batch: measured at 45, 279 and **1,579** `beginPath`/`stroke` pairs for 10, 100 and 600 entities,
 while the batch count sat at 34 the whole time — a proxy the code did not deliver. With width in the
-key it is 52 state changes at every entity count.
+key it is 52 batches at every entity count, each costing a fixed amount — one property for a
+fill, three for a stroke — rather than the "exactly one" this record claimed until round ten.
 
 The honest limit is unchanged: this bounds *state changes*, which is the part §8.1 measured. It does
 not bound rasterization, and §8.1's full-frame measurement remains an open task.
 
 ## What the loot change does and does not affect
 
-- **`LootFloor`'s own arithmetic is unchanged.** It is a lower bound computed from guaranteed awards
-  only and does not count random drops. **But the obvious corollary is false, and a review round
-  caught it:** raising the drop rate does *not* only move a real player further above the floor.
-  `PowerupSlots` scraps a sixth distinct powerup, so random drops filling all five slots with utility
-  effects can make a later guaranteed damage powerup scrap on contact. Property 18 still holds for
-  the loadout it models; what it does not do is bound a player who has been picking things up. The
-  design question — whether a full build should displace its weakest slot — is raised for the owner
-  rather than settled here.
+- **`LootFloor` is a bound on the player again, and it took five review rounds and four policies.**
+  It computes from guaranteed awards only, and the obvious corollary — that more loot can only help —
+  is false: `PowerupSlots` scrapped a sixth distinct powerup, so drops filling all five slots made a
+  later guaranteed one scrap on contact, below the loadout this file bounds a player to. What was
+  tried, and why each failed:
+  1. **Rank slots by `Powerup.magnitude`** — generic strength, not contribution to damage; made
+     `damagePerSecondAt` *fall* between maps four and five.
+  2. **Rank by `expectedDps`** — counts one target only; displaced a splash powerup that was worth
+     more, dropping the weapon score 50.6 to 40.8.
+  3. **Rank by `WeaponScore`** — what the game judges builds by, but the floor is written in damage;
+     a legal route ended at 30.3 against a map-four floor of 32.0.
+  4. **Require both** — keeps a build monotone in each measure, which still does not make one route's
+     end dominate another's: **10 of 8,160** three-powerup routes ended below the floor, worst by
+     21.1 damage.
+
+  What closes it is none of the rankings: **a guaranteed award is never refused**, and displaces
+  whichever slot costs least damage to lose. Measured over the same 8,160 routes on all ten maps,
+  **0** end below the floor. PROD-028 requires it, `LootFloor` models the policy the game runs, and
+  the test walks optional routes *then* the guaranteed awards — the shape three earlier versions of
+  it missed.
 - **Completability (PROD-024) is unaffected.** A witness is a movement tape; loot does not appear in
   it.
 - **Static drops must not weaken the corridor invariant.** They are placed outside both arenas and
@@ -120,8 +133,9 @@ not bound rasterization, and §8.1's full-frame measurement remains an open task
 3b. Given any palette, its three glow tones are strictly increasing in luminance.
 4. Given two different sub-themes, their palettes and backdrops differ.
 5. Given a scene containing 600 entities and the same scene containing 10, the number of canvas
-   state changes the renderer issues is the same — and no batch mixes stroke widths, which is what
-   makes the batch count and the state-change count the same number.
+   state changes the renderer issues is the same — and no batch mixes stroke widths, so a batch is
+   one path stroked once. A batch costs a fixed amount rather than exactly one change: one property
+   for a fill, three for a stroke, three for a label.
 6. Given 10,000 simulated rank-and-file kills at any map index, the proportion that drop an item is
    0.20 within sampling error, and three in ten of those are weapons.
 6b. Given a mini-boss or a main boss killed at any map index, it awards loot every time — the rate in
@@ -143,9 +157,9 @@ not bound rasterization, and §8.1's full-frame measurement remains an open task
   destruction. Pass one is silhouette, motion, palette and light direction.
 - **Audio**, which remains change 0003's deferred item.
 - **Recomputing `plan.md` §6.7's powerup economy simulation** at the new drop rate.
-- **Changing what a full powerup build does with a sixth pickup.** Review round R7 showed that
-  scrapping it can leave a real player below the guaranteed floor now that drops are frequent. That
-  is a change to the powerup economy and is raised for the owner in `plan.md` §12 rather than made
-  here.
+- **Recalibrating `WeaponScore` against `expectedDps`.** They order weapons differently — 381 of
+  3,243 accepted swaps lower damage, and a "Debt Collector" Minigun at 65.9 DPS is given up for a
+  Rustline Machete at 7.3 — so an optional *weapon* can still put a player below the floor. That is
+  pre-existing, predates this change, and is raised as `plan.md` §12 question 7.
 - **`plan.md` §8.1's full-frame budget measurement**, which is still owed and is unchanged by this
   work.

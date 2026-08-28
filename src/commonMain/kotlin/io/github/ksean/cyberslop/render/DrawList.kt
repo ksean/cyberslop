@@ -172,16 +172,21 @@ class DrawList(val batches: List<DrawBatch>, val texts: List<TextItem> = emptyLi
  * Assembles a frame, reusing its buffers.
  *
  * The contract ENG-061 rests on: a caller takes a [batch] handle once and pushes many primitives
- * into it, so the drawing state a frame costs is **exactly one change per batch** — a style, and for
- * segments a stroke width — and never a function of how many things are drawn.
+ * into it, so the drawing state a frame costs is **fixed per batch** — one style for a fill, three
+ * properties for a stroke, three for a label — and never a function of how many things are drawn.
+ * The number per batch is a small constant; what matters is that it does not move with the scene.
  *
  * That exactness is the correction a review round forced. With width carried per segment instead,
  * the batch count was a proxy the renderer did not deliver: it held at 34 while the real
  * `beginPath`/`stroke` count grew from 45 to 1,579 between 10 and 600 entities.
  *
  * Coordinate buffers and the batch objects themselves survive [begin] and are never reallocated, so
- * per-frame allocation is a small constant — the two lists [build] publishes — rather than one
- * allocation per primitive. It is not zero, and saying so would be an overclaim.
+ * no primitive allocates. **Per-frame allocation is not constant**, and an earlier version of this
+ * comment claiming "a small constant — the two lists [build] publishes" was wrong twice over:
+ * [build] allocates a filtered list, a sorted list and a copy of the texts, and [batch] builds a
+ * composite `String` key on **every** lookup — four or so per visible figure. What is true is that
+ * none of it is per-primitive, so it grows with the number of actors on screen and not with the
+ * thousands of tiles and limbs they draw.
  */
 class SceneBuilder {
     private val batches = LinkedHashMap<String, DrawBatch>()

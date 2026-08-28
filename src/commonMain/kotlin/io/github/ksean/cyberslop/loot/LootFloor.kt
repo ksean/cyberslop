@@ -14,27 +14,22 @@ import io.github.ksean.cyberslop.entity.Balance
  * different claims. The witness proves the player can reach the arena door; the arena then seals.
  * The floor exists to bound what they can be carrying when it does.
  *
- * **It bounds the guaranteed awards, not the player.** Review round seven of change 0005 was right
- * to press on this, and the correction is to the claim rather than to the arithmetic. A build holds
- * five distinct powerups; contact resolves automatically (PROD-030) and cannot be declined; so a
- * player who has collected five optional powerups on the way has a full build, and a *guaranteed*
- * award arriving afterwards is scrapped. Their real loadout can therefore be weaker than the one
- * computed here. Raising the drop rate to one kill in five (PROD-046) and putting static pickups on
- * the witness's own footholds (PROD-047) both widened that gap; neither opened it.
+ * **It is a bound on the player because [Loadout] makes it one.** Three review rounds pressed on a
+ * real hole here. A build holds five distinct powerups; contact resolves automatically (PROD-030)
+ * and cannot be declined; so at one kill in five a player's slots fill with whatever the route hands
+ * over, and a *guaranteed* award arriving afterwards used to be thrown away — leaving them below the
+ * loadout computed here, which is precisely what this file claims cannot happen.
  *
- * Displacing the weakest slot instead of scrapping was implemented and withdrawn, and the reason is
- * worth keeping: [Powerup.magnitude] ranks strength generically, not contribution to damage, so
- * displacing by it swapped a damage powerup out for a stronger-but-useless one and made
- * [damagePerSecondAt] **fall** between maps four and five — this file's own monotonicity test caught
- * it. Closing the gap needs a notion of "better" that respects what this measures, which is a change
- * to the powerup economy and the owner's to make.
+ * It is closed by [Loadout.collect] giving up a slot when the swap makes the build do more. The
+ * ranking matters and was got wrong once: [Powerup.magnitude] is generic strength rather than
+ * contribution to damage, and displacing by it swapped a damage powerup out for a
+ * stronger-but-useless one and made [damagePerSecondAt] **fall** between maps four and five. Ranking
+ * by what the build actually does, against the weapon it is feeding, is what makes the floor hold.
  *
- * **And the fallback below does not hold either.** This file has said since change 0003 that an
- * underpowered player is never sealed in "because sealing is their own deliberate act". Review round
- * eight checked it: `BossFight.playerMoved` commits on crossing a column and nothing else, so what
- * is deliberate is *walking*, not fighting. A player carrying too little is sealed in exactly as
- * readily as one carrying enough. My round-seven correction leaned on that sentence, which was a
- * false premise, and repeating it would have been worse than the gap it was covering for.
+ * **Do not lean on the commit line for this.** This file said until now that an underpowered player
+ * is never sealed in "because sealing is their own deliberate act". `BossFight.playerMoved` commits
+ * on crossing a column and nothing else, so what is deliberate is *walking*, not fighting. That
+ * sentence was never a safety property and is no longer offered as one.
  *
  * It does **not** carry a player to the final map, and it is not meant to. The required damage rate
  * grows about 81x across a run while a worst-case loadout grows far less, so optional loot is
@@ -57,14 +52,23 @@ object LootFloor {
         excludeStartingWeapon = true,
     )
 
-    /** Guaranteed powerup stacks by the time [mapIndex] is reached, at the weakest tiers. */
-    fun slotsAt(mapIndex: Int): PowerupSlots {
-        var slots = PowerupSlots.empty()
+    /**
+     * Guaranteed powerup stacks by the time [mapIndex] is reached, at the weakest tiers.
+     *
+     * Built through a [Loadout] rather than through [PowerupSlots] directly, so the model collects
+     * the way the game collects — including giving up a slot when doing so makes the build do more.
+     * Modelling one policy and shipping another is how this file came to claim a bound it did not
+     * have.
+     */
+    fun slotsAt(mapIndex: Int): PowerupSlots = loadoutAt(mapIndex).slots
+
+    private fun loadoutAt(mapIndex: Int): Loadout {
+        var loadout = Loadout(weaponAt(mapIndex), PowerupSlots.empty())
         val pool = Powerups.ofTier(PowerupTier.Street) + Powerups.ofTier(PowerupTier.Scav)
         repeat(guaranteedPowerups(mapIndex)) { index ->
-            slots = slots.collect(pool[index % pool.size].id).first
+            loadout = loadout.collect(pool[index % pool.size].id, mapIndex, guaranteed = true).first
         }
-        return slots
+        return loadout
     }
 
     /** One from each boss, plus one from each mini-boss once they begin awarding them. */

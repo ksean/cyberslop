@@ -9,6 +9,8 @@ import kotlin.test.assertEquals
 import kotlin.test.assertIs
 import kotlin.test.assertTrue
 
+private const val MAP_FOR_SCORING = 1
+
 class LoadoutTest {
     @Test
     fun `a run begins with the broken bottle and no powerups`() {
@@ -55,8 +57,8 @@ class LoadoutTest {
     @Test
     fun `powerups survive a weapon swap`() {
         var loadout = Loadout.starting()
-        repeat(3) { loadout = loadout.collect(PowerupId.HollowpointFirmware).first }
-        repeat(2) { loadout = loadout.collect(PowerupId.OverclockCoil).first }
+        repeat(3) { loadout = loadout.collect(PowerupId.HollowpointFirmware, MAP_FOR_SCORING).first }
+        repeat(2) { loadout = loadout.collect(PowerupId.OverclockCoil, MAP_FOR_SCORING).first }
 
         loadout = loadout.collect(Weapons.of(WeaponId.SableCorpRailgun), mapIndex = 8).first
 

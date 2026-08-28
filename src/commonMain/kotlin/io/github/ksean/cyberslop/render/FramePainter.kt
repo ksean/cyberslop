@@ -3,7 +3,8 @@ package io.github.ksean.cyberslop.render
 /**
  * What a frame is issued to.
  *
- * One call per batch, and each call is one drawing-state change followed by a loop over numbers.
+ * One call per batch, and each call is a fixed amount of drawing-state configuration followed by a
+ * loop over numbers — one property for a fill, three for a stroke.
  * That is ENG-061's bound expressed as a type: a sink cannot be handed a batch that mixes styles or
  * stroke widths, because a batch's identity includes both.
  *
@@ -11,7 +12,7 @@ package io.github.ksean.cyberslop.render
  * the renderer breaking its stroke path inside a batch while the batch count held constant; round
  * two found the replacement test assigning every batch a cost of one *by definition* and never
  * touching the renderer at all. Putting the traversal in `commonMain` behind this interface makes
- * "one state change per batch" a thing a test can count (ENG-060).
+ * what a batch costs a thing a test can count (ENG-060).
  */
 interface PaintSink {
     /** Set the fill style once, then fill `batch.size` rectangles of `x, y, width, height`. */
@@ -27,7 +28,7 @@ interface PaintSink {
 }
 
 /**
- * Issues a composed frame, in layer order, at exactly one state change per batch.
+ * Issues a composed frame, in layer order, at a fixed drawing-state cost per batch.
  *
  * The browser layer supplies the four primitive operations and nothing else — no order, no
  * grouping, and no decision about what a frame contains.

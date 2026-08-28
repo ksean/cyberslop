@@ -31,8 +31,19 @@ import io.github.ksean.cyberslop.world.Level
 import io.github.ksean.cyberslop.world.TILE_SIZE
 import io.github.ksean.cyberslop.world.TileMap
 
-/** A weapon or a powerup lying on the ground. Contact resolves it either way (PROD-030). */
-class GroundItem(val position: Vec2, val weapon: WeaponSpec?, val powerup: Powerup?)
+/**
+ * A weapon or a powerup lying on the ground. Contact resolves it either way (PROD-030).
+ *
+ * [guaranteed] marks the awards `LootFloor` is computed from — the boss and mini-boss drops and map
+ * one's starter cache. They are never refused by a full build, which is what makes the floor a bound
+ * on a real player rather than on one particular route.
+ */
+class GroundItem(
+    val position: Vec2,
+    val weapon: WeaponSpec?,
+    val powerup: Powerup?,
+    val guaranteed: Boolean = false,
+)
 
 data class TickReport(
     val playerDied: Boolean = false,
@@ -195,6 +206,7 @@ class GameSimulation(
                         TileMap.toWorld(level.spawnRow) - TILE_SIZE),
                     DropTable.rollWeapon(starterRng, 1, floor = io.github.ksean.cyberslop.combat.Tier.Street, unlocked = unlockedWeapons),
                     null,
+                    guaranteed = true,
                 ),
             )
         }
@@ -623,13 +635,21 @@ class GameSimulation(
         powerup: Boolean,
         shifts: Int = 1,
     ) {
-        items.add(GroundItem(at, DropTable.rollWeapon(rng, level.mapIndex, floor, shifts, unlockedWeapons), null))
+        items.add(
+            GroundItem(
+                at,
+                DropTable.rollWeapon(rng, level.mapIndex, floor, shifts, unlockedWeapons),
+                null,
+                guaranteed = true,
+            ),
+        )
         if (powerup) {
             items.add(
                 GroundItem(
                     at + Vec2(TILE_SIZE.toDouble(), 0.0),
                     null,
                     DropTable.rollPowerup(rng, level.mapIndex, runPool),
+                    guaranteed = true,
                 ),
             )
         }
@@ -668,9 +688,16 @@ class GameSimulation(
                 }
 
                 item.powerup != null -> {
-                    val (next, outcome) = run.loadout.collect(item.powerup.id)
+                    val (next, outcome) =
+                        run.loadout.collect(item.powerup.id, level.mapIndex, item.guaranteed)
                     run = run.copy(loadout = next)
-                    if (outcome is Pickup.Scrapped) run = run.copy(scrap = run.scrap + outcome.scrap)
+                    // Both losing outcomes pay out: the pickup that lost, or the slot it displaced.
+                    val scrap = when (outcome) {
+                        is Pickup.Scrapped -> outcome.scrap
+                        is Pickup.Displaced -> outcome.scrap
+                        is Pickup.Applied -> 0
+                    }
+                    if (scrap > 0) run = run.copy(scrap = run.scrap + scrap)
                 }
             }
             autoFire.rebuild(run.loadout.weapon, run.loadout.slots)

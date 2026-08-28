@@ -478,6 +478,10 @@ object Scene {
         trimStyle: String = Palettes.ENEMY_PLATE,
         armStyle: String = Palettes.ENEMY_PLATE,
         eyeStyle: String? = null,
+        /** Whether to draw the weapon in the lead hand. Enemies inherit it from their archetype. */
+        armed: Boolean = look?.armed == true,
+        /** How far the weapon reaches, as a fraction of the figure's height. */
+        weaponReach: Double = BARREL_REACH,
     ) {
         val bulk = look?.bulk ?: 1.0
         val thickness = pose.height * ZOOM * LIMB * bulk
@@ -532,12 +536,12 @@ object Scene {
             plating(builder, look, torsoX, originY - pose.height * ZOOM, pose.height * ZOOM)
         }
 
-        if (look != null && look.armed) {
+        if (armed) {
             builder.batch(Layer.ActorFront, trimStyle, Primitive.Segment, armWidth).segment(
                 originX + pose.leadHand.x * ZOOM,
                 originY + pose.leadHand.y * ZOOM,
-                originX + (pose.leadHand.x + pose.weaponAim.x * pose.height * BARREL_REACH) * ZOOM,
-                originY + (pose.leadHand.y + pose.weaponAim.y * pose.height * BARREL_REACH) * ZOOM,
+                originX + (pose.leadHand.x + pose.weaponAim.x * pose.height * weaponReach) * ZOOM,
+                originY + (pose.leadHand.y + pose.weaponAim.y * pose.height * weaponReach) * ZOOM,
             )
         }
     }
@@ -766,6 +770,12 @@ object Scene {
             limbStyle = PLAYER_LIMB,
             trimStyle = palette.accent,
             armStyle = PLAYER_ARM,
+            // The player carries a weapon at all times (PROD-023), and `plan.md` §15.4 says it
+            // attaches to the lead hand. It did not: the geometry was gated on an enemy archetype
+            // being armed, and the player has no archetype, so the one figure that always holds
+            // something was the only one drawn empty-handed.
+            armed = true,
+            weaponReach = weaponReach(sim.run.loadout.weapon),
             // Fixed rather than themed. The player has to be the one figure on screen that is never
             // in doubt, and against a dark map full of enemies in the same faction colours a themed
             // eye put them in the same read as everything trying to kill them.
@@ -785,6 +795,16 @@ object Scene {
             )
         }
     }
+
+    /**
+     * How far the held weapon reaches, from its own range.
+     *
+     * A broken bottle and a railgun should not be the same line. Scaled from the weapon's declared
+     * range and clamped, so the registry drives it and a long-range weapon does not draw a barrel
+     * across the map.
+     */
+    fun weaponReach(weapon: io.github.ksean.cyberslop.combat.WeaponSpec): Double =
+        (weapon.rangePx / (TILE_SIZE * WEAPON_REACH_TILES)).coerceIn(WEAPON_REACH_MIN, WEAPON_REACH_MAX)
 
     /** What the player's rig needs, read off the simulation and nothing else (ENG-062). */
     fun motionOf(sim: GameSimulation): Motion {
@@ -964,6 +984,9 @@ object Scene {
     private const val EYE_LEAD = 0.45
     private const val EYE_SIZE = 0.35
     private const val BARREL_REACH = 0.5
+    private const val WEAPON_REACH_TILES = 6.0
+    private const val WEAPON_REACH_MIN = 0.35
+    private const val WEAPON_REACH_MAX = 0.95
     private const val PLATE_WIDTH = 0.34
     private const val PLATE_HEIGHT = 0.05
     private const val PLATE_TOP = 0.26

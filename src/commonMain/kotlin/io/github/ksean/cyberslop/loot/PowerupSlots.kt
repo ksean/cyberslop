@@ -4,6 +4,9 @@ package io.github.ksean.cyberslop.loot
 sealed interface Pickup {
     data class Applied(val id: PowerupId, val stacks: Int) : Pickup
     data class Scrapped(val id: PowerupId, val scrap: Int) : Pickup
+
+    /** Applied over a full build by displacing a slot worth less, which converts to Scrap. */
+    data class Displaced(val id: PowerupId, val removed: PowerupId, val scrap: Int) : Pickup
 }
 
 /**
@@ -21,6 +24,17 @@ class PowerupSlots private constructor(private val stacks: Map<PowerupId, Int>) 
 
     fun stacksOf(id: PowerupId): Int = stacks[id] ?: 0
 
+    val full: Boolean get() = stacks.size >= MAX_SLOTS
+
+    /**
+     * This build with [removed] gone and [added] in its place at one stack.
+     *
+     * A container operation only: **which** slot is worth giving up is not something this type can
+     * judge, because it does not know what weapon the build is feeding. [Loadout] decides.
+     */
+    fun replacing(removed: PowerupId, added: PowerupId): PowerupSlots =
+        PowerupSlots(stacks - removed + (added to 1))
+
     fun magnitudeOf(id: PowerupId): Double {
         val count = stacksOf(id)
         return if (count == 0) 0.0 else Powerups.of(id).magnitude(count)
@@ -29,19 +43,12 @@ class PowerupSlots private constructor(private val stacks: Map<PowerupId, Int>) 
     /**
      * Applies [id] if there is room, otherwise converts it to Scrap. Never refuses.
      *
-     * **A full build refuses a sixth distinct powerup, and that is deliberate rather than an
-     * oversight.** Review round seven pointed out that this can scrap a *guaranteed* boss award once
-     * five optional powerups hold the slots, leaving a real player below the loadout [LootFloor]
-     * models. Displacing the weakest slot instead was implemented and then withdrawn: it is unsound.
-     * [Powerup.magnitude] is a generic strength scalar, not a contribution to damage, so displacing
-     * by it swapped a damage powerup out for a stronger-but-useless one and made `LootFloor`'s own
-     * DPS floor **fall** between maps four and five. It also churned, because a displaced powerup
-     * re-collected later displaces its replacement.
-     *
-     * So collecting still never removes anything a player holds — their build only ever grows — and
-     * the gap is in what [LootFloor] *claims*, which is corrected there. Closing it properly needs a
-     * notion of "better" that respects what the floor measures, and that is a change to the powerup
-     * economy rather than to this change's scope.
+     * A full build refuses a sixth distinct powerup **here**, and [Loadout.collect] then decides
+     * whether giving up a slot is worth it. The judgement needs the weapon the build is feeding and
+     * this type does not have one — which is exactly why an earlier attempt to decide it here, by
+     * ranking [Powerup.magnitude], was unsound: magnitude is generic strength, not contribution to
+     * damage, so it swapped a damage powerup out for a stronger-but-useless one and made
+     * `LootFloor`'s own damage floor fall between maps four and five.
      */
     fun collect(id: PowerupId, scrapValue: Int = DEFAULT_SCRAP): Pair<PowerupSlots, Pickup> {
         val current = stacksOf(id)

@@ -68,9 +68,14 @@ class StaticDropCohortTest {
     /**
      * PROD-047's spacing, which `StaticDrops` claimed from banding alone and did not have: two
      * candidates either side of a band boundary are neighbouring cells.
+     *
+     * The requirement allows an unspaced placement where the map offers no spaced one, and the
+     * implementation falls back to that. **This asserts the fallback is never reached over the
+     * cohort**, which is the honest form: a finite sweep cannot prove "never", so what it reports is
+     * that no map in two hundred needed it.
      */
     @Test
-    fun `static pickups are never found on top of one another`() {
+    fun `no map in the cohort needs to place two pickups within a stride`() {
         for (seed in 1uL..COHORT) {
             for (mapIndex in 1..10) {
                 val pickups = LevelGenerator.generate(seed * SPREAD, mapIndex).level.pickups

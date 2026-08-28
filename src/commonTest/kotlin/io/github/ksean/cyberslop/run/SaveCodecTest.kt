@@ -8,6 +8,8 @@ import kotlin.test.Test
 import kotlin.test.assertEquals
 import kotlin.test.assertTrue
 
+private const val MAP_FOR_SCORING = 1
+
 class SaveCodecTest {
     @Test
     fun `a run round trips`() {
@@ -65,8 +67,8 @@ class SaveCodecTest {
 
     private fun sample(): Pair<RunState, MetaProgression> {
         var loadout = Loadout(Weapons.of(WeaponId.VultureRailCarbine), Loadout.starting().slots)
-        repeat(3) { loadout = loadout.collect(PowerupId.HollowpointFirmware).first }
-        repeat(2) { loadout = loadout.collect(PowerupId.OverclockCoil).first }
+        repeat(3) { loadout = loadout.collect(PowerupId.HollowpointFirmware, MAP_FOR_SCORING).first }
+        repeat(2) { loadout = loadout.collect(PowerupId.OverclockCoil, MAP_FOR_SCORING).first }
         return RunState(0xC0FFEEuL, 4, loadout, 120.0, 55) to MetaProgression(scrap = 1200)
     }
 }

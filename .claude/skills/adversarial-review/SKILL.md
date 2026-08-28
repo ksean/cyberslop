@@ -92,9 +92,27 @@ light, say so when the review is directed and abide by the answer.
 
 `run` blocks until the reviewer returns, and it takes its own boundary down on an interrupt — but
 only for a signal a trap can catch, which is why step 6 still checks rather than assumes.
+
+**A round usually outlives the tool call that starts it**, so the reviewer is backgrounded and
+something waits on it. Both are agent shells and both are yours to close. Record them the moment
+they exist, by pid, and wait on the pid:
+
+```bash
+.claude/skills/adversarial-review/review-sandbox.sh \
+    run "$RC" review high "$S/brief.txt" "$S/findings.txt" & REVIEWER=$!
+.claude/skills/adversarial-review/close-agents.sh record "$S" "$REVIEWER"
+wait "$REVIEWER"        # not: until ! pgrep -f "codex exec"; do sleep 10; done
+```
+
+**Never wait by matching a command line.** A waiter written as `until ! pgrep -f "codex exec"` has
+the string `codex exec` in its own argv, so it matches itself, is its own reason to keep waiting, and
+never exits — see the gotcha below for what that cost. `wait` on a recorded pid has none of that
+failure mode, and where a poll is genuinely needed, poll `kill -0 "$REVIEWER"`.
+
 A round is bounded at two hours — `REVIEW_TIMEOUT=<seconds>` changes that, `0` removes it — past
 which the boundary is ended and the round reported void, which is what a reviewer hung on a
-transport would otherwise never say.
+transport would otherwise never say. The bound ends the *reviewer*; it does not end a waiter, which
+is step 6's job.
 
 **Where the direction names several reviewers**, launch them blind to each other, one lens each
 (the split is in "The lenses" below), and collect the pids:
@@ -106,6 +124,7 @@ for LENS in specification implementation absence; do      # the lenses the direc
   .claude/skills/adversarial-review/review-sandbox.sh \
       run "$RC" "$LENS" <effort> "$S/brief-$LENS.txt" "$S/findings-$LENS.txt" & pids+=($!)
 done
+.claude/skills/adversarial-review/close-agents.sh record "$S" "${pids[@]}"   # before waiting
 ok=1
 for p in "${pids[@]}"; do
   wait "$p" || { ok=0; kill -TERM "${pids[@]}" 2>/dev/null; }   # one lens down voids the round
@@ -258,6 +277,11 @@ it does not say which correction broke it.
 Re-run `checkout` and the round is rebuilt from the corrected tree — there is no patching-up of the
 previous one. Reviewers get the **complete updated change**, not the corrections.
 
+**Close each round's agents before starting the next.** They do not stop themselves, and a waiter
+from round one is still a live process during round six. Measured on this machine across a
+multi-round gate: five waiter shells accumulated, each holding a `sleep`, all still running a day
+later — every one of them started by a round that had long since been dispositioned.
+
 Three rounds is the bound, and two things bound it honestly:
 
 - **A round whose reviewers could not read what NFR-15(a) requires is void and is not counted.**
@@ -275,23 +299,37 @@ options to pick from, not an open question.
 
 ## 6. Close it out
 
-**Closing is three things, and the first one is not the branch** (NFR-15d):
+**Closing is four things, and the first one is not the branch** (NFR-15d):
 
 ```bash
-.claude/skills/adversarial-review/review-sandbox.sh close "$RC"   # BEFORE the deletions
+.claude/skills/adversarial-review/close-agents.sh  close "$S"     # the agents you started
+.claude/skills/adversarial-review/review-sandbox.sh close "$RC"   # what holds the checkout
 git branch -D "review/$TOPIC"; rm -rf "$S"
 ```
 
-`close` ends anything still holding the review checkout and says what it found — `nothing was still
-running` is the answer to want, and is the point of running it even when you believe the round ended
-cleanly. It must come **first**: `rm -rf "$S"` under a live reviewer deletes the checkout it is
-reading and the credential copied beside it while leaving it running, on the network, still
-spending. Read its line like `reviewer ok:` — a `close FAILED` means the review is not closed and
-nothing should be deleted yet.
+`close-agents.sh close` ends every pid recorded for this review, children first so a waiter's `sleep`
+is not reparented onto init, escalates from TERM to KILL, and then **proves** none is left rather
+than assuming the signal landed. `close-agents.sh check "$S"` answers the same question without
+ending anything. A round is not closed until one of them says `nothing was still running`.
 
-It identifies processes by **this review's checkout path**, which `checkout` made for this review
-alone, never by a match on `codex` — so a codex you are running yourself in another terminal is never
-a candidate. And it is the only thing that can clean up after a `kill -9`, which runs no trap: `run`
+It comes before `review-sandbox.sh close` because a live waiter can outlive the boundary it was
+watching, and before the deletions for the same reason `close` does: `rm -rf "$S"` removes the pid
+ledger, after which nothing knows what to close.
+
+`review-sandbox.sh close` ends anything still holding the review checkout and says what it found —
+`nothing was still running` is the answer to want, and is the point of running it even when you
+believe the round ended cleanly. It knows about the boundary and nothing about your waiters, which is
+why `close-agents.sh` exists beside it.
+
+Both must come **before the deletions**: `rm -rf "$S"` under a live reviewer deletes the checkout it
+is reading and the credential copied beside it while leaving it running, on the network, still
+spending. Read their lines like `reviewer ok:` — a `close FAILED` or a `close-agents: FAILED` means
+the review is not closed and nothing should be deleted yet.
+
+`review-sandbox.sh close` identifies processes by **this review's checkout path**, which `checkout`
+made for this review alone, never by a match on `codex` — so a codex you are running yourself in
+another terminal is never a candidate. `close-agents.sh` gets the same property a different way, from
+the pids it was told about. And it is the only thing that can clean up after a `kill -9`, which runs no trap: `run`
 records the lens directories it made, and `close` removes them, because each holds a copy of the
 credential.
 
@@ -368,4 +406,18 @@ reviewed change from one whose message says it was reviewed.
 - **Under `set -e` a failing step aborts a trap.** `wait` on a process you have just killed returns
   143, so a cleanup that chains on `&&` never reaches its `rm` — which is how interrupted rounds
   used to leave a lens directory, and the credential copy in it, behind.
+- **A waiter that greps for its reviewer waits for itself.** `until ! pgrep -f "codex exec"` has the
+  string `codex exec` in its own `bash -c` argv, so `pgrep` matches the waiter, the condition is
+  never false, and it runs until something kills it. Measured here: **five** such shells accumulated
+  over a multi-round gate, each holding a `sleep`, all still running a day later — and because they
+  matched *each other* too, none could exit even between rounds. Switching the match to the process
+  name (`pgrep -x codex`) fixes the self-match and introduces a worse bug, because it also matches
+  the interactive `codex` sessions the owner has open in other terminals. Wait on a **recorded pid**;
+  that is what `close-agents.sh record` is for.
+- **Closing the reviewer is not closing the round.** `review-sandbox.sh close` ends what holds the
+  checkout and knows nothing about a waiter you started. Both are agent shells; step 6 closes both
+  and then proves it.
+- **Killing a waiter shell orphans its `sleep`.** The child is reparented to init still holding
+  whatever stream the shell was launched into, so the caller may never see the round end.
+  `close-agents.sh` signals children before parents for this reason.
 - **Reviewer confidence carries no information** about whether the defect exists. Run it.

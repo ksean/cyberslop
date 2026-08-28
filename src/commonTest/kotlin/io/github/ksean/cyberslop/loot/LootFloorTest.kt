@@ -2,6 +2,8 @@ package io.github.ksean.cyberslop.loot
 
 import io.github.ksean.cyberslop.combat.Weapons
 import io.github.ksean.cyberslop.entity.Balance
+import io.github.ksean.cyberslop.combat.DamagePipeline
+import io.github.ksean.cyberslop.combat.WeaponScore
 import kotlin.test.Test
 import kotlin.test.assertTrue
 
@@ -90,5 +92,105 @@ class LootFloorTest {
 
     private companion object {
         const val GUARANTEED_MAPS = 3
+
+        /** Floating-point slack only; the floor is compared in damage, not in units of it. */
+        const val TOLERANCE = 1e-9
     }
+
+    /**
+     * The guarantee itself: **no optional route can leave a player below the floor.**
+     *
+     * The shape matters and three earlier versions of this test had it wrong. It is not enough to
+     * walk one long route and check the end, nor to check monotonicity as you go: monotonicity says
+     * a build never gets worse *than it was*, and the floor is a comparison with a **different**
+     * route's build. Each case here therefore starts fresh, takes some optional powerups, and only
+     * then takes the guaranteed awards — which is exactly the shape round eleven used to find a
+     * map-four route ending at 30.27 against a 32.01 floor while every step obeyed the rules.
+     *
+     * Measured over every three-powerup optional route on all ten maps: the score-and-damage rule
+     * left **10 of 8,160** below the floor, worst by 21.1 damage, and a Pareto rule failed on the
+     * same ten. Guaranteed awards landing unconditionally leaves **0 of 8,160**.
+     */
+    @Test
+    fun `no optional route can put a player below the floor`() {
+        (1..10).forEach { map ->
+            val floor = LootFloor.damagePerSecondAt(map)
+            val weapon = LootFloor.weaponAt(map)
+            val guaranteed = guaranteedRoute(map)
+
+            optionalRoutes().forEach { optional ->
+                var loadout = Loadout(weapon, PowerupSlots.empty())
+                optional.forEach { loadout = loadout.collect(it, map).first }
+                guaranteed.forEach {
+                    loadout = loadout.collect(it, map, guaranteed = true).first
+                }
+
+                val dps = DamagePipeline.resolve(weapon, loadout.slots).expectedDps
+                assertTrue(
+                    dps >= floor - TOLERANCE,
+                    "map $map: optional $optional then the guaranteed awards ends at $dps, " +
+                        "below the $floor the floor promises",
+                )
+            }
+        }
+    }
+
+    /**
+     * Optional routes that fill the build before the guaranteed awards arrive, including the exact
+     * three that round eleven found and the damage-over-time cluster the failures shared.
+     */
+    private fun optionalRoutes(): List<List<PowerupId>> {
+        val ids = Powerups.all.map { it.id }
+        val found = listOf(PowerupId.ArcCascade, PowerupId.BurnRig, PowerupId.ThermitePayload)
+        val triples = mutableListOf(found, found.reversed())
+        // Every three-subset is 816 per map and does not fit the browser runner; a stride across the
+        // registry covers the same shapes without pinning the count to the registry's order.
+        for (a in ids.indices step 3) {
+            for (b in a + 1 until ids.size step 4) {
+                for (c in b + 1 until ids.size step 5) {
+                    triples.add(listOf(ids[a], ids[b], ids[c]))
+                }
+            }
+        }
+        triples.add(ids.take(PowerupSlots.MAX_SLOTS))
+        triples.add(ids.takeLast(PowerupSlots.MAX_SLOTS))
+        return triples
+    }
+
+    @Test
+    fun `a build only ever does more as it collects, weapons and powerups alike`() {
+        val map = 5
+        var loadout = Loadout(Weapons.startingWeapon, PowerupSlots.empty())
+        var best = WeaponScore.of(loadout.weapon, loadout.slots, map)
+
+        val powerups = Powerups.all + Powerups.all.reversed()
+        val weapons = Weapons.all + Weapons.all.reversed()
+        powerups.forEachIndexed { index, powerup ->
+            loadout = loadout.collect(powerup.id, map).first
+            val afterPowerup = WeaponScore.of(loadout.weapon, loadout.slots, map)
+            assertTrue(
+                afterPowerup >= best,
+                "collecting ${powerup.name} took the build from $best to $afterPowerup",
+            )
+            best = afterPowerup
+
+            val found = weapons[index % weapons.size]
+            loadout = loadout.collect(found, map).first
+            val afterWeapon = WeaponScore.of(loadout.weapon, loadout.slots, map)
+            assertTrue(
+                afterWeapon >= best,
+                "walking over ${found.name} took the build from $best to $afterWeapon",
+            )
+            best = afterWeapon
+        }
+    }
+
+    /** The guaranteed awards, in the order and count the floor is computed from. */
+    private fun guaranteedRoute(map: Int): List<PowerupId> {
+        val pool = Powerups.ofTier(PowerupTier.Street) + Powerups.ofTier(PowerupTier.Scav)
+        return (0 until LootFloor.guaranteedPowerups(map)).map { pool[it % pool.size].id }
+    }
+
+    private fun one(powerup: Powerup): PowerupSlots =
+        PowerupSlots.empty().collect(powerup.id).first
 }

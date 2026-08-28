@@ -1041,9 +1041,13 @@ mini-boss and boss award, at the weakest outcome each could yield.
 > - Beyond the floor the run needs optional loot. Asserted as a property, so it stays a deliberate
 >   design choice rather than drifting.
 >
-> What makes all of that safe is the **commit line** (§7): sealing the arena is the player's own
-> deliberate act, so an underpowered player is never shut in with a boss they cannot beat. That is
-> the property that actually had to hold, and it is tested directly.
+> What was claimed to make all of that safe is the **commit line** (§7). **That claim is withdrawn.**
+> R7 round eight read `BossFight.playerMoved`: it commits on crossing a column and inspects nothing
+> about the loadout, so what is deliberate is *walking*, not fighting, and an underpowered player is
+> shut in exactly as readily as an equipped one. The commit line does what it was built for — it
+> stops automatic fire from sealing an arena on the player's behalf — and it was never a check on
+> whether the fight can be won. What bounds a real player is `LootFloor` together with
+> `Loadout.collect`'s pickup policy (§15.7), and that is what is tested.
 
 ---
 
@@ -1410,23 +1414,42 @@ but uncommitted** in this working tree; whether to remove it is the owner's call
    bonuses? Pool-only is assumed.
 5. **Run length.** 38–45 minutes for ten maps is the working target. Shorter maps would make
    permadeath sting less.
-6. **Full-build pickup policy, and what backs the loot floor.** `PowerupSlots` scraps a sixth
-   distinct powerup, so at the new drop rate a build fills with whatever the route hands over —
-   contact cannot be declined — and a *guaranteed* award arriving later is thrown away. Two review
-   rounds pressed on this and the position is now:
-   - **Displacing the weakest slot does not fix it.** Implemented and withdrawn: `magnitude` ranks
-     strength generically rather than by damage, so it swapped a damage powerup out for a
-     stronger-but-useless one and made `LootFloor.damagePerSecondAt` *fall* between maps four and
-     five. The floor's own monotonicity test caught it.
-   - **The commit line does not cover for it.** `BossFight.playerMoved` commits on crossing a
-     column; nothing checks what the player is carrying. The long-standing claim that an underpowered
-     player is "never sealed in" is false as stated, and is corrected in `LootFloor`.
+6. **Full-build pickup policy — settled 2026-08-27.** `PowerupSlots` scrapped a sixth distinct
+   powerup, so at one kill in five a build filled with whatever the route handed over and a
+   *guaranteed* award arriving later was thrown away, below the floor. The owner chose a pickup
+   policy that respects what the floor measures. Implemented in `Loadout.collect`, which is the only
+   place that knows both the build and the weapon it feeds, and PROD-028 now requires it.
 
-   So the guarantee change 0003 states — a player taking only guaranteed drops clears every
-   encounter — is not enforced for a player who has also picked things up, which at one kill in five
-   is every player. Closing it needs either a pickup policy that respects what the floor measures, or
-   a commit line that refuses an underpowered player, or an accepted weakening of the guarantee.
-   **All three are the owner's call, and none of them is inside this change.**
+   Two things learned on the way, both worth keeping:
+   - **Ranking by `Powerup.magnitude` is unsound.** It is generic strength, not contribution to
+     damage, so it swapped a damage powerup for a stronger-but-useless one and made
+     `LootFloor.damagePerSecondAt` fall between maps four and five. A mutation test now pins that.
+   - **The commit line is not a safety net.** `BossFight.playerMoved` commits on crossing a column
+     and checks nothing about the loadout, so the long-standing claim that an underpowered player is
+     "never sealed in because sealing is their own deliberate act" was never a safety property. It is
+     withdrawn from `LootFloor` rather than repeated.
+
+7. **`WeaponScore` and `expectedDps` order weapons differently (raised by R7 round nine).** A weapon
+   pickup is accepted on `WeaponScore`; the guaranteed-loot floor is measured in `expectedDps`.
+   Measured across all ten maps: **381 of 3,243 accepted swaps lower damage**, and the worst found is
+   a "Debt Collector" Minigun at 65.9 DPS given up for a Rustline Machete at 7.3, against a map-two
+   floor of 14.4 — because the score's crowd factor and conditional bonus outweigh a nine-fold damage
+   gap (10.99 against 14.80). So an optional *weapon* can still put a player below the floor, and
+   `Loadout.collect`'s powerup policy cannot fix it.
+
+   This predates change 0005 and is not caused by it; what change 0005 did was make the floor's claim
+   precise enough for the gap to be visible. Closing it means either recalibrating `WeaponScore`'s
+   crowd and conditional terms, or measuring the floor in the same units swaps are decided in. Both
+   are balance changes and neither belongs in a presentation change.
+
+8. **The weapon score does not measure everything a powerup does (raised by R7 round eleven).**
+   `WeaponScore` weighs damage, crowd reach, falloff, wind-up and conditional effects. It does not
+   weigh lifesteal, seeking, slowing, reach, knockback, stun or kill refunds, all of which real
+   powerups carry and the simulation executes — lifesteal changes the player's health directly. Two
+   consequences, both accepted for now and both stated in PROD-028: a guaranteed award can displace a
+   slot whose unmeasured effect was worth keeping, and an optional powerup that only does unmeasured
+   things can never displace anything, however useless the slot it would replace. Closing it means
+   extending the score, which changes what every weapon swap decides, and that is a balance change.
 
 ---
 
@@ -1613,13 +1636,18 @@ part in the game is either a limb (a segment) or a swing arc (already segments t
 
 This yields a property that is testable in `commonTest` without a browser, which is what
 **ENG-061** requires: *the number of drawing-state changes in a frame is bounded by the number of
-style batches and does not grow with the number of entities drawn.* Property 23 asserts it by
+style batches and does not grow with the number of entities drawn.* A batch costs a fixed amount —
+one property for a fill, three for a stroke (`strokeStyle`, `lineWidth`, `lineCap`), three for a
+label — rather than exactly one; R7 found that overstated, and the counting sink charges the real
+figures now. Property 23 asserts it by
 building the same scene at 10 and at 600 entities and comparing batch counts.
 
 Coordinate buffers and the batch objects are owned by a reusable `SceneBuilder` and cleared per frame
-rather than reallocated, so per-frame allocation is a small constant rather than one allocation per
-primitive. It is **not zero** — publishing the frame allocates two short lists — and claiming zero
-would be the kind of unmeasured assertion this plan has had to withdraw before. §8.1's boxing warning
+rather than reallocated, so **no primitive allocates**. Per-frame allocation is neither zero nor
+constant, and this paragraph has claimed both in turn: publishing a frame allocates a filtered list,
+a sorted list and a copy of the texts, and opening a batch builds a composite `String` key every
+time — about four per visible figure. What holds is that allocation grows with the actors on screen
+rather than with the thousands of tiles and limbs they draw, which is the part that mattered. §8.1's boxing warning
 applies: coordinates are `DoubleArray`, never `List<Double>`.
 
 > **Stated honestly:** the batch count is a *proxy* for frame cost, not a measurement of it. It bounds
@@ -1766,13 +1794,17 @@ wording claiming every slain enemy, which the bosses have never obeyed.
 
 This is a substantial buff and it is worth saying what it does and does not break:
 
-- **`LootFloor`'s arithmetic is unaffected**, since it counts guaranteed awards only. **The tempting
-  corollary is false**, and review round R7 caught it stated as fact: raising the drop rate does not
-  only move a real player *above* the floor. `PowerupSlots` scraps a sixth distinct powerup, so
-  random drops filling all five slots with utility effects can make a later guaranteed damage powerup
-  scrap on contact. Property 18 still holds for the loadout it models; it does not bound a player who
-  has been picking things up. Whether a full build should displace its weakest slot is an open
-  question for the owner (§12).
+- **`LootFloor` is a bound on the player again, and getting there took three review rounds.** Its
+  arithmetic counts guaranteed awards only, and the tempting corollary — that more loot can only
+  help — was false: a build holds five distinct powerups, contact cannot be declined, so the slots
+  filled with whatever the route handed over and a *guaranteed* award arriving later was scrapped.
+  Closed by `Loadout.collect` giving up the least valuable slot when the swap improves the build,
+  ranked by `WeaponScore` so the two automatic decisions a player cannot decline agree about what
+  "better" means. Two narrower rankings were tried and both were wrong, and both reasons are pinned
+  by tests: `Powerup.magnitude` is generic strength and made the floor *fall* between maps four and
+  five; plain `expectedDps` counts one target and displaced a splash powerup that was worth more.
+  **An optional *weapon* can still put a player below the floor** — that is §12 question 7, and it
+  predates this change.
 - **It cannot break completability (PROD-024).** The witness is a movement tape. Loot does not appear
   in it.
 - **It does change the powerup economy.** §6.7's simulation put a run at 37.7 powerups against 15
@@ -1803,7 +1835,8 @@ weaker requirement than the one the owner stated.
 ### 15.8 New properties
 
 23. **Batch bound (ENG-061).** The same scene issued to a counting sink at 10 and at 600 entities
-    produces the same number of calls, each of which is one drawing-state change. A batch's identity
+    produces the same number of calls, each costing a fixed amount of drawing state — one property
+    for a fill, three for a stroke, three for a label. A batch's identity
     includes its stroke width, so no batch can force a path to break inside it. The production
     bundle's smoke test additionally bounds strokes per frame, measured at 14 against a bound of 60.
     *(Both halves are corrections. The first version measured style batches while the renderer broke

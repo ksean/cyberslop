@@ -614,6 +614,44 @@ class SceneTest {
         assertTrue(pose.leadHand != later.leadHand, "the hand does not move through the arc")
     }
 
+    /**
+     * PROD-041 and `plan.md` §15.4: the weapon attaches to the lead hand.
+     *
+     * Round eleven found it drawn for enemies and never for the player — the geometry was gated on
+     * an enemy archetype being `armed`, and the player has no archetype, so the one figure that is
+     * always carrying something (PROD-023) was the only one drawn empty-handed.
+     */
+    @Test
+    fun `the player is drawn holding the weapon it is carrying`() {
+        val sim = simulation()
+        trimTo(sim, 0)
+
+        val frame = Scene.compose(sim, camera(), backdrop(sim), hudOf(sim), 0.0, SceneBuilder())
+        val held = frame.batches.filter {
+            it.layer == Layer.ActorFront && it.primitive == Primitive.Segment
+        }
+
+        assertTrue(held.isNotEmpty(), "nothing is drawn in front of the player at all")
+        // Two arm segments plus the weapon; the arm alone would be two.
+        val segments = held.sumOf { it.size }
+        assertTrue(
+            segments >= 3,
+            "the player is drawn with $segments segments in front — an empty hand, not a weapon",
+        )
+    }
+
+    @Test
+    fun `a longer weapon is drawn longer`() {
+        val bottle = Scene.weaponReach(Weapons.startingWeapon)
+        val longest = Scene.weaponReach(Weapons.all.maxByOrNull { it.rangePx }!!)
+
+        assertTrue(
+            longest > bottle,
+            "every weapon is drawn the same length, so the registry's range means nothing to the " +
+                "figure holding it: $bottle against $longest",
+        )
+    }
+
     @Test
     fun `the heads-up display carries the build`() {
         val sim = simulation()

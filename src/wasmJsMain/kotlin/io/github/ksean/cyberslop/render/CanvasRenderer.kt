@@ -76,8 +76,9 @@ class CanvasRenderer(
      * The four primitive operations, and nothing else.
      *
      * Order, grouping and content are [FramePainter]'s, in `commonMain`, where they are tested
-     * (ENG-060). Each of these is one drawing-state change followed by a loop, which is what makes
-     * "one state change per batch" true of the running game and not only of the draw list.
+     * (ENG-060). Each of these configures a fixed amount of drawing state — one property for a fill,
+     * three for a stroke, three for a label — and then loops, which is what makes
+     * a batch's fixed cost true of the running game and not only of the draw list.
      */
     private inner class CanvasSink : PaintSink {
         override fun fillRects(style: String, batch: DrawBatch) {
