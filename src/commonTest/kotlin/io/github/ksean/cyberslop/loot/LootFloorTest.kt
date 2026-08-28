@@ -1,10 +1,15 @@
 package io.github.ksean.cyberslop.loot
 
+import io.github.ksean.cyberslop.combat.Tier
 import io.github.ksean.cyberslop.combat.Weapons
+import io.github.ksean.cyberslop.gen.LevelGenerator
+import io.github.ksean.cyberslop.run.RunState
+import io.github.ksean.cyberslop.sim.GameSimulation
 import io.github.ksean.cyberslop.entity.Balance
 import io.github.ksean.cyberslop.combat.DamagePipeline
 import io.github.ksean.cyberslop.combat.WeaponScore
 import kotlin.test.Test
+import kotlin.test.assertEquals
 import kotlin.test.assertTrue
 
 /**
@@ -16,6 +21,53 @@ import kotlin.test.assertTrue
  * is high enough for the last one.
  */
 class LootFloorTest {
+    /** Gate-2 finding: the pressure harness must start a map with what a player *arrives* holding. */
+    @Test
+    fun `the slots arriving at a map hold only the awards of the maps before it`() {
+        assertEquals(0, LootFloor.slotsArrivingAt(1).totalStacks, "map 1 is entered with a powerup nobody has awarded")
+        (2..10).forEach { map ->
+            assertEquals(LootFloor.slotsAt(map - 1).held, LootFloor.slotsArrivingAt(map).held, "arriving at map $map")
+        }
+    }
+
+    /**
+     * Gate-2 finding: the cache's roll could return the very weapon it exists to replace. Seed 17
+     * is the one that did; the seed sweep lives in `jvmTest` (`LootFloorCohortTest`), because a
+     * hundred generated maps block the browser runner past its ping timeout (ENG-031).
+     */
+    @Test
+    fun `the starter cache never holds the starting weapon`() {
+        val seed = 17uL
+        val sim = GameSimulation(LevelGenerator.generate(seed, 1).level, RunState.begin(seed), seed)
+        val cache = sim.items.first { it.guaranteed && it.weapon != null }.weapon!!
+        assertTrue(cache.id != Weapons.startingWeapon.id, "seed $seed: the starter cache holds the ${cache.name}")
+    }
+
+    /** Round-3 finding: a boss is judged with what the player arrives holding, never with its own award. */
+    @Test
+    fun `the furthest clearable map is judged with the arriving loadout`() {
+        val furthest = LootFloor.furthestClearableMap()
+        assertTrue(furthest >= 1, "the floor clears nothing")
+        (1..furthest).forEach { map ->
+            val seconds = Balance.bossHealth(map) / LootFloor.damagePerSecondArrivingAt(map)
+            assertTrue(seconds <= Balance.targetBossSeconds(map) * LootFloor.BAND_SLACK, "map $map is counted as covered but its boss takes $seconds s with the arriving loadout")
+        }
+        if (furthest < 10) {
+            val next = furthest + 1
+            val seconds = Balance.bossHealth(next) / LootFloor.damagePerSecondArrivingAt(next)
+            assertTrue(seconds > Balance.targetBossSeconds(next) * LootFloor.BAND_SLACK, "map $next is clearable on arrival but not counted")
+        }
+    }
+
+    /** Gate-2 finding: the floor is what the awards *guarantee*, and a main boss guarantees T3, never T4. */
+    @Test
+    fun `the floor's weapon is the weakest tier the awards guarantee`() {
+        assertTrue(LootFloor.weaponAt(1).tier == Tier.Street, "map 1 opens above the starter cache")
+        (2..10).forEach { map ->
+            assertTrue(LootFloor.weaponAt(map).tier == Tier.Chromed, "map $map assumes a ${LootFloor.weaponAt(map).tier} weapon; a main boss guarantees only Chromed")
+        }
+    }
+
     @Test
     fun `map one never faces its mini-boss with the starting weapon`() {
         // The bottle's 4 DPS against a 108 HP mini-boss is 27 s, far outside an 18 s band. The
@@ -41,9 +93,11 @@ class LootFloorTest {
 
     @Test
     fun `the guaranteed floor rises substantially across a run`() {
+        // Measured at 9.9 -> 48.7 (4.9x) once the weapon floor was corrected to what the awards
+        // guarantee — Chromed from map 2, never above — so the rise is the powerups' doing.
         assertTrue(
-            LootFloor.damagePerSecondAt(10) > LootFloor.damagePerSecondAt(1) * 5.0,
-            "the floor barely moves across ten maps",
+            LootFloor.damagePerSecondAt(10) > LootFloor.damagePerSecondAt(1) * 4.0,
+            "the floor barely moves across ten maps: ${LootFloor.damagePerSecondAt(1)} -> ${LootFloor.damagePerSecondAt(10)}",
         )
     }
 

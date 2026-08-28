@@ -23,7 +23,8 @@ class AutoFire(spec: WeaponSpec, slots: PowerupSlots) {
     var weapon: ResolvedWeapon = DamagePipeline.resolve(spec, slots)
         private set
 
-    private var remaining = 0.0
+    /** Seconds left on the cooldown; visible to the simulation's digest and its tests. */
+    internal var remaining = 0.0
 
     /** Re-resolves the weapon against a changed build, keeping the cooldown already served. */
     fun rebuild(spec: WeaponSpec, slots: PowerupSlots) {

@@ -99,8 +99,11 @@ highest point stays within the physics' crouch height; nothing is scaled.
 - A ranged shot draws a **muzzle flash** at the barrel: a bright core dot, a longer bloom segment
   along the aim and two short spikes at ±35°, fading over the flash window. The projectile is a
   dot in the palette accent.
-- Enemies use the same two effects, in the enemy's own colours, drawn from their posed hand or
-  barrel.
+- A weapon with no barrel — every psychic weapon (orbs, blasts and chains) and every
+  cursor-anchored one (the Kessler dish) — draws an **activation pulse** instead: a ring around
+  the held weapon that grows as it fades over the flash window.
+- Enemies use the same swoosh and flash, in the enemy's own colours, drawn from their posed hand
+  or barrel.
 
 ## Enemy looks
 

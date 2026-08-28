@@ -67,6 +67,48 @@ class ActorTest {
         )
     }
 
+    /** PROD-067: a crouch bends the joints; it does not shrink the figure. */
+    @Test
+    fun `a crouch keeps every limb the length it is standing`() {
+        val standing = Actor.pose(standing(), Physics.Default)
+        val crouched = Actor.pose(crouching(), Physics.Default)
+
+        fun lengths(pose: Pose) = listOf(
+            "thigh" to (pose.leadKnee - pose.hip).length,
+            "shin" to (pose.leadFoot - pose.leadKnee).length,
+            "rear thigh" to (pose.rearKnee - pose.hip).length,
+            "rear shin" to (pose.rearFoot - pose.rearKnee).length,
+            "upper arm" to (pose.leadElbow - pose.leadShoulder).length,
+            "forearm" to (pose.leadHand - pose.leadElbow).length,
+            "torso" to (pose.neck - pose.hip).length,
+        )
+        lengths(standing).zip(lengths(crouched)).forEach { (stand, crouch) ->
+            assertEquals(stand.second, crouch.second, 1e-6, "the crouched ${stand.first} is a different length")
+        }
+    }
+
+    @Test
+    fun `a crouch bends the knees forward of the hip-ankle line`() {
+        val crouched = Actor.pose(crouching(), Physics.Default)
+
+        listOf(crouched.leadKnee to crouched.leadFoot, crouched.rearKnee to crouched.rearFoot).forEach { (knee, foot) ->
+            val hip = crouched.hip
+            val lineX = hip.x + (foot.x - hip.x) * (knee.y - hip.y) / (foot.y - hip.y)
+            assertTrue(knee.x > lineX + 0.5, "knee $knee sits on or behind the hip-ankle line (x $lineX)")
+        }
+    }
+
+    @Test
+    fun `a crouched figure's highest point is within the crouch height`() {
+        val crouched = Actor.pose(crouching(), Physics.Default)
+        val top = listOf(
+            crouched.head.y - crouched.headRadius, crouched.neck.y, crouched.leadHand.y, crouched.rearHand.y,
+            crouched.leadElbow.y, crouched.rearElbow.y, crouched.leadKnee.y, crouched.rearKnee.y,
+        ).min()
+
+        assertTrue(top >= -Physics.Default.crouchingHeight, "the crouched figure reaches ${-top} px, above the ${Physics.Default.crouchingHeight} px crouch box")
+    }
+
     @Test
     fun `a run cycle alternates the lead foot`() {
         val physics = Physics.Default

@@ -36,7 +36,7 @@ object EnemyAttacks {
 
     val SHOT = EnemyShot(
         windUpSeconds = 0.25,
-        damageShare = 0.6,
+        damageShare = 0.45,
         cooldownSeconds = 0.75,
         speedPx = 340.0,
         rangePx = SHOT_RANGE_PX,
@@ -46,7 +46,7 @@ object EnemyAttacks {
     fun swing(archetype: EnemyArchetype): EnemySwing = when (archetype) {
         EnemyArchetype.Swarm -> EnemySwing(windUpSeconds = 0.30, damageShare = 0.6, cooldownSeconds = 0.6)
         EnemyArchetype.Flyer -> EnemySwing(windUpSeconds = 0.30, damageShare = 0.8, cooldownSeconds = 0.8)
-        EnemyArchetype.Brute -> EnemySwing(windUpSeconds = 0.45, damageShare = 1.6, cooldownSeconds = 1.1)
+        EnemyArchetype.Brute -> EnemySwing(windUpSeconds = 0.45, damageShare = 1.2, cooldownSeconds = 1.1)
         EnemyArchetype.Shooter, EnemyArchetype.Turret ->
             error("$archetype shoots; it has no swing")
     }

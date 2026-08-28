@@ -104,6 +104,8 @@ data class DifficultyCurve(
      */
     val jetFrequency: Double,
     val enemiesPerHundredTiles: Double,
+    /** Spike strips and barrels per hundred tiles of width, rounded down (`specs/hazards.md`). */
+    val damagingHazardsPerHundredTiles: Double,
 ) {
     companion object {
         const val MAPS = 10
@@ -124,6 +126,7 @@ data class DifficultyCurve(
                 jetPeriodSeconds = lerp(2.4, 1.4, d),
                 jetFrequency = lerp(0.10, 0.34, d),
                 enemiesPerHundredTiles = lerp(4.0, 9.0, d),
+                damagingHazardsPerHundredTiles = lerp(0.0, 5.0, d),
             )
         }
 

@@ -1,6 +1,11 @@
 package io.github.ksean.cyberslop.render
 
+import io.github.ksean.cyberslop.combat.Anchor
+import io.github.ksean.cyberslop.combat.WeaponClass
 import io.github.ksean.cyberslop.combat.WeaponId
+import io.github.ksean.cyberslop.loot.PowerupId
+import io.github.ksean.cyberslop.loot.PowerupSlots
+import io.github.ksean.cyberslop.physics.Physics
 import io.github.ksean.cyberslop.combat.Weapons
 import io.github.ksean.cyberslop.core.Vec2
 import io.github.ksean.cyberslop.entity.EnemyArchetype
@@ -13,6 +18,7 @@ import io.github.ksean.cyberslop.sim.LiveEnemy
 import io.github.ksean.cyberslop.sim.MuzzleFlash
 import io.github.ksean.cyberslop.sim.SwingVisual
 import io.github.ksean.cyberslop.sim.TestLevels
+import io.github.ksean.cyberslop.world.Barrel
 import kotlin.test.Test
 import kotlin.test.assertEquals
 import kotlin.test.assertTrue
@@ -728,6 +734,138 @@ class SceneTest {
         assertTrue(advanced, "a boss walking toward the player never advances its gait")
     }
 
+    /** PROD-066: the player's swoosh spans the reach the hit test used, powerups included. */
+    @Test
+    fun `the player's swoosh reaches exactly as far as the resolved swing`() {
+        var slots = PowerupSlots.empty()
+        repeat(2) { slots = slots.collect(PowerupId.RangerOptics).first }
+        val sim = simulation(WeaponId.RustlineMachete, slots)
+        while (sim.lastSwing == null) sim.tick(InputFrame())
+        val swing = sim.lastSwing!!
+        assertTrue(swing.reachPx > Weapons.of(WeaponId.RustlineMachete).rangePx, "fixture: optics did not extend the reach")
+        trimTo(sim, 0)
+
+        val frame = Scene.compose(sim, camera(), backdrop(sim), hudOf(sim), 0.0, SceneBuilder())
+        val origin = playerCentre(sim) * Scene.ZOOM
+        var outer = 0.0
+        frame.batches.filter { it.layer == Layer.Effects && it.primitive == Primitive.Segment }.forEach { batch ->
+            for (n in 0 until batch.size) {
+                val i = n * Primitive.Segment.stride
+                outer = maxOf(outer, (Vec2(batch[i], batch[i + 1]) - origin).length, (Vec2(batch[i + 2], batch[i + 3]) - origin).length)
+            }
+        }
+        assertEquals(swing.reachPx * Scene.ZOOM, outer, 1e-6, "the swoosh's outer arc is not the resolved reach")
+    }
+
+    /** PROD-066: a shot's flash sits at the muzzle of the weapon the figure is drawn holding. */
+    @Test
+    fun `the player's shot cue sits at the held weapon's muzzle`() {
+        val pistol = Weapons.all.first { it.cls == WeaponClass.Ranged && it.projectileSpeed > 0.0 && it.anchor == Anchor.Self }
+        val sim = simulation(pistol.id)
+        while (sim.lastShot == null) sim.tick(InputFrame())
+        trimTo(sim, 0)
+
+        val frame = Scene.compose(sim, camera(), backdrop(sim), hudOf(sim), 0.0, SceneBuilder())
+        val pose = Actor.pose(Scene.motionOf(sim))
+        val feet = Vec2(playerCentre(sim).x, sim.player.y + sim.player.height(Physics.Default)) * Scene.ZOOM
+        val muzzle = feet + Scene.muzzleOf(pose, pistol) * Scene.ZOOM
+        // The core shares the accent batch with the projectile it launched, so every dot is a candidate.
+        val dots = frame.batches.filter { it.layer == Layer.Effects && it.primitive == Primitive.Dot }.flatMap { batch ->
+            (0 until batch.size).map { n -> Vec2(batch[n * Primitive.Dot.stride], batch[n * Primitive.Dot.stride + 1]) }
+        }
+        assertTrue(dots.any { (it - muzzle).length < 1e-6 }, "no flash at the muzzle $muzzle; dots at $dots")
+    }
+
+    /** PROD-066: a weapon with no barrel shows an activation pulse — a ring around the weapon. */
+    @Test
+    fun `the Kessler draws an activation pulse rather than a flash`() = assertPulses(WeaponId.KesslerOrbitalUplink)
+
+    /** Gate-2 finding: a psychic orb has no barrel either, whatever it is anchored to. */
+    @Test
+    fun `a psychic weapon draws an activation pulse rather than a flash`() = assertPulses(WeaponId.NeuralSpike)
+
+    private fun assertPulses(id: WeaponId) {
+        val sim = simulation(id)
+        while (sim.lastShot == null) sim.tick(InputFrame())
+        trimTo(sim, 0)
+
+        val frame = Scene.compose(sim, camera(), backdrop(sim), hudOf(sim), 0.0, SceneBuilder())
+        val cues = frame.batches.filter { it.layer == Layer.Effects && it.primitive == Primitive.Segment }
+        assertTrue(cues.isNotEmpty(), "no activation cue was drawn")
+        val pose = Actor.pose(Scene.motionOf(sim))
+        val feet = Vec2(playerCentre(sim).x, sim.player.y + sim.player.height(Physics.Default)) * Scene.ZOOM
+        val weapon = feet + Scene.muzzleOf(pose, Weapons.of(id)) * Scene.ZOOM
+        val radii = mutableListOf<Double>()
+        cues.forEach { batch ->
+            for (n in 0 until batch.size) {
+                val i = n * Primitive.Segment.stride
+                radii.add((Vec2(batch[i], batch[i + 1]) - weapon).length)
+                radii.add((Vec2(batch[i + 2], batch[i + 3]) - weapon).length)
+            }
+        }
+        assertTrue(radii.min() > 1.0 && radii.max() - radii.min() < 1e-6, "the cue is not a ring around the weapon: radii $radii")
+    }
+
+    private fun playerCentre(sim: GameSimulation) =
+        Vec2(sim.player.x + Physics.Default.width / 2.0, sim.player.y + sim.player.height(Physics.Default) / 2.0)
+
+    /** `specs/hazards.md`: spikes and barrels are drawn on the hazard layer, in the hazard colours. */
+    @Test
+    fun `spikes and barrels draw on the hazard layer`() {
+        val level = TestLevels.flat(
+            spikeColumns = TestLevels.SPAWN_COLUMN + 2..TestLevels.SPAWN_COLUMN + 3,
+            barrels = listOf(Barrel(TestLevels.SPAWN_COLUMN + 5, TestLevels.FLOOR_ROW)),
+        )
+        val sim = TestLevels.simulation(level)
+        val plain = TestLevels.simulation(TestLevels.flat())
+
+        fun hazardPrimitives(s: GameSimulation) = Scene.compose(s, camera(), backdrop(s), hudOf(s), 0.0, SceneBuilder())
+            .batches.filter { it.layer == Layer.Hazard }.sumOf { it.size }
+
+        assertTrue(hazardPrimitives(plain) == 0, "fixture: the bare level already draws hazards")
+        assertTrue(hazardPrimitives(sim) > 0, "spikes and a barrel drew nothing on the hazard layer")
+    }
+
+    /** Round-3 finding: a shot resolves on the aim taken at wind-up start, so that is what the telegraph shows. */
+    @Test
+    fun `a shooter's telegraph holds the aim it took, not where the player is now`() {
+        val sim = simulation()
+        trimTo(sim, 0)
+        val shooter = enemy(sim, EnemyArchetype.Shooter)
+        shooter.position = Vec2(sim.player.x + CLOSE * 2.0, sim.player.y)
+        sim.enemies.add(shooter)
+        // The player is to the shooter's left; the stored aim says right.
+        shooter.attackDirection = Vec2.Right
+        shooter.attackTarget = Vec2(shooter.position.x + 100.0, shooter.position.y)
+        shooter.windUpTotal = 0.25
+        shooter.windUpLeft = 0.2
+        assertTrue(sim.player.x < shooter.position.x, "fixture: the player is not to the shooter's left")
+
+        val motion = Scene.enemyMotion(sim, shooter)
+        assertEquals(Vec2.Right, motion.weaponAim, "the telegraph tracks the player instead of holding the aim")
+        assertEquals(1, motion.facing)
+    }
+
+    /** PROD-063: every enemy's attack has a visible wind-up — the pod and the emplacement included. */
+    @Test
+    fun `a flyer and a turret winding up look different from ones that are not`() {
+        listOf(EnemyArchetype.Flyer, EnemyArchetype.Turret).forEach { archetype ->
+            val sim = simulation()
+            trimTo(sim, 0)
+            val enemy = enemy(sim, archetype)
+            sim.enemies.add(enemy)
+            fun primitives() = Scene.compose(sim, camera(), backdrop(sim), hudOf(sim), 0.0, SceneBuilder())
+                .batches.filter { it.layer == Layer.ActorGlow || it.layer == Layer.Effects || it.layer == Layer.ActorFront }
+                .flatMap { b -> (0 until b.size * b.primitive.stride).map { b[it] } }
+
+            val idle = primitives()
+            enemy.windUpTotal = 0.3
+            enemy.windUpLeft = 0.2
+            val telegraphing = primitives()
+            assertTrue(idle != telegraphing, "a $archetype winding up is drawn exactly like one that is not")
+        }
+    }
+
     /** Where an enemy's posed lead hand lands on screen, with the camera at the origin. */
     private fun enemyHand(sim: GameSimulation, enemy: LiveEnemy): Vec2 =
         enemyFeet(sim, enemy) + Actor.pose(Scene.enemyMotion(sim, enemy)).leadHand * Scene.ZOOM
@@ -784,12 +922,13 @@ class SceneTest {
         assertTrue(model.healthFraction in 0.0..1.0)
     }
 
-    private fun simulation(weapon: WeaponId = WeaponId.BrokenBottle): GameSimulation {
+    private fun simulation(weapon: WeaponId = WeaponId.BrokenBottle, slots: PowerupSlots? = null): GameSimulation {
         val level = LevelGenerator.generate(SEED, 1).level
         var run = RunState.begin(SEED)
         if (weapon != WeaponId.BrokenBottle) {
             run = run.copy(loadout = run.loadout.copy(weapon = Weapons.of(weapon)))
         }
+        if (slots != null) run = run.copy(loadout = run.loadout.copy(slots = slots))
         return GameSimulation(level, run, SEED)
     }
 

@@ -1,6 +1,9 @@
 package io.github.ksean.cyberslop.sim
 
+import io.github.ksean.cyberslop.core.Vec2
 import io.github.ksean.cyberslop.entity.EnemyArchetype
+import io.github.ksean.cyberslop.gen.Populator
+import io.github.ksean.cyberslop.world.Arena
 import io.github.ksean.cyberslop.physics.InputFrame
 import io.github.ksean.cyberslop.physics.Physics
 import io.github.ksean.cyberslop.world.TileMap
@@ -145,6 +148,58 @@ class EnemyMovementTest {
         assertFalse(swarm.alive, "a walker in acid survived")
     }
 
+    /** Round-3 finding: engagement holds until the distance *exceeds* the radius, so equality keeps it. */
+    @Test
+    fun `an engaged enemy at exactly the disengage radius stays engaged`() {
+        val sim = TestLevels.simulation()
+        val playerCentre = Vec2(sim.player.x + 6.0, sim.player.y + 13.0)
+        val swarm = TestLevels.enemyAt(sim, EnemyArchetype.Swarm, column = 60)
+        swarm.position = playerCentre + Vec2(GameSimulation.DISENGAGE_PX, 0.0) - Vec2(7.0, 7.0)
+        swarm.engaged = true
+
+        sim.tick(InputFrame())
+        assertTrue(swarm.engaged, "an enemy exactly at the disengage radius dropped off")
+
+        swarm.position = playerCentre + Vec2(GameSimulation.DISENGAGE_PX + 1.0, 0.0) - Vec2(7.0, 7.0)
+        sim.tick(InputFrame())
+        assertFalse(swarm.engaged, "an enemy beyond the disengage radius stayed engaged")
+    }
+
+    /**
+     * A boss fight is a boss fight (`specs/enemies.md`, Pursuit): an engaged enemy holds at an
+     * arena's approach rather than joining the fight inside it. Walkers stop as at a ledge, Flyers
+     * as at a committed column.
+     */
+    @Test
+    fun `an engaged walker stops at the boss arena's approach`() {
+        val sim = TestLevels.simulation(TestLevels.flat(bossArena = Arena(40, 56, TestLevels.FLOOR_ROW + 1)))
+        val boundary = 40 - Populator.ARENA_APPROACH_TILES
+        val swarm = TestLevels.enemyAt(sim, EnemyArchetype.Swarm, column = boundary - 3)
+        swarm.engaged = true
+        // The player runs into the arena and stands there: the swarm wants to close and must not.
+        repeat(600) { tick ->
+            sim.tick(InputFrame(right = tick < 170))
+            val leading = TileMap.toTile(swarm.position.x + 2 * GameSimulation.ENEMY_HALF - 0.001)
+            assertTrue(leading < boundary, "a walker entered the arena approach: column $leading")
+        }
+        assertTrue(swarm.engaged, "fixture: the swarm disengaged")
+        assertTrue(swarm.position.x > TileMap.toWorld(boundary - 3), "the swarm did not close on the approach at all")
+    }
+
+    @Test
+    fun `an engaged flyer holds at the boss arena's approach`() {
+        val sim = TestLevels.simulation(TestLevels.flat(bossArena = Arena(40, 56, TestLevels.FLOOR_ROW + 1)))
+        val boundary = 40 - Populator.ARENA_APPROACH_TILES
+        val flyer = TestLevels.enemyAt(sim, EnemyArchetype.Flyer, column = boundary - 3, row = TestLevels.FLOOR_ROW - 4)
+        flyer.engaged = true
+        repeat(600) { tick ->
+            sim.tick(InputFrame(right = tick < 170))
+            val leading = TileMap.toTile(flyer.position.x + 2 * GameSimulation.ENEMY_HALF - 0.001)
+            assertTrue(leading < boundary, "a flyer entered the arena approach: column $leading")
+        }
+        assertTrue(flyer.position.x > TileMap.toWorld(boundary - 3), "the flyer did not close on the approach at all")
+    }
+
     @Test
     fun `a flyer pursues but never enters a committed column`() {
         val gap = 8..11
@@ -154,8 +209,10 @@ class EnemyMovementTest {
 
         repeat(600) {
             sim.tick(InputFrame())
-            val column = TileMap.toTile(flyer.position.x + GameSimulation.ENEMY_HALF)
-            assertFalse(column in gap, "a flyer crossed a committed column: $column")
+            // The whole body, not its centre: a 14 px pod could otherwise hang half a tile over the gap.
+            val leading = TileMap.toTile(flyer.position.x)
+            val trailing = TileMap.toTile(flyer.position.x + 2 * GameSimulation.ENEMY_HALF - 0.001)
+            assertFalse(leading in gap || trailing in gap, "a flyer's body entered a committed column: $leading..$trailing")
         }
         assertTrue(flyer.position.x < start - TileMap.toWorld(2), "the flyer did not pursue")
     }

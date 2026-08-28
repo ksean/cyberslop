@@ -1,7 +1,10 @@
 package io.github.ksean.cyberslop.verify
 
 import io.github.ksean.cyberslop.gen.LevelGenerator
+import io.github.ksean.cyberslop.world.Hazards
 import io.github.ksean.cyberslop.world.Level
+import io.github.ksean.cyberslop.world.TileKind
+import io.github.ksean.cyberslop.world.TileMap
 import kotlin.test.Test
 import kotlin.test.assertEquals
 import kotlin.test.assertFalse
@@ -82,6 +85,37 @@ class WitnessReplayTest {
         val without = WitnessReplay.replay(bare, generated.witness)
 
         assertEquals(without, withPickups, "a pickup changed what the witness replay produced")
+    }
+
+    /**
+     * Damaging hazards are placed after the replay and confirmed by a second one (`specs/hazards.md`),
+     * which is only sound if a hazard cannot change where the tape goes: none blocks movement and
+     * none displaces the player.
+     */
+    @Test
+    fun `damaging hazards cannot change where the tape goes`() {
+        val generated = LevelGenerator.generate(SEED, 10)
+        val level = generated.level
+        assertTrue(level.barrels.isNotEmpty() || Hazards.spikeCells(level).isNotEmpty(), "map 10 placed no hazards, so nothing is proved")
+
+        val cleared = TileMap(level.tiles.width, level.tiles.height)
+        for (x in 0 until level.tiles.width) for (y in 0 until level.tiles.height) {
+            cleared[x, y] = level.tiles[x, y].takeIf { it != TileKind.Spikes } ?: TileKind.Empty
+        }
+        val bare = Level(
+            mapIndex = level.mapIndex, theme = level.theme, tiles = cleared,
+            floorMask = level.floorMask, arcMask = level.arcMask,
+            spawnColumn = level.spawnColumn, spawnRow = level.spawnRow,
+            miniboss = level.miniboss, boss = level.boss, jets = level.jets,
+            enemies = level.enemies, pickups = level.pickups, gateColumn = level.gateColumn,
+        )
+
+        val withHazards = WitnessReplay.replay(level, generated.witness)
+        val without = WitnessReplay.replay(bare, generated.witness)
+
+        assertEquals(without.finalState, withHazards.finalState, "a hazard changed where the witness ended")
+        assertEquals(without.footholds, withHazards.footholds, "a hazard changed where the witness stood")
+        assertEquals(0, withHazards.damagingContacts, "the shipped route touches a damaging hazard")
     }
 
     /** PROD-047's reachability, discharged by the tape rather than by a mask. */

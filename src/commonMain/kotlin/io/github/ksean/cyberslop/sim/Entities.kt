@@ -1,6 +1,7 @@
 package io.github.ksean.cyberslop.sim
 
 import io.github.ksean.cyberslop.core.Vec2
+import io.github.ksean.cyberslop.entity.AttackVisual
 import io.github.ksean.cyberslop.entity.BossAttack
 import io.github.ksean.cyberslop.entity.BossFight
 import io.github.ksean.cyberslop.entity.BossSpec
@@ -148,8 +149,8 @@ class LiveBoss(val spec: BossSpec, val arena: Arena, private val tiles: TileMap)
     var moving: Boolean = false
         private set
 
-    private var attackIndex = 0
-    private var restSecondsLeft = OPENING_REST
+    internal var attackIndex = 0
+    internal var restSecondsLeft = OPENING_REST
 
     val healthFraction: Double get() = (fight.health / spec.maxHealth).coerceIn(0.0, 1.0)
 
@@ -165,8 +166,10 @@ class LiveBoss(val spec: BossSpec, val arena: Arena, private val tiles: TileMap)
         moving = false
         if (!fight.engaged || fight.defeated) return 0.0
 
-        facing = if (target.centre.x < position.x) -1 else 1
         val attack = currentAttack
+        // An attack holds its aim: the boss turns only between attacks, so a player crossing it
+        // mid-telegraph sees the swing go where the tell said it would.
+        if (attack == null) facing = if (target.centre.x < position.x) -1 else 1
         if (attack == null) {
             approach(delta, target.centre)
             restSecondsLeft -= delta
@@ -191,6 +194,9 @@ class LiveBoss(val spec: BossSpec, val arena: Arena, private val tiles: TileMap)
         // Only the newly-elapsed slice can hurt, so a long frame cannot apply an attack twice.
         val wasDangerous = attack.damageAt(before) > 0.0
         val isDangerous = attack.damageAt(attackElapsed) > 0.0
+        // A Rush is a lunge: through its active window the boss carries forward under the ledge
+        // rule. The hit resolves on the window's first tick, before the lunge moves it.
+        if (isDangerous && attack.visual == AttackVisual.Lunge) step(facing * LUNGE_SPEED * delta)
         if (!isDangerous || wasDangerous) return 0.0
 
         return if (hits(target, attack)) attack.damage else 0.0
@@ -217,7 +223,11 @@ class LiveBoss(val spec: BossSpec, val arena: Arena, private val tiles: TileMap)
     private fun approach(delta: Double, playerCentre: Vec2) {
         val toPlayer = playerCentre.x - position.x
         if (kotlin.math.abs(toPlayer) < CLOSE_ENOUGH) return
-        val step = (if (toPlayer > 0) 1.0 else -1.0) * SPEED * delta
+        step((if (toPlayer > 0) 1.0 else -1.0) * SPEED * delta)
+    }
+
+    /** One horizontal step under the ledge rule: no step off an edge, onto a lethal tile or into a wall. */
+    private fun step(step: Double) {
         val nextX = position.x + step
         val feetRow = TileMap.toTile(position.y)
         val leading = TileMap.toTile(if (step > 0) nextX + halfWidth else nextX - halfWidth)
@@ -238,6 +248,8 @@ class LiveBoss(val spec: BossSpec, val arena: Arena, private val tiles: TileMap)
         private const val OPENING_REST = 0.8
         private const val REST_BETWEEN = 0.9
         const val SPEED = 55.0
+        /** How fast a Rush carries the boss: 0.4 s of it covers about its 128 px reach. */
+        const val LUNGE_SPEED = 300.0
         private const val CLOSE_ENOUGH = 8.0
         /** Half the width of the band a Volley covers around where it was aimed. */
         private const val VOLLEY_WIDTH = 24.0

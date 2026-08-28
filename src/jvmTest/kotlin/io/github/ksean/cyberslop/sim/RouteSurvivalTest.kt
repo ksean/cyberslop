@@ -56,10 +56,11 @@ class RouteSurvivalTest {
             health = run.maxHealth,
             loadout = run.loadout.copy(
                 weapon = LootFloor.weaponAt(mapIndex),
-                slots = LootFloor.slotsAt(mapIndex),
+                slots = LootFloor.slotsArrivingAt(mapIndex),
             ),
         )
-        val sim = GameSimulation(generated.level, run, SEED)
+        val sim = GameSimulation(generated.level, run, SEED, optionalLoot = false)
+        sim.items.clear()
         var died = false
         generated.witness.steps.forEach { step ->
             step.frames.forEach { if (sim.tick(it).playerDied) died = true }

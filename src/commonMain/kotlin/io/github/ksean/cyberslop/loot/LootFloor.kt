@@ -33,21 +33,17 @@ import io.github.ksean.cyberslop.entity.Balance
  *
  * It does **not** carry a player to the final map, and it is not meant to. The required damage rate
  * grows about 81x across a run while a worst-case loadout grows far less, so optional loot is
- * genuinely required past the early maps — that is the difficulty curve working, not a defect. The
- * commit line makes sealing the player's own act rather than something automatic fire can do for
- * them, which is what it was built for; it does not, and was never able to, check whether they can
- * win the fight they are walking into.
+ * genuinely required past the early maps — that is the difficulty curve working, not a defect.
+ * Nothing about the encounter checks whether the player can win the fight they are walking into.
  */
 object LootFloor {
-    /** The weakest weapon the guaranteed awards can have produced by [mapIndex]. */
+    /**
+     * The weakest weapon the guaranteed awards can have produced by [mapIndex]: the starter cache
+     * on map 1, and from map 2 the main-boss award, which guarantees Chromed and nothing above it
+     * (`specs/combat.md`) — two extra draws raise the odds of better, not the floor.
+     */
     fun weaponAt(mapIndex: Int): WeaponSpec = weakestOf(
-        when {
-            mapIndex <= 1 -> Tier.Street
-            mapIndex <= 3 -> Tier.Scav
-            mapIndex <= 5 -> Tier.Chromed
-            mapIndex <= 7 -> Tier.Blacksite
-            else -> Tier.Ascended
-        },
+        if (mapIndex <= 1) Tier.Street else Tier.Chromed,
         // Map 1 opens with a starter cache, so the bottle is never carried into a mini-boss fight.
         excludeStartingWeapon = true,
     )
@@ -61,6 +57,14 @@ object LootFloor {
      * have.
      */
     fun slotsAt(mapIndex: Int): PowerupSlots = loadoutAt(mapIndex).slots
+
+    /**
+     * What a player *arrives* on [mapIndex] holding: the awards of every map before it and none of
+     * its own. [slotsAt] includes the map's own boss award, which is what the floor's kill-time
+     * claim needs; a harness that starts a map with it credits loot nobody has earned yet.
+     */
+    fun slotsArrivingAt(mapIndex: Int): PowerupSlots =
+        if (mapIndex <= 1) PowerupSlots.empty() else slotsAt(mapIndex - 1)
 
     private fun loadoutAt(mapIndex: Int): Loadout {
         var loadout = Loadout(weaponAt(mapIndex), PowerupSlots.empty())
@@ -78,14 +82,19 @@ object LootFloor {
     fun damagePerSecondAt(mapIndex: Int): Double =
         DamagePipeline.resolve(weaponAt(mapIndex), slotsAt(mapIndex)).expectedDps
 
+    /** The rate a player *arrives* with: what the map's own boss is actually fought with. */
+    fun damagePerSecondArrivingAt(mapIndex: Int): Double =
+        DamagePipeline.resolve(weaponAt(mapIndex), slotsArrivingAt(mapIndex)).expectedDps
+
     /**
      * The last map whose boss the floor can kill inside its band, having cleared every map before
-     * it. Beyond this the run needs loot the player was not guaranteed.
+     * it. Judged with what the player *arrives* holding — a boss's own award cannot help kill it.
+     * Beyond this the run needs loot the player was not guaranteed.
      */
     fun furthestClearableMap(slack: Double = BAND_SLACK): Int {
         var furthest = 0
         for (map in 1..Balance.let { 10 }) {
-            val seconds = Balance.bossHealth(map) / damagePerSecondAt(map)
+            val seconds = Balance.bossHealth(map) / damagePerSecondArrivingAt(map)
             if (seconds > Balance.targetBossSeconds(map) * slack) return furthest
             furthest = map
         }

@@ -26,6 +26,18 @@ object Populator {
     /** Clearance kept between a patrol and a span the player cannot steer out of. */
     const val COMMITTED_BUFFER = 3
 
+    /**
+     * No patrol touches an arena or the approach the witness walks in on: whatever stands there
+     * arrives at the boss with the player, and the boss fight is tuned as a boss fight. Twenty
+     * tiles, not the six of the carved ramp, because a Swarm engaged at the awareness radius and
+     * outrun at 6 tiles/s against 15 has to end up beyond `DISENGAGE_PX` of the boss's centre.
+     */
+    const val ARENA_APPROACH_TILES = 20
+
+    /** Per map, not per cohort (`specs/enemies.md`): most of what the player meets is melee. */
+    const val MAX_RANGED_SHARE = 0.35
+    const val MIN_ARCHETYPES = 3
+
     fun populate(level: Level, rng: Rng, curve: DifficultyCurve): List<EnemySpawn> {
         // Density follows the difficulty curve, as `specs/generation.md` says it should.
         val target = (level.widthTiles / 100.0 * curve.enemiesPerHundredTiles)
@@ -43,8 +55,25 @@ object Populator {
             val spawn = EnemySpawn(archetype, column, row, patrol)
 
             if (!isClearOfCommittedSpans(level, spawn)) continue
+            if (!isClearOfArenas(level, spawn)) continue
             if (archetype.shoots && seesCommittedSpan(level, spawn)) continue
+            if (archetype.shoots && (placed.count { it.archetype.shoots } + 1) > target * MAX_RANGED_SHARE) continue
             placed.add(spawn)
+        }
+        return withArchetypeFloor(placed)
+    }
+
+    /**
+     * Independent draws can leave a map with two kinds; the spec promises three. The last spawns
+     * are re-drawn as the missing melee kinds, which every placement rule already admits.
+     */
+    private fun withArchetypeFloor(placed: MutableList<EnemySpawn>): List<EnemySpawn> {
+        val melee = listOf(EnemyArchetype.Swarm, EnemyArchetype.Brute, EnemyArchetype.Flyer)
+        var index = placed.size - 1
+        while (placed.map { it.archetype }.toSet().size < MIN_ARCHETYPES && index >= 0) {
+            val missing = melee.first { kind -> placed.none { it.archetype == kind } }
+            placed[index] = placed[index].copy(archetype = missing)
+            index--
         }
         return placed
     }
@@ -73,6 +102,14 @@ object Populator {
         EnemyArchetype.Shooter to 0.15,
         EnemyArchetype.Turret to 0.07,
     )
+
+    /** The boss arena's keep-out runs to the map's edge: the exit corridor is in its line of fire. */
+    fun isClearOfArenas(level: Level, spawn: EnemySpawn): Boolean {
+        val miniboss = level.miniboss
+        val boss = level.boss
+        if (spawn.rightTile >= miniboss.leftTile - ARENA_APPROACH_TILES && spawn.leftTile <= miniboss.rightTile) return false
+        return spawn.rightTile < boss.leftTile - ARENA_APPROACH_TILES
+    }
 
     /** No part of the patrol may sit on or beside a span the player crosses committed. */
     fun isClearOfCommittedSpans(level: Level, spawn: EnemySpawn): Boolean {

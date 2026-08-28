@@ -23,8 +23,12 @@ class LevelLayoutTest {
             var total = 0
             repeat(COHORT) { index ->
                 val level = LevelGenerator.generate(SEED + index.toULong() * STRIDE, map).level
+                // Thirds of the ground a spawn may stand on: nothing stands on the boss's ground
+                // (the arena, its approach and the exit corridor), so the raw map's last third
+                // would be short by rule rather than by pooling.
+                val spawnable = level.boss.leftTile - Populator.ARENA_APPROACH_TILES
                 level.enemies.forEach { spawn ->
-                    thirds[(spawn.column * 3 / level.widthTiles).coerceIn(0, 2)]++
+                    thirds[(spawn.column * 3 / spawnable).coerceIn(0, 2)]++
                     total++
                 }
             }

@@ -71,6 +71,39 @@ class PopulationInvariantTest {
         }
     }
 
+    /** `specs/enemies.md`: at most 35 % ranged and at least three archetypes on **every** map. */
+    @Test
+    fun `every map is mostly melee and holds at least three archetypes`() {
+        for (seed in 1uL..12uL) for (mapIndex in 1..10) {
+            val level = LevelGenerator.generate(seed * 0x9E3779B97F4A7C15uL, mapIndex).level
+            val ranged = level.enemies.count { it.archetype.shoots }
+            assertTrue(ranged <= level.enemies.size * Populator.MAX_RANGED_SHARE, "map $mapIndex seed $seed: $ranged of ${level.enemies.size} are ranged")
+            val kinds = level.enemies.map { it.archetype }.toSet()
+            assertTrue(kinds.size >= Populator.MIN_ARCHETYPES, "map $mapIndex seed $seed: only $kinds")
+        }
+    }
+
+    /**
+     * The route ends at an arena the player must fight in; anything standing in it, or on the ramp
+     * the witness walks in on, arrives at the boss with the player (`specs/enemies.md`, Population).
+     */
+    @Test
+    fun `no spawn stands in an arena or on the approach to one`() {
+        for (seed in 1uL..12uL) for (mapIndex in 1..10) {
+            val level = LevelGenerator.generate(seed * 0x9E3779B97F4A7C15uL, mapIndex).level
+            val keepOut = listOf(
+                level.miniboss.leftTile - Populator.ARENA_APPROACH_TILES..level.miniboss.rightTile,
+                level.boss.leftTile - Populator.ARENA_APPROACH_TILES..level.widthTiles,
+            )
+            level.enemies.forEach { spawn ->
+                assertTrue(
+                    keepOut.none { spawn.leftTile in it || spawn.rightTile in it },
+                    "map $mapIndex seed $seed: ${spawn.archetype} patrols ${spawn.leftTile}..${spawn.rightTile} inside an arena or its approach $keepOut",
+                )
+            }
+        }
+    }
+
     private companion object {
         const val SEEDS = 8
         val BASE = 0xE4E4uL

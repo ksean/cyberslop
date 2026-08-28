@@ -50,6 +50,15 @@ class DropTableTest {
     }
 
     @Test
+    fun `a powerup floor keeps every roll at or above the tier`() {
+        val rng = Rng(3uL)
+        repeat(500) {
+            val powerup = DropTable.rollPowerup(rng, mapIndex = 1, pool = Powerups.all, floor = PowerupTier.Scav)
+            assertTrue(powerup.tier.ordinal >= PowerupTier.Scav.ordinal, "rolled ${powerup.tier}")
+        }
+    }
+
+    @Test
     fun `upward shifts make strong rolls more likely without breaking the floor`() {
         val plain = tierHistogram(shifts = 0)
         val shifted = tierHistogram(shifts = 2)

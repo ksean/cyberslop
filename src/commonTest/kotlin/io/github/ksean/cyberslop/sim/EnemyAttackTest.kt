@@ -6,6 +6,7 @@ import io.github.ksean.cyberslop.entity.EnemyArchetype
 import io.github.ksean.cyberslop.entity.EnemyAttacks
 import io.github.ksean.cyberslop.physics.InputFrame
 import io.github.ksean.cyberslop.physics.TICK_SECONDS
+import io.github.ksean.cyberslop.world.Arena
 import io.github.ksean.cyberslop.world.TileMap
 import kotlin.math.roundToInt
 import kotlin.test.Test
@@ -121,6 +122,60 @@ class EnemyAttackTest {
         shootThePlayer(sim, damage)
         sim.tick(InputFrame())
         assertEquals(sim.run.maxHealth - damage, sim.run.health, 1e-9, "a hit after the grace did not land")
+    }
+
+    /** Gate-2 finding: projectiles resolved before exposure was updated, so the entry tick could hurt. */
+    @Test
+    fun `a projectile arriving on the tick the player enters a committed column deals nothing`() {
+        val column = TestLevels.SPAWN_COLUMN + 2
+        val level = TestLevels.flat(committedColumns = column..column)
+        val sim = TestLevels.simulation(level)
+        val boundary = TileMap.toWorld(column)
+        val width = io.github.ksean.cyberslop.physics.Physics.Default.width
+
+        var entered = false
+        repeat(40) {
+            val before = sim.run.health
+            shootThePlayer(sim, damage = 1.0)
+            sim.tick(InputFrame(right = true))
+            val overlapping = sim.player.x + width > boundary && sim.player.x < boundary + 16.0
+            if (overlapping) {
+                entered = true
+                assertEquals(before, sim.run.health, "a hit landed with the player's box over the committed column at x=${sim.player.x}")
+            }
+        }
+        assertTrue(entered, "fixture: the player never reached the committed column")
+    }
+
+    /**
+     * The boss's ground (`specs/enemies.md`): a Shooter held at an arena's edge is still within its
+     * range of a player inside, so the ground has to be fair as well as unenterable — no enemy
+     * swing or projectile lands on a player standing on it.
+     */
+    @Test
+    fun `no enemy damage lands on a player standing on the boss's ground`() {
+        val arena = Arena(2, 12, TestLevels.FLOOR_ROW + 1)
+        val level = TestLevels.flat(bossArena = arena)
+        val sim = TestLevels.simulation(level)
+        // The ground, not the boss: the boss's own attacks are not bound by the rule.
+        sim.boss.fight.engage()
+        sim.boss.fight.damage(sim.boss.spec.maxHealth)
+        val shooter = TestLevels.enemyAt(sim, EnemyArchetype.Shooter, column = arena.rightTile + 2)
+        val swarm = TestLevels.enemyAt(sim, EnemyArchetype.Swarm, column = arena.rightTile + 1)
+        shooter.engaged = true
+        swarm.engaged = true
+
+        // The player walks to the arena's right edge and stands there, in reach of both.
+        val edge = TileMap.toWorld(arena.rightTile + 1) - 12.0 - 20.0
+        var fired = false
+        repeat(300) {
+            sim.tick(InputFrame(right = sim.player.x < edge))
+            if (shooter.lastShot != null) fired = true
+        }
+
+        assertTrue(TileMap.toTile(sim.player.x + 12.0) <= arena.rightTile, "fixture: the player left the arena at ${sim.player.x}")
+        assertTrue(fired, "fixture: the shooter never fired")
+        assertEquals(sim.run.maxHealth, sim.run.health, "enemy damage landed on the boss's ground")
     }
 
     /** An enemy projectile that will overlap the player's centre on the next tick. */

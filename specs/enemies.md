@@ -17,7 +17,11 @@ body is a 14 × 14 px box; its centre is `position + (7, 7)`.
 Population: `Populator` places `widthTiles / 100 × enemiesPerHundredTiles` enemies (clamped to
 8–60) with archetype weights Swarm 0.38, Brute 0.22, Flyer 0.18, Shooter 0.15, Turret 0.07, each
 standing on the lowest standable row of its column with a patrol span of 1–3 tiles either side,
-subject to the placement invariants in completability.md.
+subject to the placement invariants in completability.md, and with no part of the patrol inside
+either arena, the twenty-tile approach before it, or anywhere past the boss arena's approach — what
+stands there arrives at the boss with the player, or shoots into the fight from the exit corridor,
+and the boss fight is tuned as a boss fight. Twenty tiles is what leaves a Swarm engaged at the
+awareness radius and outrun on the approach beyond `DISENGAGE_PX` of the boss's centre.
 
 ## Awareness (PROD-060)
 
@@ -25,7 +29,8 @@ The simulation has no screen, so "visible" is an **awareness radius**, not a vie
 enemy whose centre is at Euclidean distance strictly less than `AWARE_PX = 22 tiles` from the
 player's centre becomes *engaged* — the same strict predicate auto-aim uses, so the two boundaries
 agree at equality; it stays engaged until it dies or that distance exceeds `DISENGAGE_PX =
-33 tiles`, at which point it resumes patrol. An unengaged enemy patrols `homeX ± patrolPx`. An
+28 tiles`, at which point it resumes patrol — so a pack the player has outrun by that much drops
+off rather than arriving at the boss with them. An unengaged enemy patrols `homeX ± patrolPx`. An
 engaged enemy is not confined to its patrol span. The radius is the one auto-aim uses, so an enemy
 the player's weapon can target is one that is acting on the player.
 
@@ -42,6 +47,14 @@ the player's weapon can target is one that is acting on the player.
 - **Pursuit (melee).** An engaged Swarm or Brute steps toward the player under the ledge rule. An
   engaged Flyer moves in both axes toward the player and passes through terrain, but never enters
   a **committed column** (completability.md) — it holds at the column boundary.
+- **The boss's ground.** No enemy pursues onto an arena or the twenty-tile approach before it
+  (`Level.isArenaGround`): a walker stops there as at a ledge and a Flyer holds as at a committed
+  column, so a pack the player has outrun waits at the door instead of joining a fight that is
+  tuned as a boss fight. A Shooter held there is still within its range of someone inside, so
+  the ground is fair as well as unenterable: **no enemy swing or projectile deals damage to a
+  player whose box overlaps the boss's ground** — the second clause of the fairness rule below.
+  Bosses are not bound by it; their ground is where they fight. The rule applies to every arena;
+  an enemy already on that ground is not trapped by it.
 - **Approach, hold, retreat (ranged).** An engaged Shooter faces the player and: beyond
   `SHOOTER_RANGE = 220 px` (13.75 tiles) steps toward the player; between `RETREAT_PX = 5 tiles`
   and `SHOOTER_RANGE` holds; inside `RETREAT_PX` steps away; all under the ledge rule, shooting
@@ -63,16 +76,16 @@ attack scales from.
   |---|---|---|---|
   | Swarm | 0.30 s | 0.6 × contact | 0.6 s |
   | Flyer | 0.30 s | 0.8 × contact | 0.8 s |
-  | Brute | 0.45 s | 1.6 × contact | 1.1 s |
+  | Brute | 0.45 s | 1.2 × contact | 1.1 s |
 
 - **Shot.** A Shooter or Turret whose cooldown has elapsed, whose target is within
   `SHOOTER_RANGE` and in line of sight, winds up for `SHOT_WINDUP = 0.25 s` (holding its aim), then
   fires one projectile at the player's centre as it was at the start of the wind-up: speed 340
-  px/s, lifetime 2.5 s, radius 6 px, damage `0.6 × contactDamage`, cooldown 0.75 s after the shot.
-- **Fairness on committed spans.** No enemy swing or enemy projectile deals damage while the
-  player occupies a committed column (any column their AABB overlaps), nor until they have been
-  grounded and clear of committed columns for `LANDING_GRACE = 0.25 s`; a projectile that would
-  have hit is spent. This is the runtime form of completability.md's placement invariant and holds
+  px/s, lifetime 2.5 s, radius 6 px, damage `0.45 × contactDamage`, cooldown 0.75 s after the shot.
+- **Fairness on committed spans and on the boss's ground.** No enemy swing or enemy projectile
+  deals damage while the player occupies a committed column (any column their AABB overlaps),
+  nor until they have been grounded and clear of committed columns for `LANDING_GRACE = 0.25 s`,
+  nor while their box overlaps the boss's ground; a projectile that would have hit is spent. This is the runtime form of completability.md's placement invariant and holds
   however enemies move.
 - **Status.** Slows floor at 40 % and take the strongest; a stunned enemy neither moves nor attacks
   for 0.5 s and a wind-up in progress is cancelled; burn and bleed drain per tick.
@@ -95,12 +108,20 @@ px/s, a walker under the ledge rule.
 | Volley | 0.60 → 0.45 s | 0.50 s | 0.8 × contact | within 8 tiles and within 24 px of the **x recorded when the telegraph began** | move aside | wind-up, then a muzzle flash and a fan of projectile dots |
 | Rush | 0.55 → 0.40 s | 0.40 s | 1.6 × contact | within 128 px and **on the ground** | jump | wind-up, then a lunge with a trailing swoosh |
 
+A boss turns only between attacks: an attack holds its facing and its aim from the moment its
+telegraph begins, so a player crossing it mid-telegraph sees the swing go where the tell said. A
+Rush is a lunge: through its active window the boss carries forward at 300 px/s under the ledge
+rule, its hit resolving on the window's first tick before it moves; its swoosh trails behind.
 No telegraph may be shorter than 0.4 s, enforced in the constructor. An attack deals its damage
 once, on the first tick of its active window, if the player is inside its hit condition — so each
 attack's listed dodge is the input that removes the player from that geometry, and a player who
 does nothing is hit. Between attacks the boss
 rests 0.9 s (0.8 s before its first) and walks toward the player with a gait; attacks cycle
 round-robin through the current phase's list. Bosses resist slows entirely.
+
+**Awards as a floor.** The starter cache never holds the bottle it exists to replace. A main
+boss's weapon award guarantees Chromed; its two extra draws raise the odds of better and nothing
+more, which is why `LootFloor.weaponAt` is Street on map 1 and Chromed from map 2 on.
 
 **Activation (PROD-062).** A boss is inert and invulnerable until *engaged* — the player within
 `AWARE_PX` of it — and from then on it moves, attacks and can be damaged, wherever the player
@@ -135,8 +156,9 @@ each enemy, `damage per attack ÷ (wind-up + cooldown)` using the archetype's sw
 each damaging hazard, its per-second rate; both summed and divided by `widthTiles / 100`. Bosses
 are excluded (every map has one of each).
 
-Two harnesses in `jvmTest` measure play. Both use the guaranteed loadout (`LootFloor`) at full
-health, the game's own auto-aim (nearest target, bosses included once engaged), and record
+Two harnesses in `jvmTest` measure play. Both use the guaranteed loadout a player *arrives* with
+(`LootFloor.weaponAt`, `LootFloor.slotsArrivingAt`: the awards of the maps before, none of the
+map's own) at full health, with the map's optional caches removed so nothing unearned is taken, the game's own auto-aim (nearest target, bosses included once engaged), and record
 **gross incoming damage** — every damage event before lifesteal — separately from net health.
 
 - **Route pressure**, all ten maps: replay the witness tape while the population acts; the tape
@@ -152,7 +174,9 @@ health, the game's own auto-aim (nearest target, bosses included once engaged), 
 each mini-boss and boss award at its weakest outcome — under the game's real pickup policy.
 Optional loot is genuinely required past the early maps; the floor's claims are:
 
-- it carries the opening maps unaided;
+- it carries the opening maps unaided, and a map counts as *covered* only if its boss falls inside
+  the kill-time band to the loadout the player **arrives** with (`slotsArrivingAt`) — never to
+  that boss's own award;
 - it never goes backwards (non-decreasing damage across maps);
 - the ceiling (best weapon, greediest legal build) reaches the final map's required rate;
 - the guaranteed loadout survives the witness route on every map the floor covers, with the

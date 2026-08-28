@@ -89,8 +89,16 @@ class Level(
      * player to reach the end of the map" is a thing the geometry does rather than a state flag.
      */
     val gateColumn: Int = 0,
+    /** Burning barrels, placed off the witness route after it is proven (`specs/hazards.md`). */
+    val barrels: List<Barrel> = emptyList(),
 ) {
     val widthTiles: Int get() = tiles.width
+
+    /** The same level with a different set of barrels; the tile grid is shared. */
+    fun withBarrels(barrels: List<Barrel>): Level = Level(
+        mapIndex, theme, tiles, floorMask, arcMask, spawnColumn, spawnRow, miniboss, boss, jets,
+        enemies, pickups, gateColumn, barrels,
+    )
 
     /**
      * Columns the player crosses committed: airborne over no floor, or over a lethal tile
@@ -102,6 +110,14 @@ class Level(
     }
 
     fun isCommitted(column: Int): Boolean = column in 0 until widthTiles && committedColumns[column]
+
+    /**
+     * Columns an enemy never pursues into: each arena and the approach before it, and everything
+     * past the boss arena's approach (`specs/enemies.md`, Pursuit). A boss fight is a boss fight.
+     */
+    fun isArenaGround(column: Int, approachTiles: Int): Boolean =
+        column >= boss.leftTile - approachTiles ||
+            column in miniboss.leftTile - approachTiles..miniboss.rightTile
 
     private fun isCommittedNow(column: Int): Boolean {
         for (row in 0 until tiles.height) if (tiles.isLethal(column, row)) return true

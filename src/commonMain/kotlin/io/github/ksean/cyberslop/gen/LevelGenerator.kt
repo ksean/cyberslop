@@ -120,9 +120,19 @@ object LevelGenerator {
                 ),
             )
 
+            // Damaging hazards last, off the footholds and the pickups, then the confirming replay
+            // removes anything the tape still touches (`specs/hazards.md`).
+            val barrels = HazardPlacer.place(
+                withPickups.level, replay.footholds,
+                Rng.derive(attemptSeed, mapIndex, "hazard"), curve,
+            )
+            val withHazards = withPickups.withBarrels(
+                HazardPlacer.confirm(withPickups.level, barrels, withPickups.witness),
+            )
+
             return GeneratedLevel(
-                withPickups.level,
-                withPickups.witness,
+                withHazards.level,
+                withHazards.witness,
                 GenerationReport(
                     attempts = attempt,
                     repairs = 0,
@@ -143,6 +153,9 @@ object LevelGenerator {
 
         fun withPickups(pickups: List<io.github.ksean.cyberslop.world.PickupSite>) =
             copy(pickups = pickups)
+
+        fun withBarrels(barrels: List<io.github.ksean.cyberslop.world.Barrel>) =
+            Built(level.withBarrels(barrels), witness)
 
         private fun copy(
             enemies: List<io.github.ksean.cyberslop.entity.EnemySpawn> = level.enemies,

@@ -11,7 +11,8 @@ private const val MIX_B = 0x94D049BB133111EBuL
  * (ENG-053).
  */
 class Rng(seed: ULong) {
-    private var state: ULong = seed
+    var state: ULong = seed
+        private set
 
     fun nextULong(): ULong {
         state += GOLDEN_GAMMA

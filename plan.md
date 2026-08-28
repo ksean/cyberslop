@@ -21,7 +21,8 @@ the high-risk high-reward class, each of those actions is animated — and the m
 Settled before implementation; the specification amendments say the same thing normatively.
 
 1. **Awareness radius, not screen space.** The simulation cannot see the screen, so "visible" is
-   a Euclidean awareness radius of 22 tiles (the auto-aim range) with hysteresis at 33 tiles. An
+   a Euclidean awareness radius of 22 tiles (the auto-aim range) with hysteresis at 28 tiles
+   (tuned down from 33 in step 9 so an outrun pack drops off before the boss). An
    engaged enemy is free of its patrol span; an unengaged one patrols as today. *(enemies.md)*
 2. **Engaged enemies act by role.** Melee archetypes pursue; a Shooter approaches to firing range,
    holds, and retreats inside five tiles; a Turret is fixed. Walkers gain gravity and a ledge rule
@@ -64,29 +65,29 @@ Each step is one `tasks.md` entry with its red tests named. Every step but 6a to
 the only step disjoint enough to run in parallel, and its scope was `Weapons.kt`, the registry test
 and the loot-floor expectations only.
 
-1. **Specify and review.** *(in progress — round three)* Amend the specs with decisions 1–8;
+1. **Specify and review.** *(done — three rounds)* Amend the specs with decisions 1–8;
    adversarial review of the plan; disposition findings; repeat until a round returns nothing
    load-bearing.
 2. **Awareness and movement.** *(done)* `LiveEnemy.engaged`; pursuit, approach/hold/retreat;
    walker gravity and the ledge rule; committed columns on `Level`; Flyer boundary; speed cap.
-3. **Attacks and their animation.** Telegraphed swings with an arc replacing the aura; shot
+3. **Attacks and their animation.** *(done)* Telegraphed swings with an arc replacing the aura; shot
    wind-up and cadence; committed-span fairness with the landing grace; per-enemy wind-up/swing/
    shot windows; `Action.WindUp`; enemy swoosh and muzzle flash in `Scene`; the swoosh and flash
-   geometry the player will share. *(simulation side done; arc, grace and animation remain)*
-4. **Bosses.** Awareness-driven activation; commit line removed; pursuit under the ledge rule;
+   geometry the player will share.
+4. **Bosses.** *(done)* Awareness-driven activation; commit line removed; pursuit under the ledge rule;
    attack hit conditions and dodges; Volley reach cap; boss gait; attack poses and effects;
    `Camera.framing` deleted.
-5. **Hazards.** `Spikes` tile kind, `Barrel` level object, `hazardDamage()`, placement, the
+5. **Hazards.** *(done)* `Spikes` tile kind, `Barrel` level object, `hazardDamage()`, placement, the
    confirming replay with fault injection, drawing, curve row, P-30 still green.
 6. **Player weapons and crouch.**
    - 6a *(sub-agent — done)*: melee reach and damage rebalance in `Weapons.kt`; P-37.
-   - 6b *(after 3)*: crouch pose in `Actor.kt`; the player's swoosh and firing cue (flash, or the
+   - 6b *(done)*: crouch pose in `Actor.kt`; the player's swoosh and firing cue (flash, or the
      Kessler pulse) through step 3's shared geometry, test-first in `SceneTest`.
-7. **Small contract gaps the review found.** Boss powerup award floor (T2) in `DropTable`; the
+7. **Small contract gaps the review found.** *(done)* Boss powerup award floor (T2) in `DropTable`; the
    P-15 weapon × powerup × stack resolution test.
-8. **Determinism digest.** `GameSimulation.digest()` over every future-affecting field, a golden
+8. **Determinism digest.** *(done)* `GameSimulation.digest()` over every future-affecting field, a golden
    in `commonTest`, and a mutation test per state family.
-9. **Measure and tune.** `ThreatScore`, route pressure, boss pressure, P-39; tune awareness radius,
+9. **Measure and tune.** *(done; gate 2 ran its three rounds — see tasks.md)* `ThreatScore`, route pressure, boss pressure, P-39; tune awareness radius,
    speeds, swing damage and hazard density until pressure rises by thirds and the floor-covered
    maps are won on every cohort seed; `./scripts/check.sh`; implementation review; disposition
    findings.

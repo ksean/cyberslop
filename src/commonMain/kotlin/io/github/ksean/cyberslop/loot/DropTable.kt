@@ -72,8 +72,12 @@ object DropTable {
         floor: Tier? = null,
         shifts: Int = 0,
         unlocked: Int = Weapons.all.size,
+        /** A weapon the roll may not return — the starter cache never holds the bottle it replaces. */
+        excluding: io.github.ksean.cyberslop.combat.WeaponId? = null,
     ): WeaponSpec {
         val available = Weapons.all.take(unlocked.coerceIn(1, Weapons.all.size))
+            .filter { it.id != excluding }
+            .ifEmpty { Weapons.all.take(unlocked.coerceIn(1, Weapons.all.size)) }
         val tier = rollTier(rng, mapIndex, floor, shifts)
         val candidates = available.filter { it.tier == tier }
             .ifEmpty { available.filter { it.tier.ordinal <= tier.ordinal } }
@@ -86,10 +90,18 @@ object DropTable {
      * a cache can hold something better than a corpse does on both branches rather than only on the
      * weapon one, which is what PROD-047 now requires.
      */
-    fun rollPowerup(rng: Rng, mapIndex: Int, pool: List<Powerup>, shifts: Int = 0): Powerup {
-        var best = drawPowerup(rng, mapIndex, pool)
+    fun rollPowerup(
+        rng: Rng,
+        mapIndex: Int,
+        pool: List<Powerup>,
+        shifts: Int = 0,
+        /** Draws only from the pool at or above this tier; the whole pool if nothing qualifies. */
+        floor: PowerupTier? = null,
+    ): Powerup {
+        val eligible = pool.filter { floor == null || it.tier.ordinal >= floor.ordinal }.ifEmpty { pool }
+        var best = drawPowerup(rng, mapIndex, eligible)
         repeat(shifts) {
-            val again = drawPowerup(rng, mapIndex, pool)
+            val again = drawPowerup(rng, mapIndex, eligible)
             if (again.tier.ordinal > best.tier.ordinal) best = again
         }
         return best

@@ -1,5 +1,7 @@
 package io.github.ksean.cyberslop.render
 
+import io.github.ksean.cyberslop.combat.Anchor
+import io.github.ksean.cyberslop.combat.WeaponClass
 import io.github.ksean.cyberslop.core.TrigTable
 import io.github.ksean.cyberslop.core.Vec2
 import io.github.ksean.cyberslop.entity.AttackVisual
@@ -208,6 +210,7 @@ object Scene {
         val edge = builder.batch(Layer.Terrain, palette.tileEdge, Primitive.Rect)
         val hazard = builder.batch(Layer.Hazard, palette.hazard, Primitive.Rect)
         val hazardGlow = builder.batch(Layer.Hazard, palette.hazardGlow, Primitive.Rect)
+        val spikes = builder.batch(Layer.Hazard, palette.hazardGlow, Primitive.Segment, strokeWidth(STRIP_WIDTH))
         val size = TILE_SIZE * ZOOM
 
         for (x in first..last) {
@@ -230,9 +233,49 @@ object Scene {
                         }
                     }
 
+                    // A row of points standing on a dark base: the spikes are the strokes, so the
+                    // strip reads as something that cuts rather than as a coloured floor.
+                    TileKind.Spikes -> {
+                        val base = screenY + size
+                        hazard.rect(screenX, base - STRIP_BASE_PX, size, STRIP_BASE_PX)
+                        val pitch = size / STRIP_POINTS
+                        for (n in 0 until STRIP_POINTS) {
+                            val left = screenX + n * pitch
+                            val tip = left + pitch / 2.0
+                            spikes.segment(left, base, tip, screenY + size * STRIP_TOP)
+                            spikes.segment(tip, screenY + size * STRIP_TOP, left + pitch, base)
+                        }
+                    }
+
                     else -> Unit
                 }
             }
+        }
+        barrels(builder, palette, level, camera, first..last)
+    }
+
+    /** A burning barrel: a body in its floor cell and a flame licking up through the cell above. */
+    private fun barrels(builder: SceneBuilder, palette: Palette, level: Level, camera: Camera, visible: IntRange) {
+        if (level.barrels.isEmpty()) return
+        val size = TILE_SIZE * ZOOM
+        val body = builder.batch(Layer.Hazard, palette.hazard, Primitive.Rect)
+        val bands = builder.batch(Layer.Hazard, palette.tileEdge, Primitive.Rect)
+        val flame = builder.batch(Layer.Hazard, palette.hazardGlow, Primitive.Segment, strokeWidth(FLAME_WIDTH))
+        val core = builder.batch(Layer.Hazard, palette.hazardGlow, Primitive.Dot)
+        level.barrels.forEach { barrel ->
+            if (barrel.column !in visible) return@forEach
+            val x = (TileMap.toWorld(barrel.column) - camera.x) * ZOOM
+            val floor = (TileMap.toWorld(barrel.row) - camera.y) * ZOOM + size
+            val width = size * DRUM_WIDTH
+            val left = x + (size - width) / 2.0
+            val top = floor - size * DRUM_HEIGHT
+            body.rect(left, top, width, size * DRUM_HEIGHT)
+            bands.rect(left, top + size * DRUM_HEIGHT * 0.3, width, BAND_PX)
+            bands.rect(left, top + size * DRUM_HEIGHT * 0.7, width, BAND_PX)
+            val centre = x + size / 2.0
+            flame.segment(centre - width * 0.3, top, centre, top - size * FLAME_HEIGHT)
+            flame.segment(centre + width * 0.3, top, centre, top - size * FLAME_HEIGHT)
+            core.dot(centre, top - size * FLAME_HEIGHT * 0.4, size * FLAME_CORE)
         }
     }
 
@@ -392,6 +435,9 @@ object Scene {
     private fun engagement(enemy: LiveEnemy, look: EnemyLook, player: Vec2): Vec2 {
         val patrol = Vec2(enemy.facing.toDouble(), 0.0)
         if (!look.armed) return patrol
+        // A shot resolves on the aim taken when its wind-up began, so that is what the telegraph
+        // shows — a barrel that kept tracking a dodging player would lie about where the shot goes.
+        if (enemy.windingUp) return enemy.attackDirection
         val offset = player - Vec2(enemy.position.x + ENEMY_HALF, enemy.position.y + ENEMY_HALF)
         val range = GameSimulation.SHOOTER_RANGE
         if (offset.lengthSquared > range * range) return patrol
@@ -447,6 +493,13 @@ object Scene {
     fun barrelTip(pose: Pose, weaponReach: Double = BARREL_REACH): Vec2 =
         pose.leadHand + pose.weaponAim * (pose.height * weaponReach)
 
+    /**
+     * The muzzle of a registry weapon drawn in the lead hand, in actor-local pixels: the far end of
+     * the held icon, which spans [HELD_ICON] of the plain barrel's reach.
+     */
+    fun muzzleOf(pose: Pose, weapon: io.github.ksean.cyberslop.combat.WeaponSpec): Vec2 =
+        pose.leadHand + pose.weaponAim * (pose.height * weaponReach(weapon) * HELD_ICON)
+
     /** A legless pod. Nothing else in the game leaves the ground, so nothing else reads like it. */
     private fun hover(
         builder: SceneBuilder,
@@ -484,7 +537,16 @@ object Scene {
             x + size * PLUME_SPREAD, centreY + size * POD_HEIGHT,
             x + size * PLUME_SPREAD * 1.6 + bank, centreY + size * (POD_HEIGHT + PLUME_LENGTH),
         )
-        // A pod has no hand, so its strike comes from its body.
+        // A pod has no hand, so its strike comes from its body — and its wind-up is a charge
+        // gathering at its front, growing through the telegraph (PROD-063).
+        if (enemy.windingUp) {
+            val progress = 1.0 - (enemy.windUpLeft / enemy.windUpTotal).coerceIn(0.0, 1.0)
+            builder.batch(Layer.Effects, palette.hazardGlow, Primitive.Dot).dot(
+                x + enemy.facing * size * (look.bulk / 2.0 + CHARGE_OFFSET),
+                centreY + size * POD_HEIGHT / 2.0,
+                size * CHARGE * (0.4 + 0.6 * progress),
+            )
+        }
         enemy.lastSwing?.let {
             swoosh(builder, palette.glow[look.glowTone], Vec2(x, centreY + size * POD_HEIGHT / 2.0), it)
         }
@@ -525,6 +587,13 @@ object Scene {
         plating(builder, look, x, head - size * TURRET_HEAD / 2.0, size)
         builder.batch(Layer.ActorGlow, palette.glow[look.glowTone], Primitive.Dot)
             .dot(x + aim.x * size * EYE_OFFSET, head + aim.y * size * EYE_OFFSET, size * EYE)
+        // The wind-up is a charge at the barrel's mouth, growing through the telegraph (PROD-063).
+        if (enemy.windingUp) {
+            val progress = 1.0 - (enemy.windUpLeft / enemy.windUpTotal).coerceIn(0.0, 1.0)
+            builder.batch(Layer.Effects, palette.hazardGlow, Primitive.Dot).dot(
+                x + aim.x * size * BARREL, head + aim.y * size * BARREL, size * CHARGE * (0.4 + 0.6 * progress),
+            )
+        }
         enemy.lastShot?.let {
             val glow = palette.glow[look.glowTone]
             muzzleFlash(builder, glow, glow, Vec2(x + aim.x * size * BARREL, head + aim.y * size * BARREL), it)
@@ -740,10 +809,11 @@ object Scene {
         )
     }
 
-    /** A slam comes down at the ground ahead; everything else goes level. */
+    /** A slam comes down at the ground ahead; a lunge trails its swoosh behind; the rest go level. */
     private fun strikeDirection(visual: AttackVisual, forward: Vec2): Vec2 = when (visual) {
         AttackVisual.GroundSlam -> Vec2(forward.x * SLAM_FORWARD, SLAM_DOWN)
-        AttackVisual.LevelSweep, AttackVisual.MuzzleFan, AttackVisual.Lunge -> forward
+        AttackVisual.Lunge -> forward * -1.0
+        AttackVisual.LevelSweep, AttackVisual.MuzzleFan -> forward
     }
 
     /** The effect of an attack's active window, from the posed hand, over exactly that window. */
@@ -879,6 +949,19 @@ object Scene {
         )
     }
 
+    /** An activation pulse: a ring around the weapon that grows as it fades (PROD-066). */
+    private fun pulse(builder: SceneBuilder, style: String, at: Vec2, flash: MuzzleFlash) {
+        val ring = builder.batch(Layer.Effects, style, Primitive.Segment, strokeWidth(FLASH_WIDTH))
+        val radius = PULSE_PX * (1.0 + PULSE_GROWTH * (1.0 - flash.strength))
+        var previous = Vec2(at.x + radius, at.y)
+        for (step in 1..PULSE_SEGMENTS) {
+            val direction = TrigTable.rotate(Vec2.Right, 360.0 * step / PULSE_SEGMENTS)
+            val point = Vec2(at.x + direction.x * radius, at.y + direction.y * radius)
+            ring.segment(previous.x, previous.y, point.x, point.y)
+            previous = point
+        }
+    }
+
     /**
      * A shot leaving the barrel (PROD-066): a bright core dot, a longer bloom segment along the
      * aim and two short spikes at ±35°, fading over the flash window. Shared by the player and
@@ -983,9 +1066,16 @@ object Scene {
             eyeStyle = PLAYER_EYE,
         )
 
+        // The cue sits at the weapon, not the hand (PROD-066): the flash at the muzzle of a weapon
+        // that has one, a pulse around the dish of one that does not.
         sim.lastShot?.let { flash ->
-            val hand = Vec2(x + pose.leadHand.x * ZOOM, feet + pose.leadHand.y * ZOOM)
-            muzzleFlash(builder, palette.glow[palette.glow.size - 1], palette.hazardGlow, hand, flash)
+            val weapon = sim.run.loadout.weapon
+            val muzzle = Vec2(x, feet) + muzzleOf(pose, weapon) * ZOOM
+            if (weapon.anchor == Anchor.Cursor || weapon.cls == WeaponClass.Psychic) {
+                pulse(builder, palette.hazardGlow, muzzle, flash)
+            } else {
+                muzzleFlash(builder, palette.glow[palette.glow.size - 1], palette.hazardGlow, muzzle, flash)
+            }
         }
     }
 
@@ -1252,6 +1342,21 @@ object Scene {
     private const val FLASH_REACH = 22.0
     private const val FLASH_WIDTH = 3.0
     private const val FLASH_SPIKE_DEGREES = 35.0
+    private const val PULSE_PX = 10.0
+    private const val CHARGE = 0.16
+    private const val CHARGE_OFFSET = 0.1
+    private const val PULSE_GROWTH = 0.6
+    private const val PULSE_SEGMENTS = 12
+    private const val STRIP_WIDTH = 2.0
+    private const val STRIP_BASE_PX = 4.0
+    private const val STRIP_POINTS = 3
+    private const val STRIP_TOP = 0.35
+    private const val DRUM_WIDTH = 0.7
+    private const val DRUM_HEIGHT = 0.9
+    private const val BAND_PX = 2.0
+    private const val FLAME_WIDTH = 3.0
+    private const val FLAME_HEIGHT = 0.8
+    private const val FLAME_CORE = 0.14
     private const val FAN_DOTS = 5
     private const val FAN_DEGREES = 40.0
     private const val FAN_DOT_PX = 3.0

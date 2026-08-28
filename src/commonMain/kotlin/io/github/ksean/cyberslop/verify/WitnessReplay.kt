@@ -4,6 +4,8 @@ import io.github.ksean.cyberslop.physics.MovementModel
 import io.github.ksean.cyberslop.physics.Physics
 import io.github.ksean.cyberslop.physics.PlayerState
 import io.github.ksean.cyberslop.physics.TICK_SECONDS
+import io.github.ksean.cyberslop.world.Cell
+import io.github.ksean.cyberslop.world.Hazards
 import io.github.ksean.cyberslop.world.Level
 import io.github.ksean.cyberslop.world.TileMap
 
@@ -26,6 +28,10 @@ data class ReplayResult(
      * witness ever traverses.
      */
     val footholds: Set<Foothold> = emptySet(),
+    /** Ticks on which the player's box overlapped a damaging hazard. */
+    val damagingContacts: Int = 0,
+    /** Every damaging-hazard cell the box overlapped, for the confirming pass. */
+    val touchedHazards: Set<Cell> = emptySet(),
 ) {
     val succeeded: Boolean get() = reachedMiniboss && reachedBoss && !touchedLethal
 }
@@ -53,8 +59,15 @@ object WitnessReplay {
         var reachedMiniboss = false
         var reachedBoss = false
         val footholds = mutableSetOf<Foothold>()
+        var damagingContacts = 0
+        val touchedHazards = mutableSetOf<Cell>()
 
         fun observe() {
+            val touched = Hazards.overlapped(level, state.x, state.y, physics.width, state.height(physics))
+            if (touched.isNotEmpty()) {
+                damagingContacts++
+                touchedHazards.addAll(touched)
+            }
             val column = TileMap.toTile(state.x + physics.width / 2.0)
             if (level.miniboss.containsColumn(column)) reachedMiniboss = true
             if (column >= level.boss.leftTile) reachedBoss = true
@@ -78,7 +91,10 @@ object WitnessReplay {
             }
         }
 
-        return ReplayResult(reachedMiniboss, reachedBoss, touchedLethal, state, ticks, footholds)
+        return ReplayResult(
+            reachedMiniboss, reachedBoss, touchedLethal, state, ticks, footholds,
+            damagingContacts, touchedHazards,
+        )
     }
 
     private fun burnedByJet(

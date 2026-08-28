@@ -1,5 +1,7 @@
 package io.github.ksean.cyberslop.loot
 
+import io.github.ksean.cyberslop.combat.DamagePipeline
+import io.github.ksean.cyberslop.combat.Weapons
 import kotlin.test.Test
 import kotlin.test.assertEquals
 import kotlin.test.assertTrue
@@ -51,6 +53,23 @@ class PowerupRegistryTest {
     fun `every powerup has a rarity tier`() {
         PowerupTier.entries.forEach { tier ->
             assertTrue(Powerups.all.any { it.tier == tier }, "no powerup at $tier")
+        }
+    }
+
+    /** P-15: every build resolves to something that can actually fire. */
+    @Test
+    fun `every weapon with every powerup at every stack count resolves finite and positive`() {
+        Weapons.all.forEach { weapon ->
+            Powerups.all.forEach { powerup ->
+                (1..MAX_STACKS).forEach { stacks ->
+                    var slots = PowerupSlots.empty()
+                    repeat(stacks) { slots = slots.collect(powerup.id).first }
+                    val resolved = DamagePipeline.resolve(weapon, slots)
+                    val label = "${weapon.id} with $stacks x ${powerup.id}"
+                    assertTrue(resolved.damagePerProjectile.isFinite() && resolved.damagePerProjectile > 0.0, "$label: damage ${resolved.damagePerProjectile}")
+                    assertTrue(resolved.cooldown.isFinite() && resolved.cooldown > 0.0, "$label: cooldown ${resolved.cooldown}")
+                }
+            }
         }
     }
 

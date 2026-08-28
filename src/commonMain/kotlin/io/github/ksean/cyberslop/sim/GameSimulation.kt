@@ -28,6 +28,8 @@ import io.github.ksean.cyberslop.physics.Physics
 import io.github.ksean.cyberslop.physics.PlayerState
 import io.github.ksean.cyberslop.physics.TICK_SECONDS
 import io.github.ksean.cyberslop.run.RunState
+import io.github.ksean.cyberslop.gen.Populator
+import io.github.ksean.cyberslop.world.Hazards
 import io.github.ksean.cyberslop.world.Level
 import io.github.ksean.cyberslop.world.TILE_SIZE
 import io.github.ksean.cyberslop.world.TileMap
@@ -66,9 +68,16 @@ class GameSimulation(
     startingRun: RunState,
     seed: ULong,
     private val unlockedWeapons: Int = io.github.ksean.cyberslop.combat.Weapons.all.size,
+    /**
+     * Whether optional loot exists at all: the static caches and the kill drops. Off for the
+     * reference player of `LootFloor`, who takes only guaranteed awards — a harness cannot strip
+     * a drop that is created and collected inside one tick, so the simulation has to not make it.
+     */
+    private val optionalLoot: Boolean = true,
 ) {
     // Per-map, per-phase stream (ENG-053), so loot on map 3 is not the same draw as loot on map 1.
-    private val rng = Rng.derive(seed, level.mapIndex, "loot")
+    internal val lootRng = Rng.derive(seed, level.mapIndex, "loot")
+    private val rng: Rng get() = lootRng
 
     var run: RunState = startingRun
         private set
@@ -119,6 +128,18 @@ class GameSimulation(
     var playerStridePx: Double = 0.0
         private set
 
+    /**
+     * Every point of damage the player has taken this map, before lifesteal and before death
+     * clamps it: the *gross incoming damage* the pressure harnesses measure (`specs/enemies.md`).
+     */
+    var grossDamageTaken: Double = 0.0
+        private set
+
+    private fun hurt(amount: Double) {
+        grossDamageTaken += amount
+        run = run.damaged(amount)
+    }
+
     /** How long the player has been grounded and clear of committed columns; see [playerExposed]. */
     private var exposedSeconds: Double = LANDING_GRACE
 
@@ -154,7 +175,7 @@ class GameSimulation(
      */
     private val starterRng = Rng.derive(seed, level.mapIndex, "starter-cache")
 
-    private val autoFire = AutoFire(run.loadout.weapon, run.loadout.slots)
+    internal val autoFire = AutoFire(run.loadout.weapon, run.loadout.slots)
     private var minibossRewarded = false
     private var bossRewarded = false
 
@@ -172,7 +193,7 @@ class GameSimulation(
         }
         // Statically placed pickups (PROD-047). Generation chose where; what each yields is decided
         // here, because it depends on the run's unlocks and its powerup pool.
-        level.pickups.forEach { site ->
+        level.pickups.filter { optionalLoot }.forEach { site ->
             val at = site.centre
             items.add(
                 if (cacheRng.nextDouble() < DropTable.weaponShare()) {
@@ -202,7 +223,11 @@ class GameSimulation(
                 GroundItem(
                     Vec2(TileMap.toWorld(level.spawnColumn + STARTER_CACHE_TILES),
                         TileMap.toWorld(level.spawnRow) - TILE_SIZE),
-                    DropTable.rollWeapon(starterRng, 1, floor = io.github.ksean.cyberslop.combat.Tier.Street, unlocked = unlockedWeapons),
+                    // Never the bottle itself: the cache exists to replace it (`specs/enemies.md`).
+                    DropTable.rollWeapon(
+                        starterRng, 1, floor = io.github.ksean.cyberslop.combat.Tier.Street,
+                        unlocked = unlockedWeapons, excluding = io.github.ksean.cyberslop.combat.Weapons.startingWeapon.id,
+                    ),
                     null,
                     guaranteed = true,
                 ),
@@ -235,13 +260,17 @@ class GameSimulation(
             val remaining = flash.secondsLeft - TICK_SECONDS
             if (remaining > 0.0) flash.copy(secondsLeft = remaining) else null
         }
+        // Exposure is read off the box the movement model just produced, *before* anything can
+        // hit it: resolved after the projectiles, the tick on which the player entered a committed
+        // column still carried the previous tick's exposure and could hurt.
+        advanceExposure()
         autoFire.tick(TICK_SECONDS, muzzle, aim).forEach { emit(it, muzzle, aim) }
         advanceProjectiles()
         advanceStatuses()
-        advanceExposure()
         advanceEnemies()
         advanceBosses()
         collectItems()
+        drainHazards()
 
         if (player.touchedLethal || burnedByJet()) run = run.copy(health = 0.0)
 
@@ -256,6 +285,62 @@ class GameSimulation(
             mapCleared = exitReached,
             bossDefeated = boss.fight.defeated,
         )
+    }
+
+    /**
+     * A canonical digest of every mutable, future-affecting field (P-40, `specs/enemies.md`):
+     * doubles by their IEEE bits, lists by length then elements, presentation-only fields excluded.
+     * The one number that lets the JVM and Wasm builds be compared against a committed golden.
+     */
+    fun digest(): ULong = Digest().apply {
+        add(run.health); add(run.scrap); add(run.mapIndex); add(run.loadout.weapon.id.ordinal)
+        val held = run.loadout.slots.held.entries.sortedBy { it.key.ordinal }
+        add(held.size); held.forEach { add(it.key.ordinal); add(it.value) }
+        add(player.x); add(player.y); add(player.vx); add(player.vy)
+        add(player.onGround); add(player.stance.ordinal); add(player.touchedLethal)
+        add(facing); add(elapsedTicks); add(exitReached); add(exposedSeconds)
+        add(autoFire.remaining); add(lootRng.state)
+        add(enemies.size)
+        enemies.forEach { e ->
+            add(e.position); add(e.vy); add(e.health); add(e.facing); add(e.engaged)
+            add(e.cooldownLeft); add(e.windUpLeft); add(e.windUpTotal); add(e.attackDirection); add(e.attackTarget)
+            add(e.slowSecondsLeft); add(e.slowFraction); add(e.stunSecondsLeft)
+            add(e.burn.perSecond); add(e.burn.secondsLeft); add(e.bleed.perSecond); add(e.bleed.secondsLeft)
+        }
+        add(projectiles.size)
+        projectiles.forEach { p ->
+            add(p.position); add(p.velocity); add(p.damage); add(p.pierceLeft); add(p.secondsLeft)
+            add(p.passesTerrain); add(p.fromPlayer); add(p.homingTurn); add(p.homingRadius); add(p.radius)
+        }
+        add(items.size)
+        items.forEach { i ->
+            add(i.position); add(i.weapon?.id?.ordinal ?: -1); add(i.powerup?.id?.ordinal ?: -1); add(i.guaranteed)
+        }
+        listOf(miniboss to minibossRewarded, boss to bossRewarded).forEach { (b, rewarded) ->
+            add(b.position); add(b.fight.health); add(b.fight.engaged); add(b.facing); add(b.aimedX)
+            add(b.currentAttack?.name?.hashCode() ?: -1); add(b.attackElapsed); add(b.restSecondsLeft)
+            add(b.attackIndex); add(rewarded)
+        }
+        // The exit state is geometry: the tiles `openGate` clears, not a flag standing in for them.
+        val floor = level.boss.floorRow
+        for (column in level.boss.leftTile until level.widthTiles) {
+            for (row in floor - EXIT_CLEARANCE until floor) add(level.tiles[column, row].ordinal)
+        }
+    }.value
+
+    /** FNV-1a-style folding over 64-bit words; every input is reduced to whole words first. */
+    private class Digest {
+        var value: ULong = 0xCBF29CE484222325uL
+            private set
+
+        fun add(word: ULong) {
+            value = (value xor word) * 0x100000001B3uL
+        }
+
+        fun add(d: Double) = add(d.toRawBits().toULong())
+        fun add(i: Int) = add(i.toLong().toULong())
+        fun add(b: Boolean) = add(if (b) 1uL else 0uL)
+        fun add(v: Vec2) { add(v.x); add(v.y) }
     }
 
     /** Live targets for auto-aim: what is actually there now, not where things started. */
@@ -323,22 +408,26 @@ class GameSimulation(
         forEachTargetNear(centre, scaled) { applyHit(it, shot.weapon, shot.direction) }
     }
 
+    /**
+     * Jumps from the nearest target to the next. Bosses are targets like anything else: a chain
+     * that leapt over trash only left a run whose guaranteed weapon was a chain unable to win.
+     */
     private fun resolveChain(shot: Shot, origin: Vec2) {
         val pattern = shot.weapon.spec.pattern as FirePattern.Chain
         val jumps = pattern.jumps + shot.weapon.chainTargets
         var from = origin
         var scale = 1.0
-        val struck = mutableSetOf<LiveEnemy>()
+        val struck = mutableSetOf<Any>()
 
         repeat(jumps) {
-            val next = enemies.filter { it.alive && it !in struck }
-                .minByOrNull { (centreOfEnemy(it) - from).lengthSquared } ?: return
-            if ((centreOfEnemy(next) - from).lengthSquared > pattern.jumpRange * pattern.jumpRange) {
-                return
-            }
-            struck.add(next)
-            applyHit(Target.Enemy(next), shot.weapon, shot.direction, scale)
-            from = centreOfEnemy(next)
+            val candidates = enemies.filter { it.alive && it !in struck }.map { Target.Enemy(it) } +
+                listOf(miniboss, boss).filter { it.fight.vulnerable && !it.fight.defeated && it !in struck }
+                    .map { Target.Boss(it) }
+            val next = candidates.minByOrNull { (it.position - from).lengthSquared } ?: return
+            if ((next.position - from).lengthSquared > pattern.jumpRange * pattern.jumpRange) return
+            struck.add(if (next is Target.Enemy) next.enemy else (next as Target.Boss).boss)
+            applyHit(next, shot.weapon, shot.direction, scale)
+            from = next.position
             scale *= (1.0 - pattern.decay)
         }
     }
@@ -505,7 +594,7 @@ class GameSimulation(
             } else if ((centreOf(player) - projectile.position).lengthSquared <
                 projectile.radius * projectile.radius * 4.0
             ) {
-                if (playerExposed()) run = run.damaged(projectile.damage)
+                if (enemyDamageAllowed()) hurt(projectile.damage)
                 projectile.secondsLeft = 0.0
             }
         }
@@ -616,8 +705,8 @@ class GameSimulation(
         val offset = playerCentre - centreOfEnemy(enemy)
         if (offset.lengthSquared > swing.reachPx * swing.reachPx) return
         if (!TrigTable.withinArc(enemy.attackDirection, offset, swing.arcDegrees / 2.0)) return
-        if (!playerExposed()) return
-        run = run.damaged(Balance.contactDamage(level.mapIndex) * swing.damageShare)
+        if (!enemyDamageAllowed()) return
+        hurt(Balance.contactDamage(level.mapIndex) * swing.damageShare)
     }
 
     private fun fire(enemy: LiveEnemy) {
@@ -647,9 +736,25 @@ class GameSimulation(
      */
     private fun playerExposed(): Boolean = exposedSeconds >= LANDING_GRACE
 
+    /**
+     * What an *enemy* may do to the player: exposed under the fairness rule, and not standing on
+     * the boss's ground (`specs/enemies.md`) — a Shooter held at an arena's edge is still in range
+     * of someone inside, so the ground has to be fair as well as unenterable. Bosses are not
+     * bound by this: their ground is where they fight.
+     */
+    private fun enemyDamageAllowed(): Boolean = playerExposed() && !playerOnArenaGround()
+
+    private fun playerOnArenaGround(): Boolean {
+        val left = TileMap.toTile(player.x)
+        val right = TileMap.toTile(player.x + Physics.Default.width - EDGE)
+        return (left..right).any { level.isArenaGround(it, Populator.ARENA_APPROACH_TILES) }
+    }
+
     private fun playerOverCommitted(): Boolean {
         val left = TileMap.toTile(player.x)
-        val right = TileMap.toTile(player.x + Physics.Default.width - 1.0)
+        // Any overlap at all counts, down to a fraction of a pixel: `width - 1` left the last
+        // pixel of the box out of the test.
+        val right = TileMap.toTile(player.x + Physics.Default.width - EDGE)
         return (left..right).any { level.isCommitted(it) }
     }
 
@@ -657,12 +762,13 @@ class GameSimulation(
         exposedSeconds = if (player.onGround && !playerOverCommitted()) exposedSeconds + TICK_SECONDS else 0.0
     }
 
-    /** Euclidean, inclusive at the radius, with hysteresis so an enemy at the edge does not flicker. */
+    /** Euclidean and strict at the radius, with hysteresis so an enemy at the edge does not flicker. */
     private fun updateAwareness(enemy: LiveEnemy, playerCentre: Vec2) {
         val distanceSquared = (playerCentre - centreOfEnemy(enemy)).lengthSquared
         // Strictly inside, the same predicate auto-aim uses, so the two boundaries agree at equality.
         enemy.engaged = when {
-            enemy.engaged -> distanceSquared < DISENGAGE_PX * DISENGAGE_PX
+            // Engaged until the distance *exceeds* the radius: equality keeps it.
+            enemy.engaged -> distanceSquared <= DISENGAGE_PX * DISENGAGE_PX
             else -> distanceSquared < AWARE_PX * AWARE_PX
         }
     }
@@ -707,6 +813,8 @@ class GameSimulation(
         val bodyRow = TileMap.toTile(next.y + ENEMY_SIZE - 1.0)
         val leading = TileMap.toTile(if (dx > 0) next.x + ENEMY_SIZE - 1.0 else next.x)
         val trailing = TileMap.toTile(if (dx > 0) next.x else next.x + ENEMY_SIZE - 1.0)
+        // Down to the last fraction of a pixel, unlike the ledge test's whole-pixel footprint.
+        if (entersArena(enemy, TileMap.toTile(if (dx > 0) next.x + ENEMY_SIZE - EDGE else next.x))) return false
         val tiles = level.tiles
         if (!enemy.archetype.ignoresTerrain) {
             if (tiles.blocksMovement(leading, headRow) || tiles.blocksMovement(leading, bodyRow)) return false
@@ -720,11 +828,28 @@ class GameSimulation(
         return true
     }
 
+    /**
+     * The boss's ground is the boss's (`specs/enemies.md`, Pursuit): an enemy outside an arena's
+     * approach never steps onto it, so a pack the player outran waits at the door rather than
+     * joining a fight tuned as a boss fight. An enemy already on it is not trapped by the rule.
+     */
+    private fun entersArena(enemy: LiveEnemy, leadingColumn: Int): Boolean {
+        if (!level.isArenaGround(leadingColumn, Populator.ARENA_APPROACH_TILES)) return false
+        val here = TileMap.toTile(enemy.position.x)..TileMap.toTile(enemy.position.x + ENEMY_SIZE - 1.0)
+        return here.none { level.isArenaGround(it, Populator.ARENA_APPROACH_TILES) }
+    }
+
     private fun fly(enemy: LiveEnemy, offset: Vec2, speed: Double) {
         val direction = offset.normalisedOr(Vec2.Right)
         val step = direction * (speed * TICK_SECONDS)
-        val nextColumn = TileMap.toTile(enemy.position.x + step.x + ENEMY_HALF)
-        val horizontal = if (level.isCommitted(nextColumn)) 0.0 else step.x
+        // The whole body stays out, not just its centre: a pod could otherwise hang half a tile
+        // over the gap it is forbidden to enter.
+        val nextX = enemy.position.x + step.x
+        val leading = TileMap.toTile(nextX)
+        val trailing = TileMap.toTile(nextX + 2 * ENEMY_HALF - EDGE)
+        val blocked = level.isCommitted(leading) || level.isCommitted(trailing) ||
+            entersArena(enemy, if (step.x > 0) trailing else leading)
+        val horizontal = if (blocked) 0.0 else step.x
         enemy.position = enemy.position + Vec2(horizontal, step.y)
         enemy.stridePx += kotlin.math.abs(horizontal)
     }
@@ -771,7 +896,7 @@ class GameSimulation(
                 live.fight.engage()
             }
             val damage = live.tick(TICK_SECONDS, target)
-            if (damage > 0.0 && playerExposed()) run = run.damaged(damage)
+            if (damage > 0.0 && playerExposed()) hurt(damage)
         }
 
         if (miniboss.fight.defeated && !minibossRewarded) {
@@ -780,7 +905,10 @@ class GameSimulation(
         }
         if (boss.fight.defeated && !bossRewarded) {
             bossRewarded = true
-            award(boss.centre, io.github.ksean.cyberslop.combat.Tier.Chromed, powerup = true, shifts = 2)
+            award(
+                boss.centre, io.github.ksean.cyberslop.combat.Tier.Chromed, powerup = true, shifts = 2,
+                powerupFloor = io.github.ksean.cyberslop.loot.PowerupTier.Scav,
+            )
             run = run.copy(scrap = run.scrap + BOSS_SCRAP)
             openGate()
         }
@@ -809,6 +937,7 @@ class GameSimulation(
         floor: io.github.ksean.cyberslop.combat.Tier,
         powerup: Boolean,
         shifts: Int = 1,
+        powerupFloor: io.github.ksean.cyberslop.loot.PowerupTier? = null,
     ) {
         items.add(
             GroundItem(
@@ -823,7 +952,7 @@ class GameSimulation(
                 GroundItem(
                     at + Vec2(TILE_SIZE.toDouble(), 0.0),
                     null,
-                    DropTable.rollPowerup(rng, level.mapIndex, runPool),
+                    DropTable.rollPowerup(rng, level.mapIndex, runPool, floor = powerupFloor),
                     guaranteed = true,
                 ),
             )
@@ -839,11 +968,14 @@ class GameSimulation(
             autoFire.clearCooldown()
         }
         if (rng.nextDouble() > DropTable.killDropChance(level.mapIndex)) return
-        if (rng.nextDouble() < DropTable.weaponShare()) {
-            items.add(GroundItem(centreOfEnemy(enemy), DropTable.rollWeapon(rng, level.mapIndex, unlocked = unlockedWeapons), null))
+        // Rolled whether or not it is kept: the loot stream also feeds crits and stuns, and a
+        // guaranteed-only run has to be the same fight with the loot merely withheld.
+        val drop = if (rng.nextDouble() < DropTable.weaponShare()) {
+            GroundItem(centreOfEnemy(enemy), DropTable.rollWeapon(rng, level.mapIndex, unlocked = unlockedWeapons), null)
         } else {
-            items.add(GroundItem(centreOfEnemy(enemy), null, DropTable.rollPowerup(rng, level.mapIndex, runPool)))
+            GroundItem(centreOfEnemy(enemy), null, DropTable.rollPowerup(rng, level.mapIndex, runPool))
         }
+        if (optionalLoot) items.add(drop)
     }
 
     private fun collectItems() {
@@ -900,6 +1032,14 @@ class GameSimulation(
         }
     }
 
+    /** Damaging hazards drain by overlap and never move the player (`specs/hazards.md`). */
+    private fun drainHazards() {
+        val rate = Hazards.ratePerSecond(
+            level, player.x, player.y, Physics.Default.width, player.height(Physics.Default),
+        )
+        if (rate > 0.0) hurt(rate * Balance.contactDamage(level.mapIndex) * TICK_SECONDS)
+    }
+
     private fun burnedByJet(): Boolean {
         if (level.jets.isEmpty()) return false
         val now = elapsedTicks * TICK_SECONDS
@@ -941,12 +1081,15 @@ class GameSimulation(
         const val ENEMY_FEET = TILE_SIZE.toDouble()
         /** How near the player has to be for an enemy to notice them (`specs/enemies.md`). */
         const val AWARE_PX = 22.0 * TILE_SIZE
-        const val DISENGAGE_PX = 33.0 * TILE_SIZE
+        const val DISENGAGE_PX = 28.0 * TILE_SIZE
         /** Inside this a shooter backs away. */
         const val RETREAT_PX = 5.0 * TILE_SIZE
         const val CLOSE_ENOUGH_PX = 4.0
         /** Grounded-and-clear time an enemy attack needs before it can land after a crossing. */
         const val LANDING_GRACE = 0.25
+
+        /** A box resting exactly on a tile boundary does not overlap the tile beyond it. */
+        private const val EDGE = 0.001
         const val ENEMY_SPEED = 70.0
         /**
          * How close the player has to be for a shooter or a turret to open fire.

@@ -1,0 +1,84 @@
+package io.github.ksean.cyberslop.sim
+
+import io.github.ksean.cyberslop.core.Vec2
+import io.github.ksean.cyberslop.gen.LevelGenerator
+import io.github.ksean.cyberslop.physics.InputFrame
+import io.github.ksean.cyberslop.run.RunState
+import kotlin.test.Test
+import kotlin.test.assertEquals
+import kotlin.test.assertNotEquals
+
+/**
+ * P-40: the whole rule-bearing simulation state, digested, matches a committed golden on every
+ * target — the only way the JVM and Wasm results can be compared, since neither test run can see
+ * the other. A mutation in each state family changes the digest, so the digest is known to read
+ * every family rather than merely to be stable.
+ */
+class SimulationDeterminismTest {
+    @Test
+    fun `a fixed tape on a fixed seed produces the committed digest on every target`() {
+        assertEquals(GOLDEN, simulate().digest())
+    }
+
+    @Test
+    fun `the tape actually exercises the population`() {
+        val sim = simulate()
+        assertNotEquals(sim.run.maxHealth, sim.run.health, "nothing hurt the player, so the tape proves little")
+    }
+
+    @Test
+    fun `a mutation in every state family changes the digest`() {
+        val baseline = simulate().digest()
+
+        fun mutated(family: String, mutate: (GameSimulation) -> Unit) {
+            val sim = simulate()
+            mutate(sim)
+            assertNotEquals(baseline, sim.digest(), "$family is not read by the digest")
+        }
+
+        mutated("player and run") { it.tick(InputFrame(jumpStart = true, jump = true)) }
+        mutated("auto-fire accumulator") { it.autoFire.remaining += 0.01 }
+        mutated("loot rng") { it.lootRng.nextULong() }
+        mutated("enemies") { it.enemies.first().health -= 1.0 }
+        mutated("enemy engagement") { it.enemies.first().engaged = !it.enemies.first().engaged }
+        mutated("projectiles") {
+            it.projectiles.add(LiveProjectile(Vec2.Zero, Vec2.Right, 1.0, 0, 1.0, passesTerrain = false, fromPlayer = true))
+        }
+        mutated("items") { it.items.add(GroundItem(Vec2.Zero, null, null)) }
+        mutated("bosses") { it.boss.fight.engage() }
+        mutated("boss rest") { it.miniboss.restSecondsLeft += 0.1 }
+    }
+
+    /** Runs out along the route, then stands and lets the population arrive. */
+    /** Round-3 finding: the exit state is the gate's tiles, which `openGate` mutates — not a flag. */
+    @Test
+    fun `the exit geometry is part of the digest`() {
+        val sim = TestLevels.simulation()
+        sim.boss.fight.engage()
+        sim.boss.fight.damage(sim.boss.spec.maxHealth)
+        sim.tick(InputFrame())
+        val opened = sim.digest()
+        sim.level.tiles[sim.level.gateColumn, sim.level.boss.floorRow - 1] = io.github.ksean.cyberslop.world.TileKind.Solid
+        assertNotEquals(opened, sim.digest(), "a gate tile written back to solid left the digest unchanged")
+    }
+
+    private fun simulate(): GameSimulation {
+        val sim = GameSimulation(level, RunState.begin(SEED), SEED)
+        repeat(TICKS) { tick ->
+            val running = tick < RUN_TICKS
+            val jump = running && tick % 45 == 0
+            sim.tick(InputFrame(right = running && tick % 90 < 70, jump = jump, jumpStart = jump, crouch = running && tick % 90 in 75..80))
+        }
+        return sim
+    }
+
+    private companion object {
+        val SEED = 0xD1CE5uL
+        const val TICKS = 720
+        const val RUN_TICKS = 300
+        const val GOLDEN = 6827669262270049212uL
+
+        /** Generated once: nothing the tape does writes to the tiles, and generation is the slow part. */
+        val level by lazy { LevelGenerator.generate(SEED, 1).level }
+    }
+}
