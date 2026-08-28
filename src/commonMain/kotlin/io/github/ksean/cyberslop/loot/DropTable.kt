@@ -37,8 +37,8 @@ object DropTable {
      *
      * Flat, and deliberately not a function of [mapIndex] beyond taking it: the parameter is kept so
      * that a future curve is a change here rather than a change at every call site, and the test
-     * asserts it does not vary. It replaces two ramps that disagreed with each other — `plan.md`
-     * §6.7 published 1.5%-to-3% while the simulation ran 3%-to-6%.
+     * asserts it does not vary. It replaces two ramps that disagreed with each other — the old design
+     * document published 1.5%-to-3% while the simulation ran 3%-to-6%.
      */
     @Suppress("UNUSED_PARAMETER")
     fun killDropChance(mapIndex: Int): Double = KILL_DROP_CHANCE

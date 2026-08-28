@@ -13,7 +13,7 @@ import kotlin.test.assertTrue
  * PROD-047: every map carries statically placed pickups, on ground the player can reach and stand
  * on, away from the arenas and away from anything crossed committed.
  *
- * `plan.md` §6.7 planned these as "cache / dead terminal" pickups and **none of it was built** — the
+ * The old design document planned these as "cache / dead terminal" pickups and **none of it was built** — the
  * only pre-placed item in the game was map 1's starter cache.
  *
  * One map is checked here and the cohort sweep lives in `jvmTest`: generation costs tens of

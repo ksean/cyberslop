@@ -10,8 +10,8 @@ data class SheetEntry(val name: String, val icon: Icon, val weapon: Boolean)
  * Renders every icon so a person can look at it.
  *
  * *"A shotgun looks like a shotgun"* is a claim about a person, and no assertion reaches it
- * (`plan.md` §16.7). This is the mechanism that does: change 0006 validates recognisability the way
- * `plan.md` §9.4 validates everything tests cannot reach, by rendering the thing and having the owner
+ * (`specs/presentation.md`, Item icons). This is the mechanism that does: it validates recognisability the way
+ * `specs/engineering.md` (Verification) validates everything tests cannot reach, by rendering the thing and having the owner
  * look at it.
  *
  * **It lives in `jvmTest` on purpose.** The task that planned it asked for a `Layer.Debug` scene in

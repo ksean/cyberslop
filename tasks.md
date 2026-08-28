@@ -1,860 +1,159 @@
 # Tasks
 
-Implementation work is tracked here. A task may move from **Waiting for approval** to **In progress** only after the user explicitly approves phase two after reviewing the linked specification. Record that approval before writing a failing test or production behavior.
+Open implementation work, one entry per step of [`plan.md`](plan.md). An entry is deleted when its
+step is done; a finding from adversarial review is recorded under the entry it concerns until it is
+dispositioned. Anything worth keeping moves into `specs/`.
+
+**Implementation approval for the difficulty plan:** given by the user in the request that asked
+for the plan — "assume that the specification, requirements, and tasks do not need to be approved
+separately … build an entirely new research and development plan (and then subsequently execute
+that plan)" — with adversarial review directed for both the plan and the implementation.
 
 ## Open
 
-### CYB-028 — The icon vocabulary, and the sheet that makes forty-four of them authorable
-
-- **Status:** Complete
-- **Specification:** [Change 0006](specs/changes/0006-weapon-and-pickup-iconography.md) — ENG-064, PROD-049
-- **Implementation approval:** Approved by the user on 2026-08-27 ("approve and proceed"), after reviewing phase one. This is the post-review approval `AGENTS.md` asks for — unlike change 0005's, which was given in advance and had to be recorded with that caveat for eight review rounds.
-- **Depends on:** Nothing
-
-TDD checkpoints:
-
-- [x] Add a failing test proving an icon's ops all lie inside the `[-1, 1]` box and that resolving an id twice returns the same geometry. Containment is enforced in `Icon`'s `init` rather than only asserted, so an icon that would bleed outside the box its scale maps cannot be constructed — and it **caught a real one on its first run**, a shotgun muzzle dot at `x = 0.94` with radius `0.08`.
-- [x] Add a failing test proving orientation by a unit vector is a **rigid motion**: every stroke keeps its length and every pair of strokes its angle, to floating-point tolerance. A sign error in `(u*ax - v*ay, u*ay + v*ax)` reflects instead of rotating, and a length-only assertion would not see it, so the test compares the signed cross product of two strokes as well.
-- [x] **Checkpoint restated, because the one that was planned is not provable.** It asked for a test that "resolving an icon calls nothing in `TrigTable`", which needs the table instrumented with a call counter that exists only for the test. What replaces it carries the same force and is real: the placement is cross-checked against `TrigTable.rotate` at six angles, so the hand-rolled arithmetic is proved to *be* a rotation rather than merely asserted not to call one. The second half — that no icon contains a `Rect` — is enforced by the sealed hierarchy having no such variant, which a test would only restate.
-- [x] Implement `render/Icon.kt`, `render/IconStyle.kt` and `render/IconPainter.kt`.
-- [x] Build the icon sheet before authoring any icon. **Moved from `commonMain` behind a `Layer.Debug` scene to `jvmTest`, which is the stronger form of the same guarantee**: `jvm()` is a verification-only target producing no deployable artifact (ENG-001), so the sheet is absent from the bundle by construction and the browser test that was planned to prove it unreachable is not needed. It draws through `SceneBuilder` and `FramePainter` — the same traversal the browser uses — into an `SvgPaintSink`, so what it shows is the frame's own batches in the frame's own order.
-- [x] Author three icons, render, settle the numbers. Four things came out of it and every one contradicted something the plan had asserted:
-- [x] Run the focused tests, then `./scripts/check.sh`. Green.
-
-**What rendering it changed.** All four were found by looking, none by a test — which is why this task
-was ordered first.
-
-- **A drop is drawn in screen pixels, not world pixels, and `plan.md` §16.4 had it wrong by 3.5x.**
-  `Scene.pickups` multiplies the *position* by `ZOOM` and then uses `PICKUP_PX * scale` directly, so
-  the 5.0 that produced an acceptable rectangle produced a **10 px** wide drop — a fifth of a tile —
-  and the plan's "35 px box at Street" assumed a zoom that is not applied. `PICKUP_PX` is now 14.0,
-  sized against the tile a drop lies on rather than against a number: a tile is 16 world pixels and
-  therefore 56 on screen, and a drop spans 28 px at Street to 53 px at Ascended.
-- **Fixed stroke widths were the wrong call, and the reason is only visible when drawn.** They were
-  chosen to hold the batch count down. Rendered, a weight that does not scale makes a Street drop and
-  an Ascended drop two different designs rather than one object at two sizes, and a `Slab` heavy
-  enough to read as a bottle's body at 28 px is more than half the icon's height at 53 px. Weights
-  are now a fraction of the icon's half-extent — `Hair` 0.07, `Line` 0.13, `Slab` 0.28, after two
-  passes that were each too fat.
-- **A single halo width swallows the icon it is meant to edge.** One halo wide enough to back a
-  `Slab` turned the broken bottle's three shards into one dark smear. The halo is now per weight,
-  a fixed fraction wider than the line it backs.
-- **Round caps extend a stroke by half its width at each end, and every gap has to be measured
-  against that rather than against the endpoints.** The first shotgun put a `Slab` receiver 0.12
-  below a `Line` barrel and they fused into one mass; the first bottle put its shards inside the
-  body's own cap and it read as a dart with fins.
-
-**Measured, replacing the plan's estimate.** The ground layer saturates at **20 batches** — reached
-by 30 icons on screen and unchanged at 300, while the primitives in them grow 500 to 5,000. §16.5
-estimated 11, and was low because it assumed three widths where proportional weights put **eight**
-distinct ladder steps in play across the five tiers. Constant in what matters, and larger than
-claimed; `plan.md` §16.5 now carries the measurement.
-
-### CYB-029 — The forty-four icons
-
-- **Status:** Complete
-- **Specification:** [Change 0006](specs/changes/0006-weapon-and-pickup-iconography.md) — PROD-049, PROD-050
-- **Implementation approval:** Approved by the user on 2026-08-27 ("approve and proceed"), after reviewing phase one.
-- **Depends on:** CYB-028
-
-TDD checkpoints:
-
-- [x] Add a failing test proving every `WeaponId` and every `PowerupId` resolves to an icon. Over `entries`, so a twenty-seventh weapon added later fails here rather than drawing nothing on the floor of a map; it also pins the two registries to the same size as `Weapons.all` and `Powerups.all`.
-- [x] Add a failing test proving no two icons are equal as geometry. 946 comparisons over small lists runs in milliseconds, so it stays in `commonTest` and runs on both targets rather than needing `jvmTest` (ENG-031).
-- [x] Add a failing test proving every icon carries at least three strokes and spans at least 60% of its box's longer axis. **Deliberately not enforced in `Icon`'s `init`**, unlike containment: containment is a correctness invariant of the coordinate system, where minimum ink is a claim about the *authored set* — putting it in the constructor would make every three-line test fixture illegal for no gain.
-- [x] Add a failing test proving casing is present on every powerup icon and absent from every weapon icon, and that the two outline colours differ in hue and in luminance.
-- [x] Implement `render/WeaponIcons.kt` and `render/PowerupIcons.kt` from `plan.md` §16.6, composed from shared parts — `grip`, `stock`, `muzzle`, `ring`, and `Icon.cased` — so that "every pistol has a grip" is a function rather than a coincidence.
-- [x] Render the sheet after each family and record what it changed.
-- [x] Run the focused tests, then `./scripts/check.sh`. Green.
-
-**What rendering it changed.** Three, and the first is the one worth keeping.
-
-- **Two icons can differ in every coordinate and still read as the same thing, and no test sees it.**
-  The Static Lash and the Ghostwire Tether both came out as "a blob with a zigzag" — distinct
-  geometry, distinct entries, `no two icons are the same geometry` green, and indistinguishable on
-  the sheet. Fixed by giving each the thing that actually identifies it: the lash is a **taper**,
-  Slab handle through Line body to Hair tip with a pommel and a spark; the tether is an anchor plate,
-  a slack wire, and a hook large enough to be the subject. This is exactly the gap `plan.md` §16.7
-  draws the line at, arriving in the first family authored.
-- **The Tenement Nailgun's magazine read as a broken wing** angled back and down. The nail strip now
-  sits on top, with the nails in it.
-- **The containment check caught a second out-of-box op**, the Static Lash's pommel at `x = -0.90`
-  with radius `0.10`. Two catches in two tasks from a `require` in a constructor.
-
-**What the sheet says about the set.** Forty-four distinct silhouettes, and the three families read
-apart before any individual one is recognised: a melee weapon is a mass on a handle, a ranged weapon
-is a barrel over a grip, a psychic weapon has neither. The casing does more work than expected — the
-eighteen powerups read as one family at a glance, which is the PROD-050 clause that does not depend
-on blue.
-
-### CYB-030 — Drops are drawn as what they are
-
-- **Status:** Complete
-- **Specification:** [Change 0006](specs/changes/0006-weapon-and-pickup-iconography.md) — PROD-044, PROD-050, PROD-051
-- **Implementation approval:** Approved by the user on 2026-08-27 ("approve and proceed"), after reviewing phase one.
-- **Depends on:** CYB-029
-
-TDD checkpoints:
-
-- [x] Add a failing test proving a ground weapon is drawn in the fixed red and a ground powerup in the fixed blue, and that neither colour is one any palette hands out. **It failed by naming the defect**: the drop layer's styles were `#ff8a3d` (the theme's accent) and `#b6f7b6`.
-- [x] Add a failing test proving that for each of the ten palettes and each of its nine background colours, at least one of the halo and the outline differs in Rec. 709 luminance by at least 40 (property 30). Asserted of the **pair**, and it reuses `Palette.luminanceOf` rather than writing a second one.
-- [x] Add a failing test proving no style a frame uses on `Layer.Items` is used by that frame on `Layer.Hazard` or `Layer.Effects`. **It failed with `[#b6f7b6] is used for both a drop and a hazard or projectile` — which is the acid colour, and is the defect stated as a measurement rather than as an opinion.**
-- [x] Add a failing test proving an Ascended drop is drawn larger than a Street drop and carries `tierOrdinal + 1` pips.
-- [x] Add a failing test proving the batch bound (property 31), counted through `PaintSink`.
-- [x] Implement it in `Scene.pickups`. `PickupLook` keeps rarity and gains no knowledge of geometry.
-- [x] Measure the real added batch count against `plan.md` §16.5's estimate and correct the plan to the measurement.
-- [x] Run the focused tests, then `./scripts/check.sh`. Green.
-
-**The batch-bound test was written wrong twice, which makes three times in this project.** It is worth
-recording plainly, because the pattern is not carelessness — it is that the property is easy to state
-and hard to shape.
-
-1. **One drop against forty-four.** Failed 157 against 124. Those frames hold different *mixes*:
-   forty-four drops span all five tiers where one spans one, a tier is a scale, and a scale picks a
-   ladder width.
-2. **Forty-four distinct icons against forty-four copies of two.** Failed 157 against 145 — same
-   count, still a different mix, because an icon that uses no `Slab` opens no `Slab` batch.
-3. **What is actually true**, and what is asserted now, is the shape `SceneTest` settled on for
-   enemies: hold the mix and grow the count — every one of the forty-four is on screen in both
-   frames, one has four times as many — **plus a ceiling**, that forty-four distinct shapes open no
-   more than 24 batches on the item layer. Equality where equality holds; a bound where only a bound
-   does.
-
-A guard caught a fourth mistake in the same test: at a 3.0-unit spacing the extra copies fell outside
-the cull, so the "crowded" frame drew 1.8x rather than 4x the primitives and the comparison would have
-been vacuous.
-
-**Two other things the work decided.**
-
-- **The rarity glow behind a pickup is gone, not restyled.** It was `palette.glow[last]`, which is
-  also an enemy's eye and a mine's core — so it fails PROD-051's second clause by construction, and
-  the test above would have caught it if the icons had not replaced it first. The halo does the
-  separating now, and does it against terrain the glow never helped with.
-- **Drops are culled off-screen like enemies.** They were not, which cost nothing when a drop was one
-  rectangle and costs about 17 primitives each now.
-
-**A real frame was rendered, not just a sheet.** `WorldFrameSheetTest` writes a composed game frame —
-terrain, backdrop, player, HUD and seven drops — through the same `FramePainter` the browser uses.
-Four red weapons and three blue modules read clearly against the skyline at the size the game draws
-them, and the pips are countable.
-
-### CYB-031 — The held weapon is its own icon
-
-- **Status:** Complete
-- **Specification:** [Change 0006](specs/changes/0006-weapon-and-pickup-iconography.md) — PROD-049
-- **Implementation approval:** Approved by the user on 2026-08-27 ("approve and proceed"), after reviewing phase one.
-- **Depends on:** CYB-030
-
-TDD checkpoints:
-
-- [x] Add a failing test proving the geometry drawn in the player's hand is the icon drawn for that weapon on the ground — not only the same stroke count, but the same multiset of stroke lengths up to the one scale the placement applies.
-- [x] Add a failing test proving the held icon turns with `sim.aimDirection`, including above and below.
-- [x] Replace the single reach-scaled segment in `Scene.figure` with the posed icon. `weaponReach` stays and still comes from the weapon's declared range, so a railgun is still longer than a bottle — it now scales a shape rather than a line. An enemy keeps the plain barrel: its weapon is an archetype trait rather than a `WeaponId`, so there is no icon to resolve, and inventing a mapping so both could share one path would be an abstraction with one caller (ENG-022).
-- [x] `PhysicsDeterminismTest` untouched and green on both targets.
-- [x] Run the focused tests, then `./scripts/check.sh`. Green.
-
-**MAJOR, found by rendering and invisible to every test: the halo painted over the icon.**
-
-Zooming into a composed frame showed every `Hair` stroke on the larger drops drawn **solid black** —
-the shotgun's barrel, the katana's blade, the railgun's rails. The cause is an ordering hazard that
-only appears with two rarities on screen at once:
-
-- A rarer drop is drawn larger, so its halo snaps to a **wider** ladder step and opens a new batch.
-- Its outline widths snap to steps a smaller drop already opened, so those strokes go into batches
-  that sit **earlier** in the frame.
-- Within a layer, `SceneBuilder` publishes in the order batches were opened. So the larger drop's
-  halo was painted *after* its own outline, and swallowed it.
-
-Every test was green: the geometry was right, the colours were right, the batch count was right.
-Only the drawn frame was wrong. **Fixed structurally rather than by ordering the calls more
-carefully** — the halo and the outline now go on two layers (`ItemHalo` under `Items`, and
-`ActorFront` under `ActorTrim` for the held weapon), and `IconPainter` refuses a pair that is not
-ordered. That is the same fix `Layer` itself was introduced for in change 0005, arriving a second
-time for the same underlying reason: *batching by style destroys paint order, and the repair is a
-layer, not a convention.*
-
-**Two smaller things.**
-
-- **The held icon is drawn at 0.72 of the plain barrel's reach.** An icon's box is square where a
-  weapon is long, so at the full reach a railgun stood as tall as the player's torso. Rendered at
-  1.0, 0.8 and 0.7 before settling.
-- **The aim test was wrong three times, and the third reason is worth keeping.** A swing sets the
-  pose's aim from the *arm* rather than from the weapon's aim — correctly, since a swinging weapon
-  follows the arm — and the broken bottle swings on its cooldown whether or not anything is in
-  reach. The first two versions were measuring that arm and calling it the aim. It now settles past
-  the opening swing and asserts `Action.None` before measuring, so what it measures is named.
-
-### CYB-032 — Icons in the HUD
-
-- **Status:** Complete
-- **Specification:** [Change 0006](specs/changes/0006-weapon-and-pickup-iconography.md) — PROD-045, PROD-049
-- **Implementation approval:** Approved by the user on 2026-08-27 ("approve and proceed"), after reviewing phase one.
-- **Depends on:** CYB-029
-
-> **This is the one part of change 0006 the owner did not literally ask for.** The request was about
-> drops and about weapons; the display was not named. It was flagged as strikeable at approval and
-> was not struck, so it is built. It is what makes the other two teach: a player who has seen the
-> Overclock Coil in their own build recognises the next one lying on the floor.
-
-TDD checkpoints:
-
-- [x] Add a failing test proving the HUD model exposes the equipped weapon's id and each held powerup's id, so the browser layer resolves no icon of its own (ENG-060).
-- [x] Add a failing test proving the display's icons are the same geometry as the ground's — counted on the display's own layers, since the same frame draws the weapon in the player's hand in the same red.
-- [x] Draw the weapon's icon beside its name and each powerup's beside its stack count, in the kind's outline colour.
-- [x] Confirm the announcement PROD-004 relies on is unchanged; a test pins the weapon's name still being in it.
-- [x] Run the focused tests, then `./scripts/check.sh`. Green.
-
-**Two adjustments, both from looking at the rendered display.** The icon is half a line high rather
-than a full one — at 9.0 a powerup's casing bracket reached into the row above it — and names start
-at a fixed column clear of the icon rather than at the panel margin.
-
-**`SceneTest`'s frame ceiling had to rise, and it was measured rather than nudged.** It failed at 74
-against a claim of 72. A deliberately worst-case frame — 600 enemies, all forty-four icons on the
-ground at once, a full five-slot build in the display and an Ascended weapon in hand — opens **90**
-batches, 23 of them on the two item layers where a rectangle used to cost 3. The ceiling is now 100,
-and the comment says what was measured and why the number is what it is. The property the test exists
-for is untouched: a frame with one drop and a frame with a hundred open the same batches.
-
-### CYB-033 — Adversarial review gate R8
-
-- **Status:** Approved for implementation
-- **Specification:** [Change 0006](specs/changes/0006-weapon-and-pickup-iconography.md)
-- **Implementation approval:** Approved by the user on 2026-08-27 ("approve and proceed"). **Running a review round additionally requires the owner to direct it explicitly**, which approval of the implementation tasks does not by itself supply, so this task stays unstarted until they do.
-- **Depends on:** CYB-028, CYB-029, CYB-030, CYB-031
-
-- [ ] Run `./scripts/check.sh` green before spending a round.
-- [ ] Round 1: `codex exec --model gpt-5.6-sol -c model_reasoning_effort=xhigh --sandbox read-only`, briefed on all three lenses — specification, implementation, and absence — per `plan.md` §10.2. Record every finding below with what was verified and what was done.
-- [ ] Close each round's agent shells by recorded pid before starting the next, per `.claude/skills/adversarial-review/close-agents.sh`. The self-matching waiter left five shells running for a day last time.
-- [ ] Rounds continue until a round returns nothing load-bearing. R7 took eleven.
-
-**Two things R7 will look for here, recorded now so they are not discovered late.** The batch bound
-has been asserted about the wrong thing twice — once as a proxy the renderer did not deliver, once as
-a number true by definition — so property 31 is written to count at the sink from the start. And the
-luminance claim in property 30 is about the drawn pair rather than the outline colour, because the
-outline alone fails it on `ArcologyVault` by construction.
-
-### CYB-021 — Loot density: one drop per five kills, two static drops per map
-
-- **Status:** Complete
-- **Specification:** [Change 0005](specs/changes/0005-visual-identity-and-loot-density.md) — PROD-046, PROD-047
-- **Implementation approval:** Given in advance by the user on 2026-08-26 ("Once the plan is completed, proceed to implement the plan"). **Recorded honestly:** `AGENTS.md` asks for approval *after* the user has reviewed phase one, and this was given before phase one existed. It is explicit rather than inferred, which is what the rule mainly guards against, but it is not the post-review approval the rule describes. Flagged to the user.
-- **Depends on:** Nothing
-
-TDD checkpoints:
-
-- [x] Add a failing test proving the kill drop rate is 0.20 at every map index, not a 3%-to-6% ramp.
-- [x] Change `GameSimulation.dropChance()` to the flat rate and delete the ramp constants. It now reads `DropTable.killDropChance`, so the number lives beside the rest of the loot rules.
-- [x] Add a failing test proving a generated level carries static pickups, that the per-map count is in `{1, 2, 3}`, and that the cohort mean is 2.0 within tolerance. **Review found the count excludes map one's starter cache**, so map one really holds 2-4 pre-placed pickups. That cache is a separate guaranteed award change 0003 requires for the loot floor, not one of these; PROD-047 now says so rather than leaving a reader to discover it. **Measured 1.9225 over 400 maps** — a 1.9-sigma sample of a population mean that is exactly 2.0 by construction (`1 + nextInt(3)`); the count histogram was 146/139/115, chi-squared 3.96 on 2 df, p = 0.14.
-- [x] Add a failing test proving every static pickup stands on standable ground, outside both arenas, and outside every committed span. Split across source sets after the browser runner's 2 s per-test timeout rejected nine level generations in one test (ENG-031): one map in `commonTest`, a 200-map cohort in `jvmTest`.
-- [x] Implement static-pickup placement in generation as a derived RNG stream (ENG-053) and carry it on `Level`.
-- [x] `LootFloor` itself needed no change: it reads only guaranteed awards, so no drop rate can move the number it computes.
-- [x] **Corrected after review — the claim around it was wrong.** This entry said raising the random drop rate "can only move the real player further above the floor". It cannot: `PowerupSlots.collect` scraps a sixth distinct powerup, so random drops filling all five slots with utility effects make a *later* guaranteed damage powerup scrap on contact. More loot can therefore leave a real player below the floor `LootFloor` computes. The floor's own arithmetic is untouched and property 18 still holds for the loadout it models; what is not true is that the model bounds a player who has been picking things up. Raised as a design question for the owner rather than silently fixed — preferring the weakest slot on a full build is a change to the powerup economy, not to this change's scope.
-- [x] Run the focused tests, then `./scripts/check.sh`. 246 JVM and 219 browser tests green.
-
-**Measurement note.** The kill rate first measured 0.1875, then 0.1877 after excluding two real
-artifacts (the opening swing killing enemies in reach, and a static pickup spawning within the
-one-tile pickup radius and being collected on the first tick). Both were test defects, not
-production ones. The remaining gap was seed luck: scrap accounting proved no drop was lost
-(80,340 scrap from 40,170 kills, exactly 2 per kill, nothing in reach), the generator's own
-threshold measures 0.1999 over a million draws, and a second seed cohort of the same size measured
-**0.2009**. The tolerance is set to survive that spread.
-
-### CYB-022 — Presentation core in `commonMain`
-
-- **Status:** Complete
-- **Specification:** [Change 0005](specs/changes/0005-visual-identity-and-loot-density.md) — ENG-060, ENG-061, ENG-062, ENG-063
-- **Implementation approval:** Given in advance by the user on 2026-08-26 ("Once the plan is completed, proceed to implement the plan"). **Recorded honestly:** `AGENTS.md` asks for approval *after* the user has reviewed phase one, and this was given before phase one existed. It is explicit rather than inferred, which is what the rule mainly guards against, but it is not the post-review approval the rule describes. Flagged to the user.
-- **Depends on:** Nothing
-
-TDD checkpoints:
-
-- [x] Add a failing test proving every `ThemeId` resolves to a palette and that no two themes share one.
-- [x] Implement `render/Palette.kt`. Ten palettes, retuned twice against rendered frames — the first pass had `backdropNear` within a shade of `tileBody`, so the skyline and the ground read as one surface.
-- [x] Add a failing test proving a scene built at 600 entities has the same style-batch count as the same scene at 10 (property 23, ENG-061). It failed first for a defect in the test rather than the design — the sparse frame held fewer archetypes than the crowded one, and the bound is over *kinds*, not counts. Both sides now carry the same mix, and the constant bound is asserted separately.
-- [x] Implement the draw list: `Rect`, `Segment` and `Dot` batches over reusable `DoubleArray` buffers, cleared per frame rather than reallocated.
-- [x] **Found by rendering a frame, not by a test:** batching by style alone destroys paint order. Two things far apart in depth that share a colour landed in one batch and were painted at whichever was reached first — the boss's health bar under the HUD panel, the skyline's lit windows under the buildings in front of them. Batches are now keyed by a fixed `Layer` as well, which restores painter's order and keeps the bound a constant. Two tests cover it.
-- [x] Add a failing test proving a pose is a pure function of motion and elapsed simulation time — same inputs, same pose; no clock read (ENG-062).
-- [x] Implement `render/Rig.kt` and `render/Actor.kt`; resolve all rotation through `TrigTable` (ENG-054).
-- [x] Run the focused tests, then `./scripts/check.sh`.
-- [x] **Mutation-checked rather than assumed.** These tests passed on their first run, so two deliberate defects were introduced to see whether they were worth anything: an action replacing the locomotion clip instead of layering (caught by both composition tests), and a gait built on sine rather than cosine (**not** caught — the feet coincided at phase zero and only floating-point noise separated them, which a sign-only assertion still read as alternating). The stride assertions now require a magnitude, and the second mutation is caught.
-
-### CYB-023 — Animate the player
-
-- **Status:** Complete
-- **Specification:** [Change 0005](specs/changes/0005-visual-identity-and-loot-density.md) — PROD-041
-- **Implementation approval:** Given in advance by the user on 2026-08-26 ("Once the plan is completed, proceed to implement the plan"). **Recorded honestly:** `AGENTS.md` asks for approval *after* the user has reviewed phase one, and this was given before phase one existed. It is explicit rather than inferred, which is what the rule mainly guards against, but it is not the post-review approval the rule describes. Flagged to the user.
-- **Depends on:** CYB-022
-
-TDD checkpoints:
-
-- [x] Add a failing test proving clip selection is total and that every state is reachable (property 26). Split into two axes rather than the plan's single list of eight: six locomotion clips and three action overlays, because PROD-041 requires weapon animation to **compose over** movement and a single enum cannot both select and layer. `plan.md` §15.4 is corrected to match.
-- [x] Add a failing test proving a crouch pose is shorter than a standing pose by the physics' own crouch height, rather than by a literal.
-- [x] Add a failing test proving a run cycle alternates the lead foot, and that gait phase is driven by distance travelled rather than by elapsed time.
-- [x] Add a failing test proving firing and swinging compose over the locomotion clip: the legs keep their running pose while the arms change.
-- [x] Accumulate `stridePx` on `GameSimulation` and `LiveEnemy` — **not** on `PlayerState`, whose hash is pinned by the cross-target determinism golden value.
-- [x] `PhysicsDeterminismTest` is unchanged and still green on both targets, which is the assertion that matters; no new test was added, because a second test asserting the same golden would assert the same thing twice.
-- [x] Add `MuzzleFlash` alongside `lastSwing`, decayed on the same tick path.
-- [x] Implement the player rig and wire `CanvasRenderer` to draw the draw list. The renderer now holds no rule at all: it sets a style, walks a run of numbers, and repeats.
-- [x] **Found by rendering a frame:** the game drew 1:1, which put a 26 px character on a 900 px screen — an animated figure at that size is a moving dot. The camera's view is measured in world units, so a zoom is a smaller view rectangle rather than a transform, and nothing about following or clamping changed.
-- [x] **Found by rendering a pose sheet:** the lead arm was drawn in the torso's own colour and vanished into it, so the weapon read as floating unattached; and every still pose put both feet on one point, which made a standing figure look one-legged and a falling one look like a plank. Arms have their own tone, and the still poses split the feet by the same phase the walk uses.
-- [x] **Found by reading the render path, before the review round:** the loop interpolates between ticks and the camera's target was interpolated, but the figure was drawn at the raw tick position — so the player slid up to four world pixels against a camera that had already moved, on every frame that did not land on a tick boundary. `Scene.compose` now takes the same alpha the camera does. A regression test asserts the figure sits exactly halfway between two ticks at alpha 0.5, and was confirmed to fail against the unfixed draw.
-- [x] **Found by reading the two constants side by side:** the arm's sweep ran over 0.18 s while the simulation stopped drawing the swing at 0.16 s, so the arm snapped back to rest at 89% of its arc on every swing — and the muzzle flash had the same mismatch the other way. The window now comes off the simulation's own `SwingVisual`/`MuzzleFlash`, so there is one number rather than two that can drift. A test pins them together and checks the boundary tick either side.
-- [x] **Corrected an overclaim rather than the code:** the draw list's doc and `plan.md` §15.3 both said per-frame allocation was zero. Buffers and batch objects are reused, but publishing a frame allocates two short lists. Both now say a small constant, and say it is not zero.
-- [x] Run the focused tests, then `./scripts/check.sh`.
-
-### CYB-024 — Enemy identity and monotone menace
-
-- **Status:** Complete
-- **Specification:** [Change 0005](specs/changes/0005-visual-identity-and-loot-density.md) — PROD-042, PROD-043
-- **Implementation approval:** Given in advance by the user on 2026-08-26 ("Once the plan is completed, proceed to implement the plan"). **Recorded honestly:** `AGENTS.md` asks for approval *after* the user has reviewed phase one, and this was given before phase one existed. It is explicit rather than inferred, which is what the rule mainly guards against, but it is not the post-review approval the rule describes. Flagged to the user.
-- **Depends on:** CYB-022
-
-TDD checkpoints:
-
-- [x] Add a failing test proving each of the five archetypes yields a distinct silhouette descriptor — distinct in shape fields, not only in colour.
-- [x] Add a failing test proving menace rises with health across the archetype × map-index grid. *(Restated after R7 rounds two and four: "every field" was never true and is not compatible with amended PROD-042 — `form` has no order, and drawn size and luminance are monotone **within a map** rather than across the run, because a global size ordering and distinct archetype silhouettes are not jointly satisfiable. What is asserted globally is plate and spike counts and the `bulk` factor; what is asserted per map is drawn size and resolved luminance.)*
-- [x] Implement `render/EnemyLook.kt`. Menace is a **rank** over the population ordered by health, not a ratio: health spans roughly 7 to 1,900 across the grid, so any direct scaling either flattens the early maps or saturates the late ones, and the obvious fix — a logarithm — is a transcendental this project keeps out of shared code (ENG-054).
-- [x] Add a failing test proving a boss look differs from every trash look and that a mini-boss differs from a main boss.
-- [x] Draw enemies and bosses from the rig; the boss health bar PROD-034 requires is retained.
-- [x] **Found by rendering a frame:** at the first size a map-nine Brute stood half again as tall as the player and read as a boss. Retuned so it tops the player by a head.
-- [x] Run the focused tests, then `./scripts/check.sh`.
-
-### CYB-025 — The world: themed tiles, hazards and a parallax backdrop
-
-- **Status:** Complete
-- **Specification:** [Change 0005](specs/changes/0005-visual-identity-and-loot-density.md) — PROD-040
-- **Implementation approval:** Given in advance by the user on 2026-08-26 ("Once the plan is completed, proceed to implement the plan"). **Recorded honestly:** `AGENTS.md` asks for approval *after* the user has reviewed phase one, and this was given before phase one existed. It is explicit rather than inferred, which is what the rule mainly guards against, but it is not the post-review approval the rule describes. Flagged to the user.
-- **Depends on:** CYB-022
-
-TDD checkpoints:
-
-- [x] Add a failing test proving a backdrop is deterministic for a seed and differs across seeds and themes. *(Corrected after R7 round four: this checkpoint previously claimed the scene and palette tests covered it, and neither did — the scene test composes twice against one already-built backdrop, and `PaletteTest` never builds one. `BackdropTest` now covers determinism, seed and theme variation, the level-derived horizon anchor, layer ordering against parallax rate, span against what the camera can scroll to, and the window mask's capacity.)*
-- [x] The backdrop is built once at level entry and posed per frame by an offset; `CanvasRenderer.enterLevel` owns it and `Scene.compose` takes it as a parameter, so regenerating per frame is not expressible. `Backdrops.of` takes the level itself, so where the horizon anchors is decided in one place rather than at each call site.
-- [x] Implement `render/Backdrop.kt` from `Rng.derive(seed, mapIndex, "backdrop")` (ENG-053).
-- [x] **Found by rendering a frame, twice.** Building sizes were written as though they were screen pixels, so at the zoom a single tower filled the view three times over. And with no vertical parallax the horizon was pinned to the screen while the world moved under it; adding it un-damped then swung the skyline off-screen entirely the first time the player fell down a shaft. It is now damped and bounded, anchored to the height the horizon fraction was calibrated at.
-- [x] Covered by the frame-wide batch bound, which is the stronger claim: the whole frame is bounded, tiles included.
-- [x] Draw lit tile edges, acid surfaces and fire-jet cores; the visible-tile culling the placeholder renderer measured its way into is kept.
-- [x] Run the focused tests, then `./scripts/check.sh`.
-
-### CYB-026 — HUD, pickups, and the surrounding screens
-
-- **Status:** Complete
-- **Specification:** [Change 0005](specs/changes/0005-visual-identity-and-loot-density.md) — PROD-044, PROD-045, PROD-048
-- **Implementation approval:** Given in advance by the user on 2026-08-26 ("Once the plan is completed, proceed to implement the plan"). **Recorded honestly:** `AGENTS.md` asks for approval *after* the user has reviewed phase one, and this was given before phase one existed. It is explicit rather than inferred, which is what the rule mainly guards against, but it is not the post-review approval the rule describes. Flagged to the user.
-- **Depends on:** CYB-022
-
-TDD checkpoints:
-
-- [x] Add a failing test proving the HUD model exposes health, weapon name, each held powerup with its stack count, map index and sub-theme.
-- [x] `PickupLook` carries kind and tier and scales with rarity; a weapon draws as a bar and a powerup as a block, so kind survives without colour.
-- [x] Implement the HUD model in `commonMain` and draw it from the draw list, including a text primitive so wording and layout are decided in `commonMain` rather than in the browser layer (ENG-060).
-- [x] Restyle the title screen and the run-ended screens; a browser test proves the action names survive and that the added tagline is not focusable, so the keyboard path is unchanged (PROD-004).
-- [x] Run the focused tests, then `./scripts/check.sh`. 279 JVM and 253 browser tests green.
-- [x] **Found by the production smoke test, which is what it exists for:** its fake canvas carried `fillRect` alone, which was enough while every sprite was a rectangle. The first stroked limb made the production bundle throw `e.beginPath is not a function`. The stub now covers what the renderer calls, and asserts that a started run actually strokes figures and draws HUD text.
-
-### CYB-027 — Adversarial review gate R7
-
-- **Status:** Approved for implementation
-- **Specification:** [Change 0005](specs/changes/0005-visual-identity-and-loot-density.md)
-- **Implementation approval:** Approved by the user on 2026-08-26 ("Implement using adversarial review")
-- **Depends on:** CYB-021, CYB-022, CYB-023, CYB-024, CYB-025, CYB-026
-
-- [x] Run `./scripts/check.sh` green before spending a round.
-- [x] Round 1: `codex exec --model gpt-5.6-sol -c model_reasoning_effort=xhigh --sandbox read-only`, briefed on all three lenses (specification, implementation, absence), per `plan.md` §10.2. The in-repo `.claude/skills/adversarial-review` skill is not used; it is a copy from an unrelated project and cannot run here. **Nine findings, plus one claim from the round's request-coverage table. Ten rows below: nine findings and that claim, each verified before it was acted on.**
-- [x] Round 2 against the corrected tree. **Nine findings.** It judged the foothold fix, the luminance amendment and its palette validation, the starter-cache clarification, the requirement relocation, the task-ID correction and the rejected coverage claim all to hold up — and found that two of the round-one fixes were shallower than they were recorded as being.
-
-### R7 round 1 findings and dispositions
-
-- [x] **MAJOR, confirmed by measurement — ENG-061 was satisfied by the test, not by the renderer.** Stroke width was carried per segment, so the renderer had to break its path inside a batch whenever a width changed. Measured: batch count held at **34** while `beginPath`/`stroke` pairs went **45 → 279 → 1,579** across 10, 100 and 600 entities. The 10-versus-600 test proved a proxy the production code did not deliver — exactly the failure mode this project has had before. Width is now part of a batch's identity and widths snap to a 14-step ladder, so a batch is one style, one width, one path, one stroke. Re-measured: **52 batches at every entity count**, while the primitives in them grow 500 → 5,456. *(A batch costs a fixed amount rather than exactly one change — three properties for a stroke — which rounds eight and ten corrected in turn.)*
-- [x] **MAJOR, confirmed by reading `SpineWalker.rollback` — `arcMask` is not proof of reachability.** Rollback deliberately does *not* rewind the arc mask, so it retains cells from carved-then-abandoned move proposals no witness ever walks. A pickup could have been placed on a route that was never traversed, and both placement tests repeated the same unsound proxy. `WitnessReplay` now reports the footholds it actually stood on, and placement draws from those — PROD-047's reachability is discharged by the same tape PROD-024 is. Measured cost: generation p99 **221 ms** against the 400 ms budget (was 209 ms; median 68 ms).
-- [x] **MAJOR, confirmed — the claim that more loot cannot lower the floor is false.** `PowerupSlots.collect` scraps a sixth distinct powerup, so random drops filling all five slots with utility effects can make a *later* guaranteed damage powerup scrap on contact. `LootFloor`'s arithmetic is untouched and property 18 still holds for the loadout it models, but it does not bound a player who has been picking things up. The claim is corrected in `tasks.md`, `plan.md` §15.7 and the change record. **Not silently fixed:** whether a full build should displace its weakest slot is a change to the powerup economy, and it is raised for the owner as `plan.md` §12 question 6.
-- [x] **MAJOR, confirmed by arithmetic — drawn luminance was not monotone across maps.** Worked through the reviewer's own example: a map-1 Turret carries 18 health against a map-2 Shooter's 15.6, but resolves through a duller palette to Rec. 709 luma **96.7 against 103.1**. A monotone *index* says nothing once it is resolved through a per-theme palette. PROD-042 is amended to scope luminance to a single map, which is the only comparison a player can make (each sub-theme has its own palette by PROD-040); `Palette` now refuses a glow ramp that is not strictly increasing in luminance, and a test asserts the ordering over the colours actually drawn rather than over the index.
-- [x] **MODERATE, confirmed — PROD-046 dropped the 30/70 split and both loot requirements sat under "Presentation".** They govern the economy and generation, not presentation. Moved to Gameplay, and the split is now normative rather than an accident of the code.
-- [x] **MODERATE, confirmed — the static-drop count excluded map one's starter cache.** Map one really holds 2–4 pre-placed pickups. The cache is change 0003's separate guaranteed award, kept so a mini-boss is never met with the broken bottle; PROD-047 now says so explicitly instead of leaving a reader to find it.
-- [x] **MODERATE, confirmed — the browser layer still held presentation rules.** It chose which boss the HUD bar belonged to, hard-coded the map count, and picked the typeface. All three moved: `HudModel.of(sim)` decides the boss and reads `DifficultyCurve.MAPS`, and the font is a field on `TextItem`. The renderer now sets styles and walks numbers. The round cap remains in the renderer as part of what `Primitive.Segment` *means* — a round-capped segment — rather than as a per-frame choice, and the primitive's documentation says so.
-- [x] **MINOR, confirmed — task identifiers collided.** The new entries reused CYB-014, CYB-015 and CYB-016, which already name completed work. Renumbered to CYB-021..027.
-- [x] **MAJOR, partly confirmed and escalated rather than resolved — phase-two approval was pre-emptive.** The user's direction was explicit ("proceed to implement the plan"), so it is not the *inferred* approval `AGENTS.md` chiefly guards against — but it was given before phase one existed, and the rule asks for approval after the user has reviewed it. The change record contradicting `tasks.md` was a real defect and is fixed. Whether the pre-emptive approval stands is the user's call, not mine, and it is flagged to them rather than settled here.
-- [x] **REJECTED, with evidence — not a numbered finding but a claim in the round's request-coverage table: "individual enemies of the same archetype remain identical" as a weakening of the request.** The request asks that "enemies should look different from one another, with a more tough looking appearance the stronger they are", and ties difference to strength. Two enemies of one archetype on one map carry identical health, so under the requirement as asked they *should* look alike; a map-1 Swarm and a map-10 Swarm do not, because bulk, plating, protrusions and glow all move with health. Per-instance variation within a single health value is not something the request asks for.
-### R7 round 2 findings and dispositions
-
-- [x] **MAJOR, confirmed by arithmetic — PROD-042's size clause held for a descriptor, not for the drawn enemy.** `Scene.figure` derives every limb width from `pose.height * bulk`, and `height` carries the archetype's own scale, which `bulk` alone does not see. Reproduced the reviewer's example exactly: a map-4 Swarm carries 31.18 health against a map-1 Brute's 26.40 and is drawn at **14.22 against 24.29**; **19 of 49** adjacent pairs in the grid are inverted. This is the same shape of defect as round one's luminance finding, and the same answer does not work twice, so it was measured instead: forcing drawn size monotone across the whole grid needs the five archetypes' heights within **1.01x** of each other — every enemy the same size, and PROD-042's own silhouette clause gone. So the requirement is scoped to one map and the code is fixed to satisfy it exactly: height scales are now ordered by health multiplier (a Turret was drawn *shorter* than a Shooter while carrying nearly twice its health), which takes per-map inversions from 1 to 0 at the full 1.78x spread. `EnemyLook.drawnScale` is the quantity tested, and reverting the ordering makes the test fail on map 10.
-- [x] **MODERATE, confirmed — the round-one ENG-061 test was tautological.** It summed `1` per batch by definition and never touched a renderer, so moving `stroke()` back inside the segment loop would have left it green. The traversal now lives in `commonMain` as `FramePainter` over a four-method `PaintSink`; a counting sink in `commonTest` asserts one call per batch, in layer order, not growing with entity count. The browser layer implements the four operations and nothing else. The production smoke test additionally bounds strokes per frame — measured at **14** against a bound of 60, where a regression would issue hundreds. The round-one claim that the test "counts what the renderer issues" was false and is corrected.
-- [x] **MODERATE, confirmed — static-drop content shared the combat RNG stream.** Realising the caches at construction consumed `"loot"`, which later drives crit, stun, refunds and kill drops, so the number of caches on a map shifted every later combat roll (ENG-053). Pre-placed pickup content now draws from its own `"cache-content"` stream. `rng` is untouched until the first shot, which is a better position than the code was in before static drops existed — the starter cache used to consume from it too.
-- [x] **MODERATE, confirmed — the accessible announcement and the drawn HUD could disagree.** `GameHost` hard-coded "of 10" and looked only at the main boss, so a committed mini-boss fight was drawn on screen and denied in the live region. Both now come from one `HudModel`, which owns the announcement text; `HudModelTest` asserts the wording covers map, theme, weapon, the live fight and the cleared exit.
-- [x] **MODERATE, confirmed — three normative behaviours had no real coverage.** The 30/70 split was measured nowhere (every loot test counted totals, so changing the share left them green); the HUD test ran against `RunState.begin`, whose loadout holds no powerups at all, so "carries the build" passed against a display that could not show one; and nothing referenced `PickupLook`. The share is now a registry value with a behavioural check over the cohort (**measured against the 0.30 requirement, tolerance 0.02**), and `HudModelTest` covers a real three-powerup build with one at the stack cap, the announcement, and pickup kind and rarity.
-- [x] **MODERATE, confirmed — §15.5 promised enemy motion that did not exist.** A shooter drew along its patrol facing while shooting the player behind it; a turret never moves, so its barrel pointed one direction forever; a flyer only bobbed. All three are implemented as presentation over the simulation's **own** firing range, so an enemy looks like it is doing what it is doing, and nothing is written back (ENG-062). Three tests cover tracking in range, holding patrol out of range, and an unarmed enemy being left alone; forcing the tracking off makes the first fail.
-- [x] **MINOR, confirmed — the plan published animation windows the code no longer has.** §15.4 said 0.18 s and 0.14 s against the simulation's 0.16 s and 0.10 s. The table now says the window *is* the simulation's, which is what the code does.
-- [x] **MINOR, confirmed — the round-one audit count did not reconcile.** Nine findings, ten disposition rows. The tenth is a claim from the round's request-coverage table rather than a numbered finding; the count now says so.
-- [x] **ESCALATED again, not fixed — phase-two approval remains pre-emptive.** The reviewer is right that this is not a completed fix and cannot be one: `AGENTS.md` asks for the user's approval after they have reviewed phase one, and no amount of work here can supply it. It is recorded accurately in both `tasks.md` and the change record, and raised with the user.
-
-Found while acting on the above, not by either round:
-
-- [x] `MuzzleFlash.origin` was read by nothing — verified across both source sets. Removed, with the reason the flash is drawn at the posed hand instead: for a cursor-anchored psychic weapon the shot's origin is the target, which is the last place a muzzle flash belongs.
-- [x] `Scene.figure` centred armour plating on the head, which carries the figure's forward lean, so plating slid ahead of the body it armours. Centred on the torso axis.
-
-- [x] Round 3 against the corrected tree. **Six findings**, and it found no new defect in tick purity, clock or ambient-randomness use, tick-reachable transcendentals, the completability guarantee, the cross-target physics hash, or the witness-foothold placement.
-
-### R7 round 3 findings and dispositions
-
-- [x] **MAJOR, confirmed at the seed the reviewer named — the new stream still coupled two loot phases.** Round two isolated cache content from *combat* but left the optional static drops and map one's *guaranteed* starter cache sharing one stream, so how many optional pickups the generator happened to place decided the guaranteed starter weapon: at seed 1, three static pickups give a Chrome Fang and removing them gives a Sable Corp Railgun. PROD-047 distinguishes the two awards explicitly. The starter cache now has its own `"starter-cache"` stream. The round-two disposition claimed more than it delivered and is corrected.
-- [x] **MAJOR, confirmed — figures and pickups were drawn against the wrong anchor.** The simulation anchors an enemy at the top-left of a 14 px box inside a 16 px cell; the renderer used that anchor as the rig's horizontal *centre* and put its feet at `position.y + height`. A map-one Brute stood **8 px below the floor** and its whole figure **7 px left** of what a shot has to hit — 29 and 25 screen pixels at this zoom — while a Swarm floated above it. Static pickups had the same shape of error: named as the clear cell, realised at its top-left corner, drawn centred there, so every "ground" pickup hovered most of a tile up and half a tile left. Enemies now stand on their cell's floor line centred on their hitbox, hovering pods are held clear of it, and `PickupSite.centre` is the one place the cell's middle is computed — the test that pinned the old corner failed on the change, which is what it was for.
-- [x] **MODERATE, confirmed and reproduced at 42.0 screen pixels — the interpolation fix broke crouching.** It interpolated the box's top-left and then added the *current* stance height, but crouching re-anchors `y` by the 12 px difference between the two heights. The figure was thrown a whole stance height off the floor on the frames either side of a crouch. The **feet** are interpolated now, which is the point the movement model anchors and is continuous across a stance change by construction. Separately the swing arc was drawn from the tick position while the figure was drawn interpolated; both now hang off one position. A regression test measures the feet across a crouch at five alphas and reproduces the 42 px defect exactly when reverted.
-- [x] **MODERATE, confirmed by arithmetic — the round-two smoke bound would not have caught the regression it claimed to.** The start frame holds 14 stroke setups for only **41 segments**, so a fixed ceiling of 60 let the per-segment defect through at 41 and passed. The bound is now a comparison against the segments actually drawn — stroking per segment makes those two numbers equal whatever the frame contains — and the mutation was run: **123 stroke setups for 123 segments**, caught. The round-two claim was false and is corrected.
-- [x] **MINOR, confirmed — §15.6 described a backdrop the code does not have.** Published parallax rates of 0.15/0.35/0.6 against the implemented 0.12/0.30/0.55, and said the near layer takes the theme accent when it takes `backdropNear`. Text corrected. The fire-jet floor pool it also promised was genuinely missing and is now implemented rather than written out of the plan.
-- [x] **MINOR, confirmed and my own slip — `FramePreviewTest` was still in the tree.** A scratch preview that writes SVGs and asserts nothing. An earlier `rm` ran from the wrong working directory and silently removed nothing, and the failure was masked by the same command failing for another reason. Deleted, and its absence checked rather than assumed.
-
-Found while acting on the above:
-
-- [x] `Backdrops.of` took four fields pulled out of a level, and the browser layer computed the horizon's anchor itself — at **two** call sites, free to drift. It takes the level now, and works the anchor out itself.
-- [x] The debug corridor overlay was geometry and a colour living in `CanvasRenderer`. Moved into `Scene` behind a flag, on its own layer. The browser renderer is now 140 lines and holds exactly one constant: the full-turn argument `arc()` takes.
-- [x] `PickupLook` hard-coded the number of rarity tiers, so a sixth would have pushed its scale past the stated maximum. Derived from `Tier.entries`.
-
-- [x] Round 4, which the owner authorised past the protocol's three-round bound so that round three's corrections were read rather than shipped unreviewed. **Five findings.** It found no new defect in tick purity, clocks, tick-reachable transcendentals, RNG stream separation, witness completeness, the physics golden hash, pickup contact resolution, or the implemented ENG-061 bound.
-
-### R7 round 4 findings and dispositions
-
-- [x] **MAJOR, confirmed — what painted over what depended on which enemy was met first.** Batch buffers survive between frames, so the builder's own order was the order batches were *first* created, possibly several frames earlier by a scene that no longer existed; and every actor part shared one layer. A Flyer met before any biped opened the glow batch first, after which every biped's head painted over its own eye, and plating inverted the same way. Two fixes, because there were two causes: a frame now publishes in the order **that frame** opened its batches, and an actor is five role layers rather than one, so all torsos precede all heads precede all eyes whatever order the actors arrive in. Three tests cover it, including one that opens two batches in the reverse order on a second frame.
-- [x] **MODERATE, confirmed — the shooter computed a full aim direction and threw away everything but its sign.** Its projectile leaves on the diagonal while its barrel stayed level, which is the same "looks like it is doing what it is doing" claim round two's fix was made for. `Motion` carries a held-weapon direction now, converted to local space like the swing direction so mirroring stays exact, and both the resting hand and the barrel follow it. A test places a shooter below the player and asserts the weapon points upward.
-- [x] **MODERATE, confirmed — the backdrop had no coverage and the task record said it did.** The checkpoint claimed the scene and palette tests covered determinism; the scene test composes twice against one already-built backdrop and `PaletteTest` never builds one, so regenerating a skyline differently for the same seed would have left the gate green. `BackdropTest` now covers determinism, seed and theme variation, the level-derived horizon anchor, layer ordering against parallax rate, span against what the camera can scroll to, and the window mask's capacity. It builds its level rather than generating one, so ten themes fit the browser runner's timeout. The checkpoint is corrected.
-- [x] **MINOR, confirmed — the tier denominator came from the wrong registry.** `PickupLook` derived it from weapon `Tier` while powerups have an independent `PowerupTier`. Harmless today because both hold five, and wrong in exactly the way the derivation was introduced to prevent: a sixth powerup tier would have scaled to 2.125 against a stated maximum of 1.9. The count now comes from the pickup's own registry, through `PickupLook.of`, and a test asserts both registries span the same range.
-- [x] **MINOR, confirmed — a checkpoint still claimed a test that could not exist.** CYB-024 recorded proving "every field" of `EnemyLook` globally non-decreasing. That was never true and is incompatible with amended PROD-042: `form` has no order, and size and luminance are per-map. Restated to what is actually asserted.
-
-- [x] Round 5, to read round four's corrections. **Five findings.** Its specification lens came back clean; implementation and absence did not.
-
-### R7 round 5 findings and dispositions
-
-- [x] **MODERATE, confirmed — the round-four layer split did not go far enough, and its disposition overstated what it achieved.** Torsos and heads still shared `Layer.Actors`, so a Flyer's pod drawn after a biped's head could still paint over it; the claim that "all torsos precede all heads" was simply not true of the code. Heads have their own role layer now. Overlapping *bodies* may still interleave and that is fine — they are opaque either way — but a part that sits inside another can no longer fall behind it. The test that checked only `Actors` before `ActorGlow` now asserts the whole role stack is in order.
-- [x] **MODERATE, confirmed — the player's weapon arm never followed the direction it was firing.** `motionOf` never set `weaponAim`, so the figure held its weapon along its facing while auto-fire shot at the nearest target — possibly behind or above it — and the muzzle flash left that stationary hand on the real bearing. Aiming takes no input (PROD-022), so the held weapon is the *only* thing that can tell a player what the game has locked onto. `GameSimulation` now records `aimDirection` each tick from its own targeting result, and the arm follows it.
-- [x] **MINOR, confirmed — the upward-aim test never looked at the barrel.** The lead arm and the barrel share a style, a width and a layer, so they share a batch, and the test read its first primitive: the arm. Leaving only the barrel horizontal would have passed. It now asserts every segment of the weapon arm rises, and the mutation was run — barrel pinned horizontal is caught.
-- [x] **MINOR, confirmed — the two-registry test bypassed the factories the fix lives in.** It constructed `PickupLook` directly with each enum's size, so a factory regressing to the weapon count stayed green. **And the honest limit found while fixing it:** with both registries holding five tiers, *no* assertion can distinguish a wrong denominator from a right one. So the guarantee is made structural instead — the constructor is private and each factory names its own registry — and the test pins the range that protects, over every weapon and every powerup through the factories. Recorded as structural rather than claimed as tested.
-- [x] **MINOR, confirmed — the distance-versus-time gait test confounded its variables.** Its two "different" motions were the same call, and the one comparison that differed changed stride *and* elapsed time together, so a clock-driven gait would have passed. It now varies every time input the pose can see while holding distance fixed, then the reverse. Mutation run: a gait driven by elapsed time is caught by this test and two others.
-
-- [x] Round 6, to read round five's corrections. **Six findings**, and it judged all three lenses unclean.
-
-### R7 round 6 findings and dispositions
-
-- [x] **MAJOR, confirmed — PROD-046 as written covered every slain enemy, and bosses have never obeyed it.** Mini-bosses and main bosses award loot unconditionally; the one-in-five roll lives only on the trash path, and the statistical test only ever killed trash. The **code is right and the requirement was wrong**: boss awards are change 0003's, and property 18's guaranteed-loot floor is computed from them, so putting one behind a one-in-five roll would drop the floor below what that property proves. PROD-046 now says "rank-and-file" and states the exclusion and its reason; the change record and `plan.md` §15.7 match. **Round seven pushed back on calling this "not a weakening", and it was right to.** It does narrow the owner's literal words; what it does not do is change the rate they asked for. The requirement now says so in a note, and it is raised with the owner as a decision rather than recorded as settled.
-- [x] **MODERATE, confirmed — round three's crouch fix was half a fix.** `Scene` interpolated the feet, but `GameHost` still interpolated the stance-dependent corner and handed *that* to the camera, so at the vertical dead-zone edge a crouch moved the whole world by the same 42 screen pixels while the player stood still. The regression test used a fixed camera and could not see it. Both now read one point: `Scene.drawnCentre`.
-- [x] **MODERATE, confirmed — round five's player-aim fix had no test.** The upward-aim test inspects an *enemy*, so reverting either half of the player path left it green — an ENG-030 gap, not just a coverage one. Added a test that places the only target above and behind the player and asserts the simulation aims there, the rig reads that aim, and the hand rises to it; plus one asserting a melee swing still overrides the held aim. Mutation run: reverting the wiring is caught.
-- [x] **MINOR, confirmed — the "only way to build one" claim was false.** `PickupLook` was a `data class`, which generates a public `copy` whatever the constructor's visibility, so the exact wrong pairing the private constructor was introduced to prevent stayed constructible. It is a plain class now, and the doc says why.
-- [x] **MINOR, confirmed — the "whole role stack" test omitted `ActorTrim`.** Fixed, and then **found worse by my own mutation run**: taking the expected order from `Layer.entries` made the test self-referential, so reordering the enum reordered the expectation and moving `ActorTrim` after `ActorGlow` still passed. The role order is a design decision a test cannot derive; it is pinned as a literal now, and the mutation is caught by two tests.
-- [x] **MINOR, confirmed — the rewritten gait test still moved two variables together.** It varied both time inputs at once, so a gait reading their difference or ratio would have passed. It now varies each independently and in combination, five ways, holding distance fixed.
-
-- [x] Round 7, to read round six's corrections. **Six findings, and it said plainly that the change was not ready to land.** Two of its findings challenged decisions I had defended, and it was right about both.
-
-### R7 round 7 findings and dispositions
-
-- [x] **MAJOR, accepted as a challenge to my own disposition — I called narrowing PROD-046 "not a weakening", and it is one.** The instruction was "1 in 5 enemies slain" with no exception; restricting it to rank-and-file *does* narrow the owner's literal words. What it does not do is change the rate. Both readings are defensible and the implemented one is the only one that does not break a proven property, so the code stands — but the requirement now carries a note saying it narrows the request, and it is raised with the owner as a decision rather than recorded as settled.
-- [x] **MAJOR, confirmed, fix attempted and withdrawn on evidence.** The floor stopped being a lower bound: contact cannot be declined, static pickups sit on the tape's own footholds, and five optional powerups fill the build, after which the *guaranteed* award is scrapped. Round one recorded this as out of scope; round seven was right that this does not preserve the guarantee. **So I implemented displacement — a full build giving up its weakest slot — and it failed.** `Powerup.magnitude` ranks strength generically rather than by contribution to damage, so displacing by it swapped a damage powerup out for a stronger-but-useless one and made `LootFloor.damagePerSecondAt` **fall between maps four and five**; the file's own monotonicity test caught it, and the cycling model churned besides. Reverted. What is recorded instead is honest: `LootFloor` now says it bounds the guaranteed awards and not the player, says which two parts of this change widened the gap, and says the withdrawn attempt and why it failed. Two tests pin what *is* true — collecting never takes anything away — and pin the gap itself so it is a fact rather than a paragraph. **Closing it properly needs a notion of "better" that respects what the floor measures, and that is the owner's call; it is `plan.md` §12 question 6.**
-- [x] **MODERATE, confirmed — round six's camera fix still moved the world on a crouch.** Following the body's centre subtracts the *current* stance height, so a crouch jumped it six world pixels (21 on screen) while the feet stood still, and the test used a fixed camera and could not see it. The camera now follows the standing head height above the interpolated feet, which a stance change cannot move at all and which reproduces the framing it had before any of this. A test drives a real following target across a crouch; round six's version is caught.
-- [x] **MODERATE, confirmed — the ENG-061 accounting still was not what the test counted.** Text was sent past the batch count entirely while each label costs three canvas state changes, and the sink counted interface calls rather than canvas operations, so moving a fill-style assignment into the rectangle loop would have stayed green. The sink counts text's three now, and the production smoke test bounds fill-style assignments against rectangles filled. Mutation run against the real bundle: **861 assignments for 834 rectangles**, caught.
-- [x] **MODERATE, confirmed — static-drop contents had no owner.** The plan said "powerup, +1 tier shift"; the code used the kill split and shifted only the weapon branch, and PROD-047 said nothing. Specified: the same split as a kill drop, rarity rolled twice keeping the better, on **both** branches. `rollPowerup` takes a shift the way `rollTier` always has, and the plan row matches.
-- [x] **MINOR, confirmed — the melee-override test did not test the override.** Comparing an early and a late hand position moves apart whichever direction the sweep is built around. The two are made to disagree now — swing up, weapon held down — and the mutation is caught.
-
-- [x] Round 8, to read round seven's corrections. **Six findings**, and it again judged the change not ready to land. Its implementation lens was otherwise clean.
-
-### R7 round 8 findings and dispositions
-
-- [x] **MODERATE, confirmed — the ENG-061 accounting still undercounted.** A segment batch sets `strokeStyle`, `lineWidth` and `lineCap` — three changes charged as one — and the smoke stub's stroke properties were plain fields, so moving any of the three into the loop passed both guards. The sink charges each call what it really costs now, and the smoke test counts stroke-property assignments against strokes issued. Mutation run against the real bundle with `lineCap` moved inside: **207 assignments for 42 strokes**, caught.
-- [x] **MODERATE, confirmed — the round-seven static-drop correction had no behavioural test.** The test only checked each cache held *something*, so reverting the rarity shift or changing the split stayed green. A cohort test now measures the weapon share against the requirement and compares cache rarity against an unshifted reference draw on the same maps.
-- [x] **MINOR, confirmed — the spacing guarantee was claimed and not kept.** Banding does not space anything: two candidates either side of a boundary are neighbouring cells, and the fallback could pick anywhere. A minimum separation is enforced now and asserted over the cohort, rather than asserted in a comment. *(Round ten then found the rule unowned — PROD-047 said nothing about spacing, so a map legal under the specification could fail the test — and the test's "never" overstated a finite sweep. PROD-047 now carries the rule and its fallback, and the test says what it actually establishes: no map in two hundred needed the fallback.)*
-- [x] **MAJOR, confirmed and escalated — the loot-floor gap is wider than round seven left it, and my correction rested on a false premise.** Round eight checked the sentence I leaned on: `BossFight.playerMoved` commits on crossing a column and nothing else, so "an underpowered player is never sealed in because sealing is their own deliberate act" is false as stated — what is deliberate is walking. That claim has been in this file since change 0003 and I repeated it. Corrected. The consequence is that change 0003's guarantee — a player taking only guaranteed drops clears every encounter — is not enforced for a player who has also picked things up, which at one kill in five is every player. `plan.md` §12 question 6 now names the three ways out and says all three are the owner's.
-- [x] **MAJOR — PROD-046's narrowing of the request remains the owner's to confirm.** Documenting a conflict does not resolve it. Raised.
-- [x] **MAJOR — phase-two approval remains pre-emptive.** Eight rounds have now said so. Raised.
-
-**Three findings were the owner's and no further round could settle them.** Put to the user, and answered on 2026-08-27:
-
-- [x] **Loot floor — "a pickup policy that respects the floor".** Implemented in `Loadout.collect`, which is the only place that knows both the build and the weapon it feeds. A full build gives up the slot whose loss costs the least *measured against what the build actually does*, whenever the swap improves it; the displaced slot converts to Scrap, so PROD-030 still holds, and swaps are taken only on a strict improvement so nothing can cycle. PROD-028 amended to require it. `LootFloor` now models the same policy the game runs — modelling one and shipping another is how it came to claim a bound it did not have. Two tests prove the guarantee: an adversarial route that takes **every** optional powerup before the guaranteed ones still ends at or above the floor, and a build only ever does more as it collects. Both mutations caught, and ranking by generic magnitude reproduces the exact "map 5 guarantees less than map 4" failure that made me withdraw it in round seven.
-- [x] **Drop scope — rank-and-file, as built.** Confirmed with the consequence stated. PROD-046's note now records that the owner chose it rather than that it awaits them.
-- [x] **Approval — ratified retroactively.** The change record says it was first given in advance, that this is not the post-review approval `AGENTS.md` asks for, that eight rounds said so, and that the owner settled it on 2026-08-27. The order was wrong and the record says so.
-
-- [x] Round 9, to read the three owner decisions and round eight's corrections. **Five findings**, two of them against the loot fix made hours earlier, both with reproductions that held.
-
-### R7 round 9 findings and dispositions
-
-- [x] **MAJOR, confirmed and measured worse than reported — a weapon pickup can still put a player below the floor.** `Loadout` accepts weapons on `WeaponScore` while `LootFloor` measures `expectedDps`, and the two order weapons differently. Measured across all ten maps: **381 of 3,243 accepted swaps lower damage**, the worst being a "Debt Collector" Minigun at 65.9 DPS given up for a Rustline Machete at 7.3 against a map-two floor of 14.4 — the score's crowd factor and conditional bonus outweigh a ninefold damage gap (10.99 against 14.80). **Pre-existing**, not caused by this change; what this change did was make the floor's claim precise enough to see it. My guarantee test held the weapon fixed and my record said it proved the floor bounds a real player, which it does not. The test now says so at the point it stops covering, and the defect is `plan.md` §12 question 7 with the numbers — recalibrating `WeaponScore` is a balance change and does not belong in a presentation change.
-- [x] **MAJOR, confirmed — my own displacement policy could make a build worse.** PROD-028 says "does more"; I implemented `expectedDps`, which counts only what lands on one target. Reproduced: a Static Lash with a three-stack Thermite Payload takes a Hollowpoint Firmware, single-target damage rises 23.3 to 29.2, and the score falls **50.6 to 40.8** because the 55% splash vanishes — against a crowd the build genuinely does less, and contact cannot be declined. Now ranked by `WeaponScore`, the same measure a weapon swap uses, so the two automatic decisions a player cannot decline agree about "better". The monotonicity test is restated in that measure and now covers **weapons and powerups interleaved**, not powerups alone.
-- [x] **MODERATE, confirmed — the plan still advertised the safety property round eight withdrew.** §7 said an underpowered player "is never shut in with a boss they cannot beat. That is the property that actually had to hold, and it is tested directly." It is not tested and does not hold. Withdrawn there as well as in `LootFloor`.
-- [x] **MINOR, confirmed — the governing documents disagreed with each other.** §15.7 still said `PowerupSlots` scraps the guaranteed award and called displacement an open owner question, and the change record still listed full-build pickup behaviour as out of scope, both contradicting the implemented account elsewhere in the same files. All reconciled to one disposition.
-- [x] **MINOR, confirmed — "exactly one state change per batch" was never true.** A stroke batch sets three properties and a label sets three. The counting sink was corrected in round eight; the plan and two doc comments still published the old figure. *(Round ten then found this disposition itself overstated: I said the plan and both comments were corrected, and two comments, the change record and its 52-figure were still wrong. All now corrected, and checked by grep rather than by memory.)*
-
-Found while fixing the above:
-
-- [x] A bulk edit adding the new `mapIndex` argument matched `PowerupSlots.collect(id, scrapValue)` as well, whose second parameter is an `Int` scrap value — so it compiled while silently passing a scrap value of 1 in two test files. Caught by reading the diff rather than by the suite, because the tests that cover those calls assert the pickup *kind* and not the amount. Reverted.
-
-- [x] Round 10, to read round nine's corrections. **Three findings**, one of them major and, importantly, **introduced by this change rather than pre-existing**.
-
-### R7 round 10 findings and dispositions
-
-- [x] **MAJOR, confirmed with the reviewer's exact route — the round-nine policy still did not preserve the floor.** Ranking by `WeaponScore` fixed round nine's finding and broke the one before it: the game judges a build by score, the floor is stated in damage, and the two order builds differently. Reproduced with an Ashfall Grenade Lobber — a legal route of accepted swaps ends at **30.3 damage against a map-four floor of 32.0**, every step obeying the score rule. That is three rankings tried and three failures, each fixing one measure by breaking the other. **The answer is the conjunction:** a swap must raise the score *and* must not give up damage. Both measures are then monotone, which is what the two separate obligations actually require.
-- [x] **And the test that should have caught it was the reason it survived.** My adversarial route took every powerup in one sorted order, so later pickups repaired the very state that exposed the failure — it reported a build that was fine while a build five pickups earlier was not. It now checks **every prefix of five different routes on all ten maps, in both measures**. Both earlier policies are caught by it: score-alone fails at map 1 taking damage from 18.55 to 17.54, and scrapping-the-sixth fails at map 1 ending at 6.75 against a floor of 7.26.
-- [x] **MINOR, confirmed — my round-nine disposition about the state-change wording was itself false.** I recorded that the plan and both doc comments were corrected. Two comments, the change record's prose and its "52 state changes" figure were all still wrong. Corrected — and I recorded that as verified by grep, which round eleven disproved: `CanvasRenderer`'s comment and the change record's acceptance example were both still wrong. My grep had matched only one phrasing. Corrected again, against several phrasings.
-- [x] **MINOR, confirmed — the twelve-tile spacing rule had no owner.** PROD-047 said nothing about spacing, so a map legal under the specification could fail the test I added; and the implementation falls back to an unspaced site when none qualifies, which a test named "never" cannot establish anyway. PROD-047 now carries the rule *and* its fallback, and the test says what a finite sweep actually shows: no map in two hundred needed the fallback.
-
-- [x] Round 11, to read round ten's corrections. **Five findings**, and the major one showed the round-ten fix had not worked either.
-
-### R7 round 11 findings and dispositions
-
-- [x] **MAJOR, confirmed, and it ended four rounds of trying the wrong kind of fix.** Requiring a swap to raise the score *and* not lose damage keeps a build monotone in each measure — and monotonicity along one route says nothing about how its end compares with a **different** route's end, which is exactly what the floor is. Reproduced at the reviewer's route: map four, optional `ArcCascade, BurnRig, ThermitePayload` then the guaranteed awards, ending at **30.27 against a 32.01 floor** with every step obeying the rule. Measured across every three-powerup optional route on all ten maps: **10 of 8,160** below the floor, worst by 21.1 damage on map ten, and a Pareto rule fails on exactly the same ten. **The answer is not a ranking at all** — it is that *a guaranteed award is never refused*, and displaces whichever slot costs least damage to lose. Same 8,160 routes: **0 below the floor**. `GroundItem` now carries `guaranteed`, set by the boss and mini-boss awards and map one's starter cache.
-- [x] **And the test again failed to have the failing shape.** Mine ran a whole optional route then the guaranteed one and compared to the floor once at the end; it never took a *prefix* of the optional route before the guaranteed awards. That is the third time a test of this guarantee has had the wrong shape. It now starts fresh for each optional route — including the exact three the reviewer found — and the mutation reproduces the reviewer's number to the digit: `30.26785714285714` against `32.00892857142858`.
-- [x] **MODERATE, confirmed and scoped — score and damage do not measure everything a powerup does.** `WeaponScore` ignores lifesteal, seeking, slowing, reach, knockback, stun and kill refunds, all of which real powerups carry and the simulation executes. So a guaranteed award can displace a slot whose unmeasured effect was worth keeping, and an optional powerup that only does unmeasured things can never displace anything. PROD-028 now names the two measures it actually uses and says what is not weighed; extending the score changes every weapon swap, so it is `plan.md` §12 question 8.
-- [x] **MINOR, confirmed — the player was drawn empty-handed.** `plan.md` §15.4 says the weapon attaches to the lead hand, and the geometry was gated on an enemy archetype being `armed`. The player has no archetype, so the one figure that is *always* carrying something (PROD-023) was the only one drawn without it. Now drawn, with its length scaled from the weapon's own declared range, and two tests cover it.
-- [x] **MINOR, confirmed — the constant-allocation claim was false.** `build` allocates a filtered list, a sorted list and a copy of the texts, and opening a batch builds a composite `String` key every time, about four per visible figure. The comment and `plan.md` now say what is true: no *primitive* allocates, so allocation grows with actors on screen rather than with the thousands of tiles and limbs they draw.
-- [x] **MINOR, confirmed — and my round-ten claim to have grepped for the stale wording was itself false.** Two more instances survived because my grep matched one phrasing. Corrected against several phrasings this time, and the disposition says so rather than repeating the claim.
-
-- [ ] Round 12, to read round eleven's corrections. Record findings below, then run `./scripts/check.sh`.
-
-### Review tooling — closing agent shells
-
-Not a finding from any round, but from the owner asking whether the shells these rounds start are
-being closed. They were not.
-
-- [x] **Found: five leftover waiter shells, still running a day later**, each holding a `sleep`, one
-  per review round from the early gate. The cause is a self-match: a waiter written as
-  `until ! pgrep -f "codex exec"` has that string in its own `bash -c` argv, so `pgrep` matches the
-  waiter itself — it is its own reason to keep waiting and can never exit. They matched each other
-  too, so none could exit even between rounds. Closed, children first so no `sleep` was orphaned onto
-  init.
-- [x] Added `.claude/skills/adversarial-review/close-agents.sh`: `record` / `check` / `close`,
-  addressing agents by **recorded pid** rather than by a pattern. Matching on the process name
-  instead (`pgrep -x codex`) would fix the self-match and introduce a worse bug, since it also
-  matches the interactive `codex` sessions the owner has open in other terminals. It refuses to
-  signal itself or an ancestor, signals children before parents, escalates TERM to KILL, and proves
-  none is left rather than assuming the signal landed.
-- [x] `SKILL.md` updated where the mistake is actually made: the launch step records the pid and
-  waits on it, the multi-reviewer block records the whole set, §5 says to close each round's agents
-  before starting the next, §6 closes agents *before* the boundary and the deletions, and three
-  gotchas cover the self-match, that closing the reviewer is not closing the round, and that killing
-  a waiter orphans its `sleep`.
-- [x] Exercised end to end: record, check, close, orphan-check, ancestor refusal, and both exit
-  paths of `check` — which was returning 1 by accident from a trailing test, now deliberate and
-  documented.
-
-- [ ] Disposition round 11's findings; run `./scripts/check.sh`.
-
-
-### CYB-005 — Deterministic core and the verification target
-
-- **Status:** Complete
-- **Specification:** [Change 0003](specs/changes/0003-game-core.md) — ENG-050, ENG-053, EA-2
-- **Implementation approval:** Approved by the user on 2026-08-25 ("proceed to implement and execute the research and development plan to develop the game")
-- **Depends on:** Nothing
-
-TDD checkpoints:
-
-- [x] Add a failing test proving a seeded generator reproduces an identical sequence for one seed and diverges for another.
-- [x] Add a failing test proving per-phase derived streams are independent, so consuming one does not shift another.
-- [x] Implement `SplitMix64` and stream derivation.
-- [x] Add a failing test for tile queries and world/tile coordinate conversion; implement `TileMap`.
-- [x] Add the `jvm()` verification target with `jvmToolchain(21)` and the Foojay resolver; prove `commonTest` runs on both targets and a `jvmTest` test runs only on the JVM.
-- [x] Document the local binaryen workaround in the repository and pin its version; update README's JDK guidance.
-- [x] Run `./scripts/check.sh`.
-
-### CYB-006 — Movement model and measured envelope
-
-- **Status:** Complete
-- **Specification:** [Change 0003](specs/changes/0003-game-core.md) — ENG-051, ENG-052, ENG-054
-- **Depends on:** CYB-005
-- **Implementation approval:** Approved by the user on 2026-08-25 ("proceed to implement and execute the research and development plan to develop the game")
-
-TDD checkpoints:
-
-- [x] Add a failing test holding the integrator against the closed forms as bounds. *(Revised: the fixed-step integrator lands below the continuous solution by design, so equality was the wrong assertion. It is held to "never above, and within 10% below".)*
-- [x] Add a failing test proving a player at terminal velocity does not tunnel through a one-tile floor.
-- [x] Implement `MovementModel` and swept AABB collision resolution.
-- [x] Add a failing test proving crouch clearance blocks standing and that a crouched player cannot jump.
-- [x] Add a failing test proving assists live in `IntentFilter` and that `MovementModel` consumes only post-assist input frames.
-- [x] Add a failing test proving `measureEnvelope()` output changes when gravity changes.
-- [x] Add a failing test proving each scaled bound sits at least 5% clear of its floor boundary.
-- [x] Run `./scripts/check.sh`. **Adversarial review gate R2 — run 2026-08-26; 12 findings, all dispositioned (see below).**
-
-R2 findings and dispositions:
-
-- [x] **CRITICAL, confirmed:** `onGround` was carried from the previous tick and never cleared, so a player who walked off a ledge stayed "grounded" for the whole fall — keeping ground friction, allowing mid-air crouching, and refreshing the coyote window every tick. Fixed; `GroundContactTest` covers it.
-- [x] **MAJOR, confirmed:** the envelope mixed leading-edge and trailing-edge coordinates, so its "reach" was 12 px short and its width correction was applied twice. Replaced with direct measurement of the widest crossable gap and tallest climbable step. Budgets moved from 4/4 to 5/3.
-- [x] **MAJOR, confirmed:** envelope measurement used a literal 96 px runway and had unbounded loops for slow or zero acceleration. All loops now bounded; the run-up is derived from the measured runway.
-- [x] **MAJOR, confirmed:** `TileMap` tested the open top before horizontal bounds, so every column above the map was empty and a player could pass over the top and out the side. Bounds now checked first.
-- [x] **MAJOR, confirmed:** lethal contact was queryable but never observed. `PlayerState.touchedLethal` is now reported per sub-step by the same sweep that moves the player.
-- [x] **MAJOR, confirmed:** no cross-target physics determinism test existed. Added a committed golden state hash; **JVM and Wasm produce the identical value**, which confirms the movement path is bit-identical across targets.
-- [x] **MINOR, confirmed:** `nextInt(from, to)` computed its width in `Int` and overflowed. Now computed in `Long`.
-- [x] **MINOR, confirmed:** an unmeasured drop silently returned the flat-ground value. Now refused.
-- [x] **MINOR, confirmed:** `IntentFilter` took a `Physics` it never used. Removed.
-- [x] **MAJOR, confirmed:** implementation approval was recorded on CYB-005 only. Recorded per task and on the change record.
-- [x] **MAJOR, accepted as characteristic, not defect:** axis-separated resolution decides corner grazes by an L-shaped path rather than a diagonal sweep. The verifier and the game call the same code, so they agree by construction and the guarantee is unaffected. `CollisionEdgeTest` pins the behaviour so it cannot change silently.
-- [x] **MAJOR, confirmed as scope:** ENG-052/ENG-056 are not yet satisfied because no game loop or verifier exists. That is CYB-007 and CYB-008, not a defect in this milestone.
-
-### CYB-007 — Generation and the completability guarantee
-
-- **Status:** Complete
-- **Specification:** [Change 0003](specs/changes/0003-game-core.md) — PROD-024, PROD-025, PROD-026, ENG-055, ENG-056
-- **Depends on:** CYB-006
-- **Implementation approval:** Approved by the user on 2026-08-25 ("proceed to implement and execute the research and development plan to develop the game")
-
-TDD checkpoints:
-
-- [x] Add a failing test proving one seed yields a byte-identical tilemap and a decoration change leaves the spine and masks identical.
-- [x] Implement the spine generator, `FloorMask` and `ArcMask`. *(All ten themes were straightforward once the move set existed, so the whole set is in rather than the planned three.)*
-- [x] Add a failing test proving decoration never writes in `FloorMask` and never places a solid tile in `ArcMask`.
-- [x] Add a failing test proving arenas are flat, hazard-free, and have a reachable entry and exit, with the mini-boss arena within ±5% of the midpoint.
-- [x] Add a failing witness-replay test; make the generator emit the witness as it carves.
-- [x] Add a failing test proving every jet corridor holds exactly one jet volume with proven safe zones and a satisfiable off-window.
-- [x] Implement `UnderReach` with rest-canonical nodes and `OverReach`; add a failing anti-stranding test.
-- [x] Repair classes are not needed and were removed from the design. A move is a **proposal**: its geometry is carved into a journal, the walker attempts it, and only a move the walker completed is committed — anything else is rolled back, tiles and walker state together, and plain ground is laid instead. Nothing uncrossable is ever written, so there is nothing to repair afterwards.
-- [x] Add the seed-cohort sweep to `jvmTest`; assert zero repairs, reseeds and fallbacks.
-- [x] Run `./scripts/check.sh`. 94 JVM tests and 88 browser tests green.
-- [x] **Adversarial review gate R3** — run 2026-08-26; 8 findings, all dispositioned.
-
-R3 findings and dispositions:
-
-- [x] **MAJOR, confirmed:** `UnderReach` edges did not compose. A rollout settled at an arbitrary sub-tile position but the next edge restarted at the tile's left edge — a teleport of up to a whole tile, which invalidated any multi-edge escape claim. Rollouts now steer onto their cell's canonical position and are rejected if they cannot, leaving a residual of at most 1.5 px, which is stated in the code rather than left implicit.
-- [x] **MAJOR, confirmed:** `OverReach` was not an over-approximation. Climbing required ground directly below, so a player who jumps, drifts sideways over a pit and keeps rising was never modelled. It now carries a rise budget: leaving the ground grants the apex, horizontal motion preserves it, climbing spends it, descending forfeits it.
-- [x] **MAJOR, confirmed:** crouch-only positions were invisible to the analysis. `RestCell` had no stance and the catalog had no crouch traversal, so the interior of a generated duct was filtered out before anti-stranding ran. Stance is now part of the cell, and crouch-walking and stance transitions are edges.
-- [x] **MAJOR, confirmed:** maps 8–10 could never contain a fire jet. The crossing estimate demanded a 0.92 s off-window and those maps offer at most 0.87/0.76/0.66 s, so every jet proposal on the jet-heavy themes silently became flat ground. The crossing is now **measured** — the jet must have been off for every tick the walk actually took — and `JetCoverageTest` counts jets per map so this cannot regress unnoticed.
-- [x] **MAJOR, confirmed:** ENG-055 was not honoured. Braking margin, landing run-out, duct length and jet spans were literals, so a physics change could move what the player can do without moving what generation asks. They are now derived from `MovementEnvelope`.
-- [x] **MINOR, confirmed:** a rejected move restored its tiles but left `floorMask` cells protected at the elevation it had tried, which decoration then read as spine geometry. The mask is journalled with the tiles.
-- [x] **MINOR, confirmed:** anti-stranding exempted every cell beyond the boss arena's left edge, which would hide stranding on the approach. Only the arena itself is exempt.
-- [x] **MINOR, confirmed:** the stored witness was not literally an input sequence — a symbolic "wait for jet" step was resolved at replay time, while PROD-024 says the generator holds the sequence. The level clock is deterministic from zero, so the wait is now computed during carving and stored as real frames. `WitnessStep` also stopped being a sealed interface with one implementation (ENG-022).
-
-Reviewer checks that found nothing: no path returns a level without replaying its witness against the final tiles; jet collision cannot be spatially skipped between samples below 1,680 px/s; `markArc`'s union rectangle soundly covers the axis-separated sub-steps; `FireJet.secondsUntilSafeWindow` is correct across all phases; no RNG call passes a non-positive bound; no unordered set or map iteration affects generation output.
-
-Findings from building it, each caught by a test rather than by inspection:
-
-- `spawnRow` was captured after carving rather than before, so on any map whose terrain changes elevation the replay began at the wrong height and diverged from the path the walker took. The witness-replay test is what exposed it.
-- `walkRightTo` released the key *at* its target, but the player then coasts about a tile while friction bleeds off speed — enough to carry them over the edge of the platform they were walking to. Walks now brake early, as a player would.
-- A move could report success with the player at the bottom of the map, because the world's out-of-bounds floor was solid and "grounded and at rest" was satisfied there. Every move now checks the row it landed on.
-- Below the world is now lethal rather than solid. A solid floor down there is worse than a pit: the player survives, cannot climb out, and the run persists across a refresh.
-- `ArcMask` was marked once per tick, but a fall at terminal velocity covers 16.7 px — more than a tile — so the mask had gaps that decoration was free to fill with something solid.
-- `OverReach` allowed rising from any cell, including mid-air, so the flood could climb indefinitely and covered the whole map. Rising now requires ground.
-- Decoration counted the world's out-of-bounds side walls as structure and grew a tower up column zero, creating standable ledges at the bottom of the map.
-
-### CYB-008 — Browser shell: canvas, camera, input, loop
-
-- **Status:** Complete
-- **Specification:** [Change 0003](specs/changes/0003-game-core.md) — PROD-021, ENG-013
-- **Depends on:** CYB-007
-- **Implementation approval:** Approved by the user on 2026-08-25 ("proceed to implement and execute the research and development plan to develop the game")
-
-TDD checkpoints:
-
-- [x] Add `<canvas id="game-canvas">` to `index.html` and a failing browser test that the canvas mounts and is focusable.
-- [x] Extend `scripts/title-screen-smoke.cjs` with a canvas, `requestAnimationFrame` and `setItem` before it can break; prove it still passes. *(It did break exactly as predicted — `Missing #game-canvas element` — and now asserts a frame was actually drawn, plus that no root-relative asset path would 404 under the Pages base path.)*
-- [x] Add a failing test proving cursor-to-world conversion tracks the camera when the camera moves without a pointer event.
-- [x] Implement the camera with dead-zone follow, clamping to generated map bounds, and arena framing.
-- [x] Implement the fixed-timestep loop with interpolation and a frame clamp; add a failing test that simulation steps are frame-rate independent.
-- [ ] Commit the rendering benchmark harness under `scripts/bench/` and record `setTransform` and full-frame measurements. *(Deferred to the balance pass; the frame budget is not yet under pressure with placeholder graphics.)*
-- [x] Add the debug overlay for masks, reachability and the witness path.
-- [x] Run `./scripts/check.sh`.
-
-### CYB-009 — Combat, weapons and powerups
-
-- **Status:** Complete
-- **Specification:** [Change 0003](specs/changes/0003-game-core.md) — PROD-023, PROD-027, PROD-028, PROD-030
-- **Depends on:** CYB-008
-- **Implementation approval:** Approved by the user on 2026-08-25 ("proceed to implement and execute the research and development plan to develop the game")
-
-TDD checkpoints:
-
-- [x] Add a failing test proving the broken bottle swings every two seconds toward the cursor with no attack input.
-- [x] Add a failing test proving cooldowns do not drift: over 60 s a weapon fires within one activation of `60 / cooldown`.
-- [x] Implement `WeaponSpec`, `FirePattern` and the damage pipeline. *(The full 26-weapon and 18-powerup registries went in rather than the planned six-weapon subset: they are data, the tests are identical either way, and a subset would have deferred the tier-band and rarity assertions to no purpose.)*
-- [x] Add failing tests for the stacking caps: five distinct powerups, three stacks, cooldown floor, crit cap, slow floor and lifesteal rate.
-- [x] Add a failing test proving no weapon or hit effect writes player position or velocity.
-- [x] Add a failing test proving contact always resolves: higher score equips, otherwise Scrap; sixth powerup and full stack become Scrap.
-- [ ] Run `./scripts/check.sh`.
-
-### CYB-010 — Enemies, bosses and the vertical slice
-
-- **Status:** Complete apart from the human playtest
-- **Specification:** [Change 0003](specs/changes/0003-game-core.md) — PROD-020
-- **Depends on:** CYB-009
-- **Implementation approval:** Approved by the user on 2026-08-25 ("proceed to implement and execute the research and development plan to develop the game")
-
-TDD checkpoints:
-
-- [x] Add a failing test proving no enemy patrol intersects the dilated corridor and no shooter has line of fire into a committed span.
-- [x] Implement enemy archetypes, the mini-boss and the main boss with three phases.
-- [x] Add a failing test proving every boss attack is behaviourally telegraphed for at least 0.4 s.
-- [x] Add a failing test proving the boss is invulnerable until the commit line is crossed and the exit opens only on its death.
-- [x] Add the loot-floor test. *(Revised: the guaranteed floor **cannot** clear every map, and the plan was wrong to claim it would — the required rate grows ~81x across a run while a worst-case loadout does not. It now asserts the floor carries the opening maps, never regresses, and that the ceiling reaches map 10; the commit line is what keeps an underpowered player from being sealed in. Recorded in plan.md §7.2.)*
-- [ ] **Not done: play the map end to end and record playtest observations.** Needs a person; see above.
-- [ ] Run `./scripts/check.sh`. **Adversarial review gate R4.**
-
-### CYB-011 — Full content: ten maps, full registries, balance
-
-- **Status:** Complete apart from the human playtest
-- **Specification:** [Change 0003](specs/changes/0003-game-core.md) — PROD-025, PROD-027, PROD-028, PROD-029
-- **Depends on:** CYB-010
-- **Implementation approval:** Approved by the user on 2026-08-25 ("proceed to implement and execute the research and development plan to develop the game")
-
-TDD checkpoints:
-
-- [x] Add failing registry tests: at least 20 weapons across three classes, tier DPS monotonicity with the 1.05 gap, and a finite score for every entry.
-- [x] Add failing registry tests: at least 15 powerups, never-super-linear stack curves, a total applicability matrix, and drop weight strictly decreasing in tier at every map.
-- [x] Implement the full weapon and powerup registries.
-- [x] Implement the remaining seven themes and the difficulty curve; add a failing test that the difficulty score's cohort mean strictly increases.
-- [x] Extend the seed sweep to all ten maps and all themes, including the safe fallback.
-- [x] Run the balance harness and record time-to-kill against the derived bands. *(`LootFloorTest` and `BalanceTest` are the harness; the bands are derived from the health multipliers rather than asserted independently, because chosen independently they contradict.)*
-- [ ] **Not done: play a full run and record playtest observations.** This needs a person. The machine checks say a competent player *can* finish; whether it is readable, fair and enjoyable is a different question and no test answers it.
-- [ ] Run `./scripts/check.sh`. **Adversarial review gate R5.**
-
-### CYB-016 — Keyboard-only controls, arena legibility, and a boss that can be fought
-
-- **Status:** Implementation complete; adversarial review in progress
-- **Specification:** [Change 0004](specs/changes/0004-keyboard-only-controls.md) — PROD-004, PROD-021, PROD-022, PROD-033, PROD-034, PROD-035
-- **Implementation approval:** Requested by the user on 2026-08-26
-- **Depends on:** CYB-015
-
-- [x] **Aiming is automatic and unconditional.** `AimMode`, the cursor, the title-screen toggle, the aim fields on `InputFrame` and every line of mouse handling are gone. The save format is bumped to version 2, and version 1 saves are refused rather than partly read. PROD-021 and PROD-022 are amended to match, and change 0003's narrowing of **PROD-004 is withdrawn** — the game now needs no pointing device at all, which is stronger than the original requirement asked for.
-- [x] **A melee swing is drawn** where it resolved, along the arc it covered, fading over about a sixth of a second. It uses the same origin, direction and reach the hit test used, rather than an approximation that could mislead.
-- [x] **Bosses are drawn**, with a health bar and a distinct colour while telegraphing. This was the actual cause of the reported wall: the gate was working exactly as designed, and nothing had ever drawn the boss behind it.
-- [x] **Defeating the boss clears everything** at head height between the arena and the map's edge, not just the gate column (PROD-035).
-
-Found while writing the end-to-end test, and worse than the reported symptom:
-
-- [x] **The boss could not be damaged at all.** Its anchor sat 40 px above the arena floor and hits were measured to that single point, so a melee weapon with 27 px of reach could not cover the vertical gap from a player standing on the same floor. The renderer would also have drawn it floating 104 px up. The boss now stands on the floor, and a hit tests against its body's centre and counts its size — a large target is easier to hit rather than impossible.
-- [x] **The boss stood still while the player walked past it.** Pinned at the exit gate 128 px away, every subsequent swing missed. It now closes on the player within its arena. Measured before the fix: 0 damage across 12,000 ticks.
-- [x] **Boss health was sized for damage nobody can sustain.** The required rate assumes uninterrupted output; a fight built around dodging telegraphs does not offer that, because dodging means moving out of reach. Measured at 25% health remaining when the player died. Multipliers reduced from 9x/20x to 6x/12x, recorded in `Balance` with the reasoning.
-- [x] Added `FullMapRunTest`: one continuous run — cross the map on the generated route, fight the boss while answering its telegraphs, kill it, and walk out. Every part of this was covered separately before and the whole was not, which is why a playtester got stuck. It is also the first test in which the boss is killed by **playing** rather than by being handed its own death.
-- [x] Run `./scripts/check.sh`. 239 JVM and 215 browser tests green.
-
-### CYB-015 — Act on the first human playtest
-
-- **Status:** Complete
-- **Specification:** [Change 0003](specs/changes/0003-game-core.md) — PROD-020, PROD-025
-- **Implementation approval:** Reported by the user on 2026-08-26 after playing the game
-- **Depends on:** CYB-014
-
-Two defects from someone actually walking a level. Neither was visible to any of the 426 tests that were passing, and both were confirmed by measurement before anything was changed.
-
-- [x] **Every enemy was pooled at the end of the level.** Measured: `thirds=[0, 0, 10]` on map 1 and `[0, 0, 19]` on map 5 — not a single enemy in the first two-thirds of any map. The placement rule excluded everything within two tiles of the *arc mask*, which covers the player's whole route; in a side-scroller that is essentially all the standable ground, so the only floor left was the far end of the boss arena. The invariant now protects **committed spans** — gaps and acid crossings, where the player is airborne and cannot steer — and leaves ordinary ground alone, because meeting an enemy there is the game. Now `[4, 5, 3]`, `[11, 3, 16]`, `[23, 17, 20]`.
-- [x] **Reaching the right-hand edge killed the player instead of finishing the map.** Measured: two columns past the boss arena, neither with any floor. The map simply ended in a pit. There is now an exit corridor past the arena and a **gate** that is solid while the boss lives and is cleared on its death, so "defeating the main boss allows the player to reach the end of the map" is something the geometry does rather than a flag.
-- [x] **Found while fixing the above:** enemy archetypes were drawn uniformly from five kinds, two of which shoot, so **40% of every map was ranged** — and shooters fired on range alone, through walls and floors. A guaranteed loadout following the intended route died on map 4 to nothing but accumulated chip damage. Archetypes are now weighted toward melee, and a shooter needs line of sight.
-- [x] Enemy density follows the difficulty curve (4 to 9 per hundred tiles) rather than a flat constant.
-- [x] Added `RouteSurvivalTest`, which separates the two claims that were previously conflated: the route must be crossable **as geometry** on every map (PROD-024, and it is), and **survivable in the full simulation** with the guaranteed loadout on the maps that floor covers. Enemies are excluded from the guarantee, so those are different questions and now fail separately.
-- [x] Run `./scripts/check.sh`. 231 JVM and 212 browser tests green.
-
-### CYB-014 — Act on the final adversarial review
-
-- **Status:** Complete
-- **Specification:** [Change 0003](specs/changes/0003-game-core.md)
-- **Implementation approval:** Approved by the user on 2026-08-26 ("keep going straight through, fix them all")
-- **Depends on:** CYB-013
-
-Final review gate (`codex`, `gpt-5.6-sol`, `xhigh`), run 2026-08-26 against the wired tree. 16 findings; all accepted, all acted on. Four were verified by hand before being acted on, and all four held.
-
-- [x] **CRITICAL — bosses were inert.** `damageAt`, `currentPhase`, `gateClosed` and `exitOpen` appeared in **zero** production files. `LiveBoss` now cycles its phase's attacks, hurts only after the telegraph, seals on the commit line and opens the exit on death. Boss damage no longer applied every tick a projectile lingered in the arena.
-- [x] **CRITICAL — auto-aim was unreachable and would not have worked.** No control existed to enable it, and targeting was handed the immutable spawn records, so it aimed where things started and kept aiming at corpses. Added a title-screen toggle that reports its state via `aria-pressed`, and targeting now takes live positions including vulnerable bosses.
-- [x] **CRITICAL — death left a resumable save.** `clearRun()` ran, then entering a fresh run saved again. The run now ends once, stops the loop, and shows an end screen; the save is cleared and not rewritten.
-- [x] **CRITICAL — continuing corrupted the map index.** The screen resumed at map 1 while the run was on map 4, so the next boss death rewrote the run backwards. `resumeAt` is now passed to the router.
-- [x] **CRITICAL — the witness was replayed against a different object than the one returned.** Equivalent in practice because the tile grid is shared, fixed anyway: replaying something other than what ships is a gap that stops being harmless the moment the two diverge.
-- [x] **CRITICAL — most weapon mechanics did not run.** Crit, wind-up, falloff, homing, cursor anchoring, chain, blast, ignite, slow, stun, execute, lifesteal, ricochet and Killstreak Cache were registry data nothing executed, and melee ignored direction and arc entirely — the broken bottle hit enemies behind the player and through walls, so it was not aimed at the cursor at all. All now resolved in `GameSimulation`, with `TrigTable` keeping the arc test off `sin`/`cos` (ENG-054).
-- [x] **MAJOR — the loot economy did not match the plan.** Added the starter cache, mini-boss and boss awards with tier floors and shifts, boss Scrap, and the per-run powerup pool; trash drop rates corrected to the planned 3–6%.
-- [x] **MAJOR — enemy archetypes were names and multipliers.** Shooters and turrets now fire, flyers ignore terrain, speeds differ by archetype, and non-flyers collide with geometry. Crucially they stay inside the patrol span generation gave them, which is what makes the corridor invariant true at runtime rather than only at carve time.
-- [x] **MAJOR — victory was not terminal and re-banked the same Scrap every tick.** A run now ends exactly once.
-- [x] **MAJOR — a winning swap lost the displaced weapon's Scrap.** Both pickup outcomes credit it.
-- [x] **MAJOR — ENG-050/ENG-053 violations.** The cursor is part of `InputFrame` rather than a second argument, and loot randomness is a per-map derived stream instead of the raw run seed re-used on every map.
-- [x] **MAJOR — ENG-055 literals remained.** Arena entry, duct and flat-run variation, and the jet crossing span now come from the measured envelope.
-- [x] **MAJOR — save decoding truncated invalid builds and could hang.** A stack count taken from the file was a loop bound; six powerups silently became five. Corrupt saves are refused rather than partially applied.
-- [x] **MINOR — `HITBOX_TO_DAMAGE` was invented.** Mass Driver is a hitbox powerup; converting a quarter of it into damage was not in the plan and the hitbox was never widened. Removed; it now scales what a hit covers.
-- [x] **MINOR — canonicalisation still teleports by the residual.** True, and the claim is corrected rather than the code: the doc now says the residual is *bounded, not eliminated*, and that PROD-024 is discharged by replaying one exact tape, which needs no composition.
-- [x] **MINOR — the generation budget was never measured.** The plan's 120 ms p99 came from a cohort *mean*. Measured on the widest map: **median 69 ms, p99 209 ms**. Budget restated at 400 ms with a test that computes the statistic it names.
-- [x] Run `./scripts/check.sh`. 218 JVM and 208 browser tests green.
-
-### CYB-013 — Connect the subsystems into a playable game
-
-- **Status:** Complete
-- **Specification:** [Change 0003](specs/changes/0003-game-core.md) — PROD-020, PROD-021, PROD-030
-- **Implementation approval:** Approved by the user on 2026-08-25
-- **Depends on:** CYB-012
-
-Found while checking the work rather than by a test: **every combat subsystem was implemented, tested and completely unreachable from the running game.** `GameHost` ticked movement and nothing else — `AutoFire`, `BossFight`, `Targeting`, `Loadout` and `DropTable` appeared in zero files under `wasmJsMain`. Every one of their tests passed, because a subsystem's own tests say nothing about whether anything calls it.
-
-- [x] Implement `sim/GameSimulation` as the single pure tick that ties movement, firing, enemies, projectiles, bosses and pickups together (ENG-050).
-- [x] Add tests that assert the parts are *connected*: the weapon fires with no input, enemies are live entities that move, a boss fight exists and is sealed, damage reaches the run, auto-aim works with no cursor, and the whole thing is deterministic.
-- [x] Wire `GameHost` to the simulation; draw enemies, projectiles, ground items and a health bar.
-- [x] Run `./scripts/check.sh`. 200 JVM and 190 browser tests green.
-
-### CYB-012 — Run structure, persistence and accessibility
-
-- **Status:** Complete apart from audio
-- **Specification:** [Change 0003](specs/changes/0003-game-core.md) — PROD-022, PROD-031, PROD-032
-- **Depends on:** CYB-011
-- **Implementation approval:** Approved by the user on 2026-08-25 ("proceed to implement and execute the research and development plan to develop the game")
-
-TDD checkpoints:
-
-- [x] Add a failing test proving death ends the run, clears the in-progress save, and withholds `Continue game`.
-- [x] Add a failing test proving a save carries a format version and that an unreadable or older save is rejected rather than crashing.
-- [x] Implement `SaveCodec`, `LocalStorageSaveStore` and meta-progression; replace the superseded TITLE-005 placeholder assertion.
-- [x] Add a failing test proving Auto-aim targets the nearest enemy and that the setting persists.
-- [x] Add failing browser tests for the canvas accessible name, live region, and pause on blur.
-- [ ] **Not done: sound effects and the audio externals.** kotlinx-browser 0.5.0 exposes no Web Audio API, so this needs ~40-60 lines of hand-written externals. Off the critical path and deliberately left last.
-- [ ] Run `./scripts/check.sh`. **Adversarial review gate R6.**
-
-## Completed
-
-### CYB-004b — Specify the game core
-
-- **Status:** Completed on 2026-08-26
-- **Specification:** [Change 0003](specs/changes/0003-game-core.md)
-- **Depends on:** Nothing
-- **Outcome:** Research plan in `plan.md` validated across two adversarial review rounds (`codex`, `gpt-5.6-sol`, `xhigh`) plus three sub-agent reviewers; PROD-020..032 and ENG-050..056 added; PROD-004, PROD-011, ENG-001, ENG-013 and ENG-031 amended; TITLE-005 and TITLE-006 superseded.
-
-
-### CYB-004 — Repair the GitHub Pages workflow
-
-- **Status:** Completed on 2026-08-24
-- **Specification:** [Change 0002](specs/changes/0002-github-pages-deployment.md)
-- **Depends on:** Nothing
-
-TDD checkpoints:
-
-- [x] Reproduce the invalid-YAML failure with a parser and retain the failed GitHub run as evidence.
-- [x] Correct only the malformed workflow structure required for GitHub to create its jobs.
-- [x] Validate the workflow with IntelliJ and a YAML parser.
-- [x] Run `./scripts/check.sh` to verify the artifact-producing build remains green.
-- [x] Commit the focused workflow repair.
-
-### CYB-003 — Verify the title-screen slice end to end
-
-- **Status:** Completed on 2026-08-24
-- **Specification:** [Change 0001](specs/changes/0001-title-screen.md)
-- **Depends on:** CYB-001, CYB-002
-
-TDD checkpoints:
-
-- [x] Add a failing production-bundle smoke test for each save-availability state.
-- [x] Make only the harness or integration changes required for those tests to pass.
-- [x] Run `./scripts/check.sh` and inspect changed Kotlin files with IntelliJ.
-
-### CYB-002 — Render the title screen in the browser
-
-- **Status:** Completed on 2026-08-24
-- **Specification:** [Change 0001](specs/changes/0001-title-screen.md)
-- **Depends on:** CYB-001
-
-TDD checkpoints:
-
-- [x] Add failing browser tests for the title, exact button names, conditional continue action, and keyboard-focusable controls.
-- [x] Render the smallest accessible DOM that passes the tests.
-- [x] Keep button activation side-effect free for this placeholder slice.
-- [x] Refactor browser integration under green tests.
-
-### CYB-001 — Model title-screen state
-
-- **Status:** Completed on 2026-08-24
-- **Specification:** [Change 0001](specs/changes/0001-title-screen.md)
-- **Depends on:** Nothing
-
-TDD checkpoints:
-
-- [x] Add a focused failing test proving that title-screen state omits `Continue game` when no save is available.
-- [x] Add a focused failing test proving that title-screen state includes `Continue game` when a save is available.
-- [x] Implement the smallest platform-independent state model that passes both tests.
-- [x] Refactor under green tests.
-
-### CYB-000 — Establish the project foundation
-
-- **Status:** Completed on 2026-08-24
-- **Authorization:** Initial project-scaffolding request
-- **Outcome:** Kotlin/Wasm build structure, reproducible Gradle tooling, specifications, task tracking, checks, CI, and contributor guidance.
+### DIFF-1 — Specify the difficulty changes and review the plan
+
+- [x] Amend the specs with plan decisions 1–8 (PROD-036, PROD-060..068, P-32..P-40).
+- [x] Review gate 1, round 1: 17 findings. Dispositions:
+  - MAJOR PROD-036/062 contradiction and no physical commit gate — **confirmed** (the gate has
+    always been solid from generation; commit only flipped a flag). Fixed: commit line removed
+    from the design; PROD-036 restated; `BossFight.committed` and `Camera.frameArena` scheduled
+    for deletion.
+  - MAJOR completability.md described repair/fallback/runtime OverReach and a 120/2000-seed
+    cohort the code lacks — **confirmed**. Fixed: rewritten to the actual runtime path (replay
+    through `MovementModel`, eight attempts, fail loudly); P-01 is 40 seeds; P-20/P-21 dropped.
+  - MAJOR pursuit invalidates spawn-only placement invariants — **confirmed**. Fixed: runtime
+    fairness rule (no enemy damage while the player is over a committed column; Flyers never enter
+    one), `Level.committedColumns`, P-34.
+  - MAJOR Shooter inert band 13.75–22 tiles — **confirmed**. Fixed: approach / hold / retreat zones.
+  - MAJOR boss pursuit vs arena camera clamp — **confirmed** (and `frameArena` was never called).
+    Fixed: no arena framing; Volley capped at 8 tiles.
+  - MAJOR PROD-063 not scheduled for bosses — **confirmed**. Fixed: boss attack poses and effects
+    in DIFF-4; attack table gains a "drawn as" column.
+  - MAJOR P-19 covers player physics only — **confirmed**. Fixed: P-19 narrowed honestly; P-40
+    whole-simulation digest added as DIFF-5.
+  - MODERATE bot playthrough undefined — **confirmed**. Fixed: policy, termination, death handling
+    and cohort statistics specified; assertion is by thirds of the run.
+  - MODERATE parallel split unsafe — **confirmed**. Fixed: only 7a runs in parallel.
+  - MODERATE red tests not named — **confirmed**. Fixed below.
+  - MODERATE engagement predicate imprecise — **confirmed**. Fixed: Euclidean, inclusive, hysteresis,
+    called an awareness radius.
+  - MODERATE ledge rule contradicts falling — **confirmed**. Fixed: rule scoped to voluntary steps;
+    gravity, knockback, stun and body size specified.
+  - MODERATE hazard placement order/geometry undefined — **confirmed**. Fixed: pipeline order,
+    Chebyshev ≥ 2, full footprint, `ArcMask` exclusion, confirming replay removes offenders.
+  - MODERATE README "current state" semantics — **confirmed**. Fixed.
+  - MODERATE psychic wind-up and applicability matrix claims false — **confirmed**. Fixed to what
+    `DamagePipeline` does.
+  - MINOR icon catalog lost — **confirmed**. Restored as `specs/iconography.md`.
+  - MINOR 7.6× stated as fact — **confirmed**. Caveated.
+- [x] Review gate 1, round 2: 14 findings. Dispositions:
+  - MAJOR the bot harness cannot finish late maps and its scope contradicted P-39 — **confirmed**.
+    Fixed: split into route pressure (all maps, gross incoming damage, death = full health) and
+    boss pressure (floor-covered maps, must win); targeting and termination stated; PROD-068 aligned.
+  - MAJOR P-40 digest far from whole-state — **confirmed**. Fixed: canonical encoding over every
+    future-affecting field listed by family, mutation test per family, scheduled after hazards.
+  - MAJOR boss dodges are metadata — **confirmed** (`LiveBoss.inRange` is radial by name). Fixed:
+    each attack gets a hit condition its dodge defeats; tested both ways in DIFF-4.
+  - MAJOR reachability catalog still fictional — **confirmed**. Fixed: catalog and literal jet
+    waits rewritten to the code; P-04 stated as one seed.
+  - MAJOR committed-span rule leaves no reaction window — **confirmed**. Fixed: occupancy by AABB,
+    `LANDING_GRACE = 0.25 s`, column definition aligned with `Populator`, boundary tests named.
+  - MODERATE boss slow contradiction — **confirmed**. Fixed: immune, in `combat.md`.
+  - MODERATE swing has no arc — **confirmed**. Fixed: 90° arc, behind-the-attacker test.
+  - MODERATE 7a ownership overlapped `BalanceTest`/`RouteSurvivalTest` — **confirmed**; 7a had
+    already finished without touching either. Plan scope corrected.
+  - MODERATE player effects lacked red tests; Kessler has no barrel — **confirmed**. Fixed:
+    PROD-066 asks for a firing cue (flash or activation pulse); `SceneTest` cases in DIFF-6b.
+  - MODERATE boss powerup floor T2 unimplemented — **confirmed**. Scheduled as DIFF-7.
+  - MODERATE P-13 cohort/margin false — **confirmed**. Fixed to 24 seeds and the 1.5× assertion.
+  - MODERATE P-15 "matrix" — **confirmed**. Restated; resolution test scheduled as DIFF-7.
+  - MODERATE confirming removal could stay dead — **confirmed**. Fault-injection and barrel-body
+    tests added to P-36.
+  - MINOR awareness boundary differs from auto-aim at equality — **confirmed**. Both strict `<`.
+- [ ] Review gate 1, round 3.
+
+### DIFF-2 — Awareness and movement — done
+
+`EnemyMovementTest` (12) red then green; `LiveEnemy.engaged`, `Level.committedColumns`, pursuit,
+approach/hold/retreat, walker gravity, the ledge rule, Flyer boundary, speed cap. The old
+"never leaves the patrol span" assertion is deleted. Entry kept until the gate-2 review reads it.
+
+### DIFF-3 — Attacks and animation — done
+
+`EnemyAttackTest` (7) red then green: no contact aura, wind-up deals nothing, damage once per
+cooldown, stun cancels, shot cadence and speed, the 90° swing arc (behind-the-attacker miss),
+occupancy by AABB and `LANDING_GRACE`. `ActorTest`/`SceneTest` red then green: `Action.WindUp`
+(arm back and raised, legs untouched), enemies posed from their own windows via
+`Scene.enemyMotion`, and the swoosh (three nested arcs, sparks, outer arc = reach) and muzzle flash
+(core, bloom, ±35° spikes) as shared functions drawn from the posed hand or barrel
+(`Scene.barrelTip`). Entry kept until the gate-2 review reads it.
+
+### DIFF-4 — Bosses
+
+- [x] Red then green: `BossTest` re-anchored (no commit line; `engage()`), `BossBehaviourTest` —
+      an unnoticed boss neither moves, attacks nor takes damage; an engaged boss fights before the
+      player enters the arena; follows the player out and stops at a ledge; Volley reach is 8 tiles;
+      **each attack's listed dodge avoids it and standing still does not**. `MapExitTest`,
+      `PresentationTest`, `ExitClearanceTest`, `FullMapRunTest` re-anchored on engagement.
+      Two fixture faults found on the way: `TestLevels` arenas used the standing row as
+      `floorRow` (the generator's is the solid row), and the "fights before the arena" case walked
+      the player clean past the boss before asserting.
+- [x] Red then green: `SceneTest` — a telegraphing boss poses `WindUp`; an active Slam/Sweep
+      poses `Swing` with a swoosh; an active Volley poses `Fire` with a flash and a fan; an
+      approaching boss selects `Run` and its gait advances. `Scene.bossMotion`, `LiveBoss.moving`,
+      `BossAttack.visual` (`AttackVisual`) so the renderer never matches on an attack's name.
+- [x] `BossFight.committed`, `playerMoved`, `COMMIT_OFFSET` and arena framing are gone; the
+      `LootFloor` comment that leaned on the commit line rewritten.
+- [x] `./scripts/check.sh` green on both targets (JVM, wasm browser tests, distribution).
+
+### DIFF-5 — Hazards
+
+- [ ] Red: `HazardDamageTest` — overlapping spikes, a barrel's body or its flame drains at the
+      rate; one tick does not kill; two hazards drain both; no displacement.
+- [ ] Red: `HazardPlacementTest` (jvmTest) — every footprint cell ≥ 2 from footholds and pickups,
+      outside `ArcMask` and arenas; confirming replay reports zero contact on every cohort map; a
+      fault-injected spike and barrel on the route are removed and nothing else is; count zero on
+      map 1 and rising in cohort mean; `WitnessReplayTest` — hazards cannot change where the tape goes.
+- [ ] Red: `SceneTest` — spikes and barrels draw on `Layer.Hazard`; `PickupIconTest` P-30 green.
+- [ ] Implement `TileKind.Spikes`, `Barrel`, `hazardDamage()`, `HazardPlacer`, drawing, the
+      `damagingHazardsPerHundredTiles` curve row.
+
+### DIFF-6 — Player weapons and crouch
+
+- [x] 6a (sub-agent): `WeaponRegistryTest` P-37 red ("Broken Bottle reaches only 25.6 px";
+      "Street melee mean 6.43 not above ranged mean 10.09") then green; registry rebalanced; P-14
+      green; one fixture in `MechanicsTest` re-anchored by the main agent.
+- [ ] 6b: red `ActorTest` — crouch limb lengths equal standing, knees forward of the hip–ankle
+      line, highest point within the crouch height; red `SceneTest` — a player swing's swoosh outer
+      radius equals the resolved reach (Ranger Optics included); a player shot's cue sits at the
+      held weapon; the Kessler draws an activation pulse; implement.
+
+### DIFF-7 — Contract gaps
+
+- [ ] Red: a main-boss powerup award is never below T2 over many seeds; implement a tier floor in
+      `DropTable.rollPowerup`.
+- [ ] Red: every weapon × powerup × stack count resolves finite and positive (P-15).
+
+### DIFF-8 — Determinism digest
+
+- [ ] Red: `SimulationDeterminismTest` (commonTest, under the browser timeout) — the digest after
+      N ticks matches a committed golden; a mutation in each state family changes it.
+- [ ] Implement `GameSimulation.digest()` per `specs/enemies.md` P-40.
+
+### DIFF-9 — Measure, tune, review
+
+- [ ] `ThreatScore` + cohort test; `RoutePressureTest` (thirds rising, all maps);
+      `BossPressureTest` (floor-covered maps won on every cohort seed).
+- [ ] Tune; `./scripts/check.sh` green; review gate 2; disposition every finding.
+
+## Deferred
+
+Not scheduled by the current plan; kept so they are not forgotten.
+
+- Human playtest of a full run with a written rubric (fairness, telegraph readability, camera).
+- Sound effects: kotlinx-browser exposes no Web Audio API, so this needs hand-written externals.
+- Recalibrate `WeaponScore` against `expectedDps` (see `specs/combat.md`, Known gaps).
+- A committed, reproducible frame-time benchmark (the 7.6× transform figure is unretained).
+- Draw projectiles as their weapon rather than as one dot.
+- Pass-two styling: grime, scanlines, screen shake, hit flashes, particles.

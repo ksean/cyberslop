@@ -59,6 +59,29 @@ class WeaponRegistryTest {
     }
 
     @Test
+    fun `every melee weapon reaches at least two metres, beyond any enemy swing`() {
+        Weapons.all.filter { it.cls == WeaponClass.Melee }.forEach {
+            assertTrue(it.rangePx >= 2.0 * METRE_PX, "${it.name} reaches only ${it.rangePx} px")
+            assertTrue(it.rangePx > ENEMY_SWING_PX, "${it.name} is inside an enemy swing")
+        }
+    }
+
+    @Test
+    fun `within each tier melee out-damages ranged on average, the bottle excluded`() {
+        Tier.entries.forEach { tier ->
+            val melee = Weapons.ofTier(tier)
+                .filter { it.cls == WeaponClass.Melee && it.id != WeaponId.BrokenBottle }
+                .map { it.baseDps }
+            val ranged = Weapons.ofTier(tier).filter { it.cls == WeaponClass.Ranged }.map { it.baseDps }
+            if (melee.isEmpty() || ranged.isEmpty()) return@forEach
+            assertTrue(
+                melee.average() > ranged.average(),
+                "$tier melee mean ${melee.average()} not above ranged mean ${ranged.average()}",
+            )
+        }
+    }
+
+    @Test
     fun `every weapon publishes a crit chance rather than relying on an implied default`() {
         Weapons.all.forEach {
             assertTrue(it.critChance >= 0.0 && it.critChance <= 1.0, "${it.name}: ${it.critChance}")
@@ -77,5 +100,9 @@ class WeaponRegistryTest {
 
     private companion object {
         const val TIER_GAP = 1.05
+        const val METRE_PX = 16.0
+
+        /** An enemy swing reaches 1.5 tiles. */
+        const val ENEMY_SWING_PX = 24.0
     }
 }

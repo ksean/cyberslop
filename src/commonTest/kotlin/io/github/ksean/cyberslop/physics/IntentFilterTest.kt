@@ -9,7 +9,7 @@ import kotlin.test.assertTrue
 /**
  * Assists must live here and never inside [MovementModel]. A witness is a tape of [InputFrame]s, so
  * if the model interpreted a frame differently depending on assist state, replaying a tape would not
- * mean one thing and the completability guarantee would not hold (plan.md §4.3).
+ * mean one thing and the completability guarantee would not hold (`specs/simulation.md`).
  */
 class IntentFilterTest {
     @Test

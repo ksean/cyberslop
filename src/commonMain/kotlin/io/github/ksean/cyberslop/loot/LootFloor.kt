@@ -26,10 +26,10 @@ import io.github.ksean.cyberslop.entity.Balance
  * stronger-but-useless one and made [damagePerSecondAt] **fall** between maps four and five. Ranking
  * by what the build actually does, against the weapon it is feeding, is what makes the floor hold.
  *
- * **Do not lean on the commit line for this.** This file said until now that an underpowered player
- * is never sealed in "because sealing is their own deliberate act". `BossFight.playerMoved` commits
- * on crossing a column and nothing else, so what is deliberate is *walking*, not fighting. That
- * sentence was never a safety property and is no longer offered as one.
+ * **Do not lean on the boss for this.** This file once said that an underpowered player is never
+ * sealed in "because sealing is their own deliberate act". There is no commit line any more: a boss
+ * engages on awareness and pursues (`specs/enemies.md`), so nothing about the encounter protects a
+ * weak loadout. That sentence was never a safety property and is no longer offered as one.
  *
  * It does **not** carry a player to the final map, and it is not meant to. The required damage rate
  * grows about 81x across a run while a worst-case loadout grows far less, so optional loot is

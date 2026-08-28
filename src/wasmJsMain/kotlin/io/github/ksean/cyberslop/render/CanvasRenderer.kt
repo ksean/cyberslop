@@ -20,7 +20,7 @@ import org.w3c.dom.HTMLCanvasElement
  * repeats. That division is what let the whole visual layer be built against assertions rather than
  * against screenshots.
  *
- * Two measurements from `plan.md` §8.1 shape it and both survive. Only the tiles inside the view are
+ * Two measurements from `specs/presentation.md` shape it and both survive. Only the tiles inside the view are
  * built, because a 720-tile map is 46,000 cells. And no per-sprite transform is ever set: it
  * measured at 7.61x a bare draw, which is the difference between 3% and 21% of the frame budget at
  * 600 entities. Limbs are stroked segments precisely so there is nothing to rotate.

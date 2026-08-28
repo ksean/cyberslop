@@ -43,7 +43,7 @@ class MapExitTest {
         val sim = GameSimulation(generated.level, RunState.begin(SEED), SEED)
         val level = sim.level
 
-        // Never commits, so the boss is never vulnerable and never dies.
+        // Walks away from the boss, so it is never noticed, never vulnerable and never dies.
         repeat(600) { sim.tick(InputFrame(left = true)) }
 
         assertFalse(sim.boss.fight.defeated)
@@ -59,7 +59,7 @@ class MapExitTest {
         val fixture = walkToTheBoss()
         val sim = fixture.sim
 
-        sim.boss.fight.playerMoved(sim.level.boss.leftTile + COMMIT_DEPTH)
+        sim.boss.fight.engage()
         sim.boss.fight.damage(sim.boss.spec.maxHealth)
         sim.tick(InputFrame())
 
@@ -121,6 +121,5 @@ class MapExitTest {
 
     private companion object {
         val SEED = 0xC0FFEEuL
-        const val COMMIT_DEPTH = 8
     }
 }

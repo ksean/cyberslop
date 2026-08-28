@@ -19,7 +19,7 @@ import kotlin.test.assertTrue
  *
  * The icon sheet answers "is it the thing" against a flat background. This answers the question the
  * sheet cannot: whether a drop is still readable lying on terrain, at the size the game draws it,
- * beside a player and a HUD — which is where `plan.md` §15.9 records six defects being found, and no
+ * beside a player and a HUD — which is where `specs/presentation.md` records six defects being found, and no
  * test finding any of them.
  */
 class WorldFrameSheetTest {

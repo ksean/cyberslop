@@ -49,7 +49,7 @@ class PickupIconTest {
     }
 
     /**
-     * Property 30, and asserted of the **pair**.
+     * P-30 (specs/presentation.md), and asserted of the **pair**.
      *
      * Neither line clears the margin alone and that is measured, not assumed: the red outline sits
      * 2.0 from `ArcologyVault.tileBody`, and a near-black halo sits 0.1 from `ReactorCore.sky`.
@@ -112,7 +112,7 @@ class PickupIconTest {
     }
 
     /**
-     * Property 31, counted at the sink.
+     * P-31 (specs/presentation.md), counted at the sink.
      *
      * **This test was written wrong twice, which is the third time a batch-bound property in this
      * project has been.** The first version compared one drop against forty-four and expected the

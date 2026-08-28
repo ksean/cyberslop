@@ -67,7 +67,7 @@ class PresentationTest {
         assertTrue(sim.boss.healthFraction == 1.0, "a fresh boss is not at full health")
         assertTrue(sim.boss.spec.name.isNotBlank(), "the boss has no name to show")
 
-        sim.boss.fight.playerMoved(sim.level.boss.leftTile + 8)
+        sim.boss.fight.engage()
         sim.boss.fight.damage(sim.boss.spec.maxHealth / 2.0)
 
         assertTrue(sim.boss.healthFraction < 1.0, "damage is not reflected in what is drawn")
@@ -85,7 +85,7 @@ class PresentationTest {
 
         assertTrue(blocked().isNotEmpty(), "nothing sealed the exit to begin with")
 
-        sim.boss.fight.playerMoved(level.boss.leftTile + 8)
+        sim.boss.fight.engage()
         sim.boss.fight.damage(sim.boss.spec.maxHealth)
         sim.tick(InputFrame())
 

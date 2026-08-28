@@ -26,8 +26,8 @@ enum class StrokeWeight(val fraction: Double) {
  *
  * Two kinds, and deliberately no rectangle. An axis-aligned rectangle is **not closed under
  * rotation** — turn it and it is a quadrilateral, which [Primitive.Rect] cannot express — so an icon
- * containing one could not be drawn in the player's hand without either a canvas transform (`plan.md`
- * §8.1 measured that at 7.61x a bare draw) or a second, unrelated piece of geometry for the held
+ * containing one could not be drawn in the player's hand without either a canvas transform (`specs/presentation.md`
+ * measured that at 7.61x a bare draw) or a second, unrelated piece of geometry for the held
  * case. A segment rotates to a segment and a dot is rotation-invariant, which is what lets one icon
  * serve the ground, the hand and the HUD (PROD-049).
  *

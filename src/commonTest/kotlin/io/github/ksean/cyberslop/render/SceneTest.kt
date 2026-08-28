@@ -10,6 +10,9 @@ import io.github.ksean.cyberslop.physics.Stance
 import io.github.ksean.cyberslop.run.RunState
 import io.github.ksean.cyberslop.sim.GameSimulation
 import io.github.ksean.cyberslop.sim.LiveEnemy
+import io.github.ksean.cyberslop.sim.MuzzleFlash
+import io.github.ksean.cyberslop.sim.SwingVisual
+import io.github.ksean.cyberslop.sim.TestLevels
 import kotlin.test.Test
 import kotlin.test.assertEquals
 import kotlin.test.assertTrue
@@ -17,12 +20,12 @@ import kotlin.test.assertTrue
 /**
  * ENG-061 over the real frame, not over the builder in isolation.
  *
- * `plan.md` §8.1 measured per-sprite `save`/`translate`/`rotate`/`restore` at 21% of the frame
+ * `specs/presentation.md` measured per-sprite `save`/`translate`/`rotate`/`restore` at 21% of the frame
  * budget at 600 entities, and the alternative it recommended was never measured. This is the
  * structural answer: the number of style assignments a frame costs cannot grow with what is in it.
  *
- * Stated honestly, and the same way §15.3 states it: a batch count bounds **state changes**, which
- * is the expensive part that table measured. It does not bound rasterization, and §8.1's full-frame
+ * Stated honestly, and the same way `specs/presentation.md` states it: a batch count bounds **state changes**, which
+ * is the expensive part that table measured. It does not bound rasterization, and the full-frame
  * measurement is still owed.
  */
 class SceneTest {
@@ -387,7 +390,7 @@ class SceneTest {
     }
 
     /**
-     * `plan.md` §15.5 promises a shooter that tracks the player and a turret whose head sweeps. A
+     * `specs/presentation.md` promises a shooter that tracks the player and a turret whose head sweeps. A
      * review round found neither implemented: both were drawn along their patrol facing, and a
      * turret never moves, so its barrel pointed one way forever while it shot the player behind it.
      */
@@ -615,7 +618,125 @@ class SceneTest {
     }
 
     /**
-     * PROD-041 and `plan.md` §15.4: the weapon attaches to the lead hand.
+     * PROD-063 and P-38: an enemy's strike is drawn as the same swoosh the player's is, from its
+     * posed hand, and the outer arc is the reach the hit test used.
+     */
+    @Test
+    fun `an enemy in a swing draws a swoosh whose outer radius is its reach`() {
+        val sim = simulation()
+        trimTo(sim, 0)
+        val brute = enemy(sim, EnemyArchetype.Brute)
+        val reach = 24.0
+        brute.lastSwing = SwingVisual(
+            origin = Vec2.Zero, direction = Vec2.Right, arcDegrees = 90.0, reachPx = reach,
+            secondsLeft = 0.16, totalSeconds = 0.16,
+        )
+        sim.enemies.add(brute)
+
+        val frame = Scene.compose(sim, camera(), backdrop(sim), hudOf(sim), 0.0, SceneBuilder())
+        val arcs = frame.batches.filter { it.layer == Layer.Effects && it.primitive == Primitive.Segment }
+        assertTrue(arcs.isNotEmpty(), "no swoosh was drawn for a striking enemy")
+
+        val hand = enemyHand(sim, brute)
+        var outer = 0.0
+        arcs.forEach { batch ->
+            for (n in 0 until batch.size) {
+                val i = n * Primitive.Segment.stride
+                outer = maxOf(outer, (Vec2(batch[i], batch[i + 1]) - hand).length)
+                outer = maxOf(outer, (Vec2(batch[i + 2], batch[i + 3]) - hand).length)
+            }
+        }
+        assertEquals(reach * Scene.ZOOM, outer, 1e-6, "the swoosh's outer arc is not the swing's reach")
+    }
+
+    /** PROD-063 and P-38: a shot's flash sits at the barrel the figure is posed holding. */
+    @Test
+    fun `an enemy shot draws a flash at the posed barrel`() {
+        val sim = simulation()
+        trimTo(sim, 0)
+        val shooter = enemy(sim, EnemyArchetype.Shooter)
+        shooter.lastShot = MuzzleFlash(direction = Vec2.Right, secondsLeft = 0.1, totalSeconds = 0.1)
+        sim.enemies.add(shooter)
+
+        val frame = Scene.compose(sim, camera(), backdrop(sim), hudOf(sim), 0.0, SceneBuilder())
+        val flash = frame.batches.firstOrNull { it.layer == Layer.Effects && it.primitive == Primitive.Dot }
+        assertTrue(flash != null && flash.size >= 1, "no muzzle flash was drawn for a firing enemy")
+
+        val pose = Actor.pose(Scene.enemyMotion(sim, shooter))
+        val barrel = enemyFeet(sim, shooter) + Scene.barrelTip(pose) * Scene.ZOOM
+        assertEquals(barrel.x, flash!![0], 1e-6, "the flash is not at the barrel")
+        assertEquals(barrel.y, flash[1], 1e-6, "the flash is not at the barrel")
+    }
+
+    /**
+     * PROD-063 and P-35: a boss attack's telegraph is its `WindUp`; its active window is a `Swing`
+     * with a swoosh (Slam, Sweep, Rush) or a `Fire` with a muzzle flash (Volley).
+     */
+    @Test
+    fun `a telegraphing boss poses its wind-up and an active attack its swing or shot`() {
+        val sim = TestLevels.simulation()
+        val boss = sim.boss
+        boss.fight.engage()
+        // Phase two, so the Volley is in the cycle.
+        boss.fight.damage(boss.spec.maxHealth * 0.5)
+
+        val seen = mutableSetOf<String>()
+        var ticks = 0
+        while (seen.size < 3 && ticks < 3000) {
+            sim.tick(InputFrame())
+            ticks++
+            val attack = boss.currentAttack ?: continue
+            val motion = Scene.bossMotion(sim, boss)
+            if (boss.telegraphing) {
+                assertEquals(Action.WindUp, Actor.actionOf(motion), "${attack.name} telegraphs without a wind-up pose")
+                continue
+            }
+            if (!boss.striking || attack.name in seen) continue
+            seen.add(attack.name)
+            val frame = Scene.compose(sim, camera(), backdrop(sim), hudOf(sim), 0.0, SceneBuilder())
+            val effects = frame.batches.filter { it.layer == Layer.Effects }
+            if (attack.name == "Volley") {
+                assertEquals(Action.Fire, Actor.actionOf(motion), "an active Volley is not a shot")
+                assertTrue(effects.any { it.primitive == Primitive.Dot }, "an active Volley draws no flash")
+            } else {
+                assertEquals(Action.Swing, Actor.actionOf(motion), "an active ${attack.name} is not a swing")
+                assertTrue(effects.any { it.primitive == Primitive.Segment }, "an active ${attack.name} draws no swoosh")
+            }
+        }
+        assertTrue(seen.containsAll(listOf("Slam", "Sweep", "Volley")), "only saw $seen strike in $ticks ticks")
+    }
+
+    @Test
+    fun `an approaching boss runs its gait`() {
+        val sim = TestLevels.simulation()
+        val boss = sim.boss
+        boss.fight.engage()
+
+        var running = false
+        var advanced = false
+        var before = Scene.bossMotion(sim, boss).stridePx
+        repeat(40) {
+            sim.tick(InputFrame())
+            val motion = Scene.bossMotion(sim, boss)
+            if (boss.currentAttack == null) {
+                running = running || Actor.clipOf(motion) == Clip.Run
+                advanced = advanced || motion.stridePx > before
+            }
+            before = motion.stridePx
+        }
+        assertTrue(running, "a boss walking toward the player never selects its run clip")
+        assertTrue(advanced, "a boss walking toward the player never advances its gait")
+    }
+
+    /** Where an enemy's posed lead hand lands on screen, with the camera at the origin. */
+    private fun enemyHand(sim: GameSimulation, enemy: LiveEnemy): Vec2 =
+        enemyFeet(sim, enemy) + Actor.pose(Scene.enemyMotion(sim, enemy)).leadHand * Scene.ZOOM
+
+    private fun enemyFeet(sim: GameSimulation, enemy: LiveEnemy): Vec2 =
+        Vec2(enemy.position.x + 7.0, enemy.position.y + 16.0) * Scene.ZOOM
+
+    /**
+     * PROD-041 and `specs/presentation.md`: the weapon attaches to the lead hand.
      *
      * Round eleven found it drawn for enemies and never for the player — the geometry was gated on
      * an enemy archetype being `armed`, and the player has no archetype, so the one figure that is
@@ -735,7 +856,7 @@ class SceneTest {
          * distinct colours, of which only a fraction ever co-occur. Generous, and still a constant
          * that no number of entities can move.
          *
-         * Raised from 72 when item icons arrived (change 0006). **Measured** on a deliberately
+         * Raised from 72 when item icons arrived (`specs/presentation.md`, Item icons). **Measured** on a deliberately
          * worst-case frame — 600 enemies, all forty-four icons on the ground at once, a full
          * five-slot build in the display and an Ascended weapon in hand — at **90**: 23 of them on
          * the two item layers, where a rectangle used to cost 3. The ceiling is what it is because

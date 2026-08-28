@@ -62,15 +62,6 @@ data class Camera(
             )
         }
 
-        /** Frames an arena so a boss fight is never partly off-screen. */
-        fun framing(previous: Camera, leftPx: Double, rightPx: Double, floorPx: Double, level: Level): Camera {
-            val centre = (leftPx + rightPx) / 2.0 - previous.viewWidth / 2.0
-            return previous.copy(
-                x = clamp(centre, level.tiles.widthPx, previous.viewWidth),
-                y = clamp(floorPx - previous.viewHeight * 0.7, level.tiles.heightPx, previous.viewHeight),
-            )
-        }
-
         /** Never shows anything outside the generated map. A shorter world pins the view at zero. */
         private fun clamp(value: Double, worldExtent: Double, viewExtent: Double): Double =
             if (worldExtent <= viewExtent) 0.0 else min(max(value, 0.0), worldExtent - viewExtent)

@@ -74,12 +74,12 @@ data class HudModel(
          * **Which** boss the bar belongs to is decided here rather than in the browser layer: a
          * review round found that choice, and the map count, living in `CanvasRenderer`, where
          * ENG-060 forbids it and no test without a browser could reach it. The rule is the
-         * committed fight, main boss first — a player sealed in with the main boss is not being
-         * told about the mini-boss they walked past.
+         * engaged fight, main boss first — a player fighting the main boss is not being told
+         * about the mini-boss they walked past.
          */
         fun of(sim: GameSimulation): HudModel {
             val live = listOf(sim.boss, sim.miniboss)
-                .firstOrNull { it.fight.committed && !it.fight.defeated }
+                .firstOrNull { it.fight.engaged && !it.fight.defeated }
             return of(
                 run = sim.run,
                 theme = sim.level.theme,

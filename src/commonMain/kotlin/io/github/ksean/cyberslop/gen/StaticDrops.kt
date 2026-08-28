@@ -8,13 +8,13 @@ import io.github.ksean.cyberslop.world.PickupSite
 /**
  * Places the pickups a map carries before the player fires a shot (PROD-047).
  *
- * `plan.md` §6.7 planned these as "cache / dead terminal" awards on maps 3–10 and **none of it was
+ * The old design document planned these as "cache / dead terminal" awards on maps 3–10 and **none of it was
  * ever built** — the only pre-placed item in the game was map 1's starter cache.
  *
  * Two rules decide where one may stand. It must be a cell the **witness actually stood on** —
  * proof, not a proxy: the map's own verified tape put the player's feet there, through the game's
  * own movement model, so no search of its own is needed and none runs at generation time where the
- * budget is measured (`plan.md` §9.2 property 22).
+ * budget is measured (P-22, `specs/generation.md`).
  *
  * The first version used the arc mask instead, and a review round showed that to be unsound:
  * [SpineWalker.rollback] deliberately does not rewind the mask, so it retains cells from abandoned

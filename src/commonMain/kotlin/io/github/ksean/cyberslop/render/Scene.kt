@@ -2,10 +2,13 @@ package io.github.ksean.cyberslop.render
 
 import io.github.ksean.cyberslop.core.TrigTable
 import io.github.ksean.cyberslop.core.Vec2
+import io.github.ksean.cyberslop.entity.AttackVisual
 import io.github.ksean.cyberslop.physics.Physics
 import io.github.ksean.cyberslop.sim.GameSimulation
 import io.github.ksean.cyberslop.sim.LiveBoss
 import io.github.ksean.cyberslop.sim.LiveEnemy
+import io.github.ksean.cyberslop.sim.MuzzleFlash
+import io.github.ksean.cyberslop.sim.SwingVisual
 import io.github.ksean.cyberslop.world.Level
 import io.github.ksean.cyberslop.world.TILE_SIZE
 import io.github.ksean.cyberslop.world.TileKind
@@ -21,7 +24,7 @@ import io.github.ksean.cyberslop.world.TileMap
  * The shape of the output is what ENG-061 rests on. Nothing is drawn entity by entity: a caller
  * takes a batch handle for a style once and pushes into it, so a frame costs one style assignment
  * per batch however many things are in it. Limbs are stroked segments rather than rotated
- * rectangles, so the per-sprite transform `plan.md` §8.1 measured at 7.61x a bare draw does not
+ * rectangles, so the per-sprite transform `specs/presentation.md` measured at 7.61x a bare draw does not
  * exist to be slow.
  */
 object Scene {
@@ -364,11 +367,10 @@ object Scene {
             if (x < -OFF_SCREEN || x > camera.viewWidth * ZOOM + OFF_SCREEN) return@forEach
 
             val look = EnemyLooks.of(enemy.archetype, sim.level.mapIndex)
-            val aim = engagement(enemy, look, player)
             when (look.form) {
-                EnemyForm.Biped -> biped(builder, palette, look, enemy, aim, x, ground)
+                EnemyForm.Biped -> biped(builder, palette, look, sim, enemy, x, ground)
                 EnemyForm.Hover -> hover(builder, palette, look, enemy, x, ground, timeSeconds)
-                EnemyForm.Fixed -> fixed(builder, palette, look, enemy, aim, x, ground)
+                EnemyForm.Fixed -> fixed(builder, palette, look, enemy, engagement(enemy, look, player), x, ground)
             }
         }
     }
@@ -384,7 +386,7 @@ object Scene {
      *
      * Purely presentational: it reads the simulation and writes nothing back (ENG-062). An armed
      * enemy that stared down its patrol line while shooting the player behind it was a promise
-     * `plan.md` §15.5 made and the first implementation did not keep. The range is the
+     * `specs/presentation.md` made and the first implementation did not keep. The range is the
      * simulation's own, so what a figure looks like it is doing is what it is doing.
      */
     private fun engagement(enemy: LiveEnemy, look: EnemyLook, player: Vec2): Vec2 {
@@ -396,31 +398,54 @@ object Scene {
         return offset.normalisedOr(patrol)
     }
 
+    /**
+     * What an enemy's rig needs, read off the simulation and nothing else (ENG-062): its own
+     * wind-up, swing and shot windows, so a Brute winding up reads as a Brute winding up
+     * (PROD-063).
+     */
+    fun enemyMotion(sim: GameSimulation, enemy: LiveEnemy): Motion {
+        val look = EnemyLooks.of(enemy.archetype, sim.level.mapIndex)
+        val aim = engagement(enemy, look, centreOfPlayer(sim))
+        // A shooter turns to face what it is shooting at; everything else walks its patrol. The
+        // full direction goes to the pose, not just its sign — a shooter firing upward has to look
+        // like it, since its projectile leaves on that diagonal.
+        return Motion(
+            speedX = enemy.facing * look.strideRate * REFERENCE_SPEED,
+            onGround = true,
+            facing = if (aim.x < 0.0) -1 else 1,
+            stridePx = enemy.stridePx * look.strideRate,
+            secondsSinceShot = enemy.lastShot?.let { it.totalSeconds - it.secondsLeft } ?: Double.MAX_VALUE,
+            secondsSinceSwing = enemy.lastSwing?.let { it.totalSeconds - it.secondsLeft } ?: Double.MAX_VALUE,
+            windingUp = enemy.windingUp,
+            shotSeconds = enemy.lastShot?.totalSeconds ?: Actor.FIRE_SECONDS,
+            swingSeconds = enemy.lastSwing?.totalSeconds ?: Actor.SWING_SECONDS,
+            swingDirection = enemy.lastSwing?.direction ?: enemy.attackDirection,
+            weaponAim = if (look.armed) aim else null,
+            scale = look.height / Physics.Default.standingHeight,
+        )
+    }
+
     private fun biped(
         builder: SceneBuilder,
         palette: Palette,
         look: EnemyLook,
+        sim: GameSimulation,
         enemy: LiveEnemy,
-        aim: Vec2,
         x: Double,
         ground: Double,
     ) {
-        // A shooter turns to face what it is shooting at; everything else walks its patrol. The
-        // full direction goes to the pose, not just its sign — a shooter firing upward has to look
-        // like it, since its projectile leaves on that diagonal.
-        val facing = if (aim.x < 0.0) -1 else 1
-        val pose = Actor.pose(
-            Motion(
-                speedX = enemy.facing * look.strideRate * REFERENCE_SPEED,
-                onGround = true,
-                facing = facing,
-                stridePx = enemy.stridePx * look.strideRate,
-                weaponAim = if (look.armed) aim else null,
-                scale = look.height / Physics.Default.standingHeight,
-            ),
-        )
+        val pose = Actor.pose(enemyMotion(sim, enemy))
         figure(builder, palette, pose, x, ground, look, Palettes.ENEMY_BODY)
+
+        val glow = palette.glow[look.glowTone]
+        val feet = Vec2(x, ground)
+        enemy.lastSwing?.let { swoosh(builder, glow, feet + pose.leadHand * ZOOM, it) }
+        enemy.lastShot?.let { muzzleFlash(builder, glow, glow, feet + barrelTip(pose) * ZOOM, it) }
     }
+
+    /** Where the plain barrel a figure holds ends, in actor-local pixels. */
+    fun barrelTip(pose: Pose, weaponReach: Double = BARREL_REACH): Vec2 =
+        pose.leadHand + pose.weaponAim * (pose.height * weaponReach)
 
     /** A legless pod. Nothing else in the game leaves the ground, so nothing else reads like it. */
     private fun hover(
@@ -459,6 +484,10 @@ object Scene {
             x + size * PLUME_SPREAD, centreY + size * POD_HEIGHT,
             x + size * PLUME_SPREAD * 1.6 + bank, centreY + size * (POD_HEIGHT + PLUME_LENGTH),
         )
+        // A pod has no hand, so its strike comes from its body.
+        enemy.lastSwing?.let {
+            swoosh(builder, palette.glow[look.glowTone], Vec2(x, centreY + size * POD_HEIGHT / 2.0), it)
+        }
     }
 
     /** A fixed base with a sweeping head. Nothing else in the game is bolted down. */
@@ -496,6 +525,10 @@ object Scene {
         plating(builder, look, x, head - size * TURRET_HEAD / 2.0, size)
         builder.batch(Layer.ActorGlow, palette.glow[look.glowTone], Primitive.Dot)
             .dot(x + aim.x * size * EYE_OFFSET, head + aim.y * size * EYE_OFFSET, size * EYE)
+        enemy.lastShot?.let {
+            val glow = palette.glow[look.glowTone]
+            muzzleFlash(builder, glow, glow, Vec2(x + aim.x * size * BARREL, head + aim.y * size * BARREL), it)
+        }
     }
 
     /**
@@ -588,13 +621,9 @@ object Scene {
             val handY = originY + pose.leadHand.y * ZOOM
             val reach = pose.height * weaponReach * ZOOM
             if (heldIcon == null) {
+                val tip = barrelTip(pose, weaponReach)
                 builder.batch(Layer.ActorFront, trimStyle, Primitive.Segment, armWidth)
-                    .segment(
-                        handX,
-                        handY,
-                        handX + pose.weaponAim.x * reach,
-                        handY + pose.weaponAim.y * reach,
-                    )
+                    .segment(handX, handY, originX + tip.x * ZOOM, originY + tip.y * ZOOM)
             } else {
                 // The icon's own `+x` runs along the aim and its box is `[-1, 1]`, so an origin half
                 // a reach along the aim at half a reach of scale puts the grip in the hand and the
@@ -673,14 +702,7 @@ object Scene {
             val x = (live.position.x - camera.x) * ZOOM
             val feet = (live.position.y - camera.y) * ZOOM
 
-            val pose = Actor.pose(
-                Motion(
-                    speedX = 0.0,
-                    onGround = true,
-                    facing = if (sim.player.x < live.position.x) -1 else 1,
-                    scale = look.height / Physics.Default.standingHeight,
-                ),
-            )
+            val pose = Actor.pose(bossMotion(sim, live))
             val body = when {
                 live.telegraphing -> palette.hazardGlow
                 !live.fight.vulnerable -> Palettes.ENEMY_DARK
@@ -689,6 +711,66 @@ object Scene {
             figure(builder, palette, pose, x, feet, look, body)
             crown(builder, palette, look, x, feet - look.height * ZOOM)
             healthBar(builder, palette, x, feet - look.height * ZOOM - BAR_GAP, look.height * ZOOM, live)
+            bossStrike(builder, palette, live, pose, Vec2(x, feet))
+        }
+    }
+
+    /**
+     * What a boss's rig needs (ENG-062): its telegraph is a wind-up, its active window a swing or
+     * a shot over exactly that window, and its walk toward the player a gait (PROD-063).
+     */
+    fun bossMotion(sim: GameSimulation, live: LiveBoss): Motion {
+        val look = EnemyLooks.boss(sim.level.mapIndex, live === sim.boss)
+        val attack = live.currentAttack
+        val active = if (attack != null && live.striking) live.attackElapsed - attack.telegraphSeconds else null
+        val forward = Vec2(live.facing.toDouble(), 0.0)
+        return Motion(
+            speedX = if (live.moving) live.facing * LiveBoss.SPEED else 0.0,
+            onGround = true,
+            facing = live.facing,
+            stridePx = live.stridePx,
+            secondsSinceShot = if (attack != null && attack.visual.ranged) active ?: Double.MAX_VALUE else Double.MAX_VALUE,
+            secondsSinceSwing = if (attack != null && !attack.visual.ranged) active ?: Double.MAX_VALUE else Double.MAX_VALUE,
+            windingUp = live.telegraphing,
+            shotSeconds = attack?.activeSeconds ?: Actor.FIRE_SECONDS,
+            swingSeconds = attack?.activeSeconds ?: Actor.SWING_SECONDS,
+            swingDirection = attack?.let { strikeDirection(it.visual, forward) } ?: forward,
+            weaponAim = forward,
+            scale = look.height / Physics.Default.standingHeight,
+        )
+    }
+
+    /** A slam comes down at the ground ahead; everything else goes level. */
+    private fun strikeDirection(visual: AttackVisual, forward: Vec2): Vec2 = when (visual) {
+        AttackVisual.GroundSlam -> Vec2(forward.x * SLAM_FORWARD, SLAM_DOWN)
+        AttackVisual.LevelSweep, AttackVisual.MuzzleFan, AttackVisual.Lunge -> forward
+    }
+
+    /** The effect of an attack's active window, from the posed hand, over exactly that window. */
+    private fun bossStrike(builder: SceneBuilder, palette: Palette, live: LiveBoss, pose: Pose, feet: Vec2) {
+        val attack = live.currentAttack ?: return
+        if (!live.striking) return
+        val secondsLeft = (attack.totalSeconds - live.attackElapsed).coerceAtLeast(0.0)
+        val style = palette.hazardGlow
+        val direction = strikeDirection(attack.visual, Vec2(live.facing.toDouble(), 0.0))
+        if (attack.visual.ranged) {
+            val flash = MuzzleFlash(direction, secondsLeft, attack.activeSeconds)
+            val barrel = feet + barrelTip(pose) * ZOOM
+            muzzleFlash(builder, style, style, barrel, flash)
+            // The fan: a spread of dots leaving the barrel, further along the later in the window.
+            val travelled = (1.0 - flash.strength) * attack.reachPx * ZOOM
+            val dots = builder.batch(Layer.Effects, palette.accent, Primitive.Dot)
+            for (n in 0 until FAN_DOTS) {
+                val spread = -FAN_DEGREES / 2.0 + FAN_DEGREES * n / (FAN_DOTS - 1)
+                val along = TrigTable.rotate(direction, spread)
+                dots.dot(barrel.x + along.x * travelled, barrel.y + along.y * travelled, FAN_DOT_PX)
+            }
+        } else {
+            val swing = SwingVisual(
+                origin = Vec2.Zero, direction = direction, arcDegrees = BOSS_SWING_ARC,
+                reachPx = attack.reachPx, secondsLeft = secondsLeft, totalSeconds = attack.activeSeconds,
+            )
+            swoosh(builder, style, feet + pose.leadHand * ZOOM, swing)
         }
     }
 
@@ -746,7 +828,6 @@ object Scene {
         }
     }
 
-    /** The swing arc (PROD-033), as bars along the arc — no path API and no transform. */
     private fun swing(
         builder: SceneBuilder,
         palette: Palette,
@@ -755,26 +836,71 @@ object Scene {
         muzzle: Vec2,
     ) {
         val swing = sim.lastSwing ?: return
-        val batch = builder.batch(
-            Layer.Effects, palette.hazardGlow, Primitive.Segment, strokeWidth(SWING_WIDTH),
-        )
-        val half = swing.arcDegrees / 2.0
-        val reach = swing.reachPx * swing.strength
+        // Drawn from where the hand is now rather than where it was on the tick the swing
+        // resolved: over the 0.16 s it lingers a running player travels nearly 40 px, and an
+        // arc left behind in world space visibly detaches from the figure that made it. The
+        // direction and reach are the ones that actually resolved damage.
+        swoosh(builder, palette.hazardGlow, Vec2((muzzle.x - camera.x) * ZOOM, (muzzle.y - camera.y) * ZOOM), swing)
+    }
 
-        var previous: Vec2? = null
-        for (step in 0..SWING_SEGMENTS) {
-            val offset = -half + swing.arcDegrees * step / SWING_SEGMENTS
-            val direction = TrigTable.rotate(swing.direction, offset)
-            // Drawn from where the hand is now rather than where it was on the tick the swing
-            // resolved: over the 0.16 s it lingers a running player travels nearly 40 px, and an
-            // arc left behind in world space visibly detaches from the figure that made it. The
-            // direction and reach are the ones that actually resolved damage.
-            val point = Vec2(
-                (muzzle.x + direction.x * reach - camera.x) * ZOOM,
-                (muzzle.y + direction.y * reach - camera.y) * ZOOM,
+    /**
+     * A melee swing as a **swoosh** (PROD-033, PROD-066): three nested arcs along the swing at
+     * decreasing radius and width, with spark dots at the leading edge, drawn as bars — no path
+     * API and no transform. The outer arc is the reach the hit test used; the arcs fade by
+     * retreating from the trailing edge over the swing's window. Shared by the player and every
+     * enemy, in whatever colour the caller draws in.
+     */
+    private fun swoosh(builder: SceneBuilder, style: String, origin: Vec2, swing: SwingVisual) {
+        val half = swing.arcDegrees / 2.0
+        val span = swing.arcDegrees * swing.strength
+        val leading = TrigTable.rotate(swing.direction, half)
+
+        SWOOSH_RINGS.forEachIndexed { ring, fraction ->
+            val batch = builder.batch(
+                Layer.Effects, style, Primitive.Segment, strokeWidth(SWING_WIDTH * SWOOSH_WIDTHS[ring]),
             )
-            previous?.let { batch.segment(it.x, it.y, point.x, point.y) }
-            previous = point
+            val reach = swing.reachPx * fraction * ZOOM
+            var previous: Vec2? = null
+            for (step in 0..SWING_SEGMENTS) {
+                val offset = half - span * step / SWING_SEGMENTS
+                val direction = TrigTable.rotate(swing.direction, offset)
+                val point = Vec2(origin.x + direction.x * reach, origin.y + direction.y * reach)
+                previous?.let { batch.segment(it.x, it.y, point.x, point.y) }
+                previous = point
+            }
+        }
+
+        val sparks = builder.batch(Layer.Effects, style, Primitive.Dot)
+        val tip = swing.reachPx * ZOOM
+        sparks.dot(origin.x + leading.x * tip, origin.y + leading.y * tip, SPARK_PX * swing.strength)
+        sparks.dot(
+            origin.x + leading.x * tip * SWOOSH_RINGS[1], origin.y + leading.y * tip * SWOOSH_RINGS[1],
+            SPARK_PX * 0.6 * swing.strength,
+        )
+    }
+
+    /**
+     * A shot leaving the barrel (PROD-066): a bright core dot, a longer bloom segment along the
+     * aim and two short spikes at ±35°, fading over the flash window. Shared by the player and
+     * every enemy.
+     */
+    private fun muzzleFlash(
+        builder: SceneBuilder,
+        coreStyle: String,
+        bloomStyle: String,
+        at: Vec2,
+        flash: MuzzleFlash,
+    ) {
+        builder.batch(Layer.Effects, coreStyle, Primitive.Dot).dot(at.x, at.y, FLASH_PX * flash.strength)
+        val bloom = builder.batch(Layer.Effects, bloomStyle, Primitive.Segment, strokeWidth(FLASH_WIDTH))
+        val reach = FLASH_REACH * flash.strength
+        bloom.segment(at.x, at.y, at.x + flash.direction.x * reach, at.y + flash.direction.y * reach)
+        for (side in listOf(-FLASH_SPIKE_DEGREES, FLASH_SPIKE_DEGREES)) {
+            val spike = TrigTable.rotate(flash.direction, side)
+            bloom.segment(
+                at.x, at.y,
+                at.x + spike.x * reach * FLASH_SPIKE, at.y + spike.y * reach * FLASH_SPIKE,
+            )
         }
     }
 
@@ -842,7 +968,7 @@ object Scene {
             limbStyle = PLAYER_LIMB,
             trimStyle = palette.accent,
             armStyle = PLAYER_ARM,
-            // The player carries a weapon at all times (PROD-023), and `plan.md` §15.4 says it
+            // The player carries a weapon at all times (PROD-023), and `specs/presentation.md` says it
             // attaches to the lead hand. It did not: the geometry was gated on an enemy archetype
             // being armed, and the player has no archetype, so the one figure that always holds
             // something was the only one drawn empty-handed.
@@ -859,15 +985,7 @@ object Scene {
 
         sim.lastShot?.let { flash ->
             val hand = Vec2(x + pose.leadHand.x * ZOOM, feet + pose.leadHand.y * ZOOM)
-            builder.batch(Layer.Effects, palette.glow[palette.glow.size - 1], Primitive.Dot)
-                .dot(hand.x, hand.y, FLASH_PX * flash.strength)
-            builder.batch(
-                Layer.Effects, palette.hazardGlow, Primitive.Segment, strokeWidth(FLASH_WIDTH),
-            ).segment(
-                hand.x, hand.y,
-                hand.x + flash.direction.x * FLASH_REACH * flash.strength,
-                hand.y + flash.direction.y * FLASH_REACH * flash.strength,
-            )
+            muzzleFlash(builder, palette.glow[palette.glow.size - 1], palette.hazardGlow, hand, flash)
         }
     }
 
@@ -1133,6 +1251,17 @@ object Scene {
     private const val FLASH_PX = 7.0
     private const val FLASH_REACH = 22.0
     private const val FLASH_WIDTH = 3.0
+    private const val FLASH_SPIKE_DEGREES = 35.0
+    private const val FAN_DOTS = 5
+    private const val FAN_DEGREES = 40.0
+    private const val FAN_DOT_PX = 3.0
+    private const val BOSS_SWING_ARC = 90.0
+    private const val SLAM_FORWARD = 0.5
+    private const val SLAM_DOWN = 0.87
+    private const val FLASH_SPIKE = 0.45
+    private const val SPARK_PX = 2.5
+    private val SWOOSH_RINGS = doubleArrayOf(1.0, 0.82, 0.64)
+    private val SWOOSH_WIDTHS = doubleArrayOf(1.0, 0.7, 0.45)
 
     /**
      * The player's own colours, fixed rather than themed.

@@ -36,7 +36,7 @@ class FullMapRunTest {
             ticks++
         }
 
-        assertTrue(sim.boss.fight.committed, "never engaged the boss")
+        assertTrue(sim.boss.fight.engaged, "never engaged the boss")
         assertTrue(
             sim.boss.fight.defeated,
             "boss survived $ticks ticks at ${(sim.boss.healthFraction * 100).toInt()}% health",

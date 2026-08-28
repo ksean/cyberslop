@@ -92,6 +92,23 @@ class Level(
 ) {
     val widthTiles: Int get() = tiles.width
 
+    /**
+     * Columns the player crosses committed: airborne over no floor, or over a lethal tile
+     * (`specs/completability.md`). Generation keeps spawns away from them; the simulation keeps
+     * Flyers out of them and lets no enemy damage land while the player is over one.
+     */
+    val committedColumns: BooleanArray by lazy {
+        BooleanArray(widthTiles) { column -> isCommittedNow(column) }
+    }
+
+    fun isCommitted(column: Int): Boolean = column in 0 until widthTiles && committedColumns[column]
+
+    private fun isCommittedNow(column: Int): Boolean {
+        for (row in 0 until tiles.height) if (tiles.isLethal(column, row)) return true
+        val corridorRow = (0 until tiles.height).firstOrNull { arcMask[column, it] } ?: return false
+        return (corridorRow until tiles.height).none { tiles.blocksMovement(column, it) }
+    }
+
     /** The player standing at rest on the spawn plateau. */
     fun spawnState(physics: Physics = Physics.Default): PlayerState =
         PlayerState(

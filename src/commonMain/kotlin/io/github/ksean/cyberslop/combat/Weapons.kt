@@ -6,6 +6,9 @@ package io.github.ksean.cyberslop.combat
  * Tiers are rarity bands and are held apart in power by [WeaponRegistryTest]: a tier's weakest
  * weapon must out-damage the tier below's strongest by a margin. That is what lets rarity mean
  * something without tier ever deciding a swap.
+ *
+ * Melee is the high-risk class: every melee weapon reaches at least two metres, beyond any enemy
+ * swing, and within a tier the melee mean DPS (bottle excluded) exceeds the ranged mean.
  */
 object Weapons {
     private const val METRE = 16.0
@@ -15,30 +18,30 @@ object Weapons {
         name = "Broken Bottle",
         cls = WeaponClass.Melee,
         tier = Tier.Street,
-        damage = 6.0, cooldown = 2.0, rangePx = 1.6 * METRE, projectileSpeed = 0.0,
+        damage = 8.0, cooldown = 2.0, rangePx = 2.2 * METRE, projectileSpeed = 0.0,
         pattern = FirePattern.ArcSwing(arcDegrees = 70.0, lingerSeconds = 0.1),
     )
 
     val all: List<WeaponSpec> = listOf(
         startingWeapon,
-        melee(WeaponId.RustlineMachete, "Rustline Machete", Tier.Street, 9.0, 1.4, 1.7, 80.0,
+        melee(WeaponId.RustlineMachete, "Rustline Machete", Tier.Street, 17.0, 1.4, 2.3, 80.0,
             onHit = listOf(HitEffect.Bleed(perSecond = 2.0, seconds = 3.0))),
-        melee(WeaponId.CorpoRiotBaton, "Corpo Riot Baton", Tier.Scav, 14.0, 1.1, 1.6, 90.0,
+        melee(WeaponId.CorpoRiotBaton, "Corpo Riot Baton", Tier.Scav, 17.0, 1.1, 2.2, 90.0,
             knockback = 320.0, onHit = listOf(HitEffect.Stun(chance = 1.0, seconds = 0.3))),
-        melee(WeaponId.ChromeFang, "Chrome Fang", Tier.Scav, 11.0, 1.2, 1.5, 35.0, projectiles = 2),
-        melee(WeaponId.StaticLash, "Static Lash", Tier.Chromed, 20.0, 0.9, 3.2, 60.0,
+        melee(WeaponId.ChromeFang, "Chrome Fang", Tier.Scav, 13.0, 1.2, 2.0, 35.0, projectiles = 2),
+        melee(WeaponId.StaticLash, "Static Lash", Tier.Chromed, 24.0, 0.9, 4.0, 60.0,
             onHit = listOf(HitEffect.Shock(extraTargets = 1))),
-        melee(WeaponId.GutterjackCleaver, "Gutterjack Cleaver", Tier.Chromed, 34.0, 1.3, 1.8, 75.0,
+        melee(WeaponId.GutterjackCleaver, "Gutterjack Cleaver", Tier.Chromed, 42.0, 1.3, 2.4, 75.0,
             onHit = listOf(HitEffect.Execute(healthFraction = 0.15))),
-        melee(WeaponId.KillSwitchKatana, "Kill-Switch Katana", Tier.Blacksite, 30.0, 0.65, 2.2, 50.0,
+        melee(WeaponId.KillSwitchKatana, "Kill-Switch Katana", Tier.Blacksite, 40.0, 0.65, 2.8, 50.0,
             onFire = listOf(FireEffect.DashStrike(reachPx = 3.0 * METRE, invulnerableSeconds = 0.2))),
-        melee(WeaponId.ChromewreckMaul, "Chromewreck Maul", Tier.Blacksite, 78.0, 1.6, 3.0, 100.0,
+        melee(WeaponId.ChromewreckMaul, "Chromewreck Maul", Tier.Blacksite, 100.0, 1.6, 3.6, 100.0,
             knockback = 640.0),
         WeaponSpec(
             id = WeaponId.MeatgrinderHalo, name = "Meatgrinder Halo", cls = WeaponClass.Melee,
-            tier = Tier.Ascended, damage = 26.0, cooldown = 0.35, rangePx = 2.2 * METRE,
+            tier = Tier.Ascended, damage = 40.0, cooldown = 0.35, rangePx = 2.8 * METRE,
             projectileSpeed = 0.0,
-            pattern = FirePattern.Orbit(radius = 2.2 * METRE, revolutionsPerMinute = 220.0),
+            pattern = FirePattern.Orbit(radius = 2.8 * METRE, revolutionsPerMinute = 220.0),
         ),
 
         ranged(WeaponId.ScraplineZipPistol, "Scrapline Zip Pistol", Tier.Street, 7.0, 0.8, 520.0),
@@ -51,7 +54,7 @@ object Weapons {
             falloff = Falloff.Linear(5.0 * METRE, 9.0 * METRE, minimum = 0.5)),
         ranged(WeaponId.VultureRailCarbine, "Vulture Rail Carbine", Tier.Chromed, 28.0, 1.0, 900.0,
             pierce = 2),
-        ranged(WeaponId.AshfallGrenadeLobber, "Ashfall Grenade Lobber", Tier.Chromed, 30.0, 1.4, 420.0,
+        ranged(WeaponId.AshfallGrenadeLobber, "Ashfall Grenade Lobber", Tier.Chromed, 33.0, 1.4, 420.0,
             onHit = listOf(HitEffect.BlastOnHit(radius = 2.5 * METRE, damageFraction = 0.6))),
         ranged(WeaponId.SableCorpRailgun, "Sable Corp Railgun", Tier.Blacksite, 95.0, 1.7, 1400.0,
             pierce = Int.MAX_VALUE, windUp = 0.4),

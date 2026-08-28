@@ -64,7 +64,7 @@ enum class Stance { Stand, Crouch }
 /**
  * One tick of movement intent, already resolved. Coyote time and jump buffering are applied by
  * [IntentFilter] before this exists, so the movement model contains no assist logic and a recorded
- * sequence of these frames means exactly one thing when replayed (plan.md §4.3).
+ * sequence of these frames means exactly one thing when replayed (`specs/simulation.md`).
  */
 data class InputFrame(
     val left: Boolean = false,

@@ -17,7 +17,7 @@ import io.github.ksean.cyberslop.world.TileKind
  * actually controls.
  *
  * This is a *generation* metric. It is not a claim about how hard a human finds the map, which is a
- * different question and needs a person to answer ([§9.4](../../../../../plan.md)).
+ * different question and needs a person to answer (`specs/engineering.md`, Verification).
  */
 object DifficultyScore {
     fun of(level: Level): Double {

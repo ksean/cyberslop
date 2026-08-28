@@ -12,7 +12,7 @@ import io.github.ksean.cyberslop.core.Vec2
 enum class Clip { Idle, Run, JumpRise, JumpFall, Crouch, CrouchWalk }
 
 /** What the figure's arms are doing, over whatever its legs are doing. */
-enum class Action { None, Fire, Swing }
+enum class Action { None, WindUp, Fire, Swing }
 
 /**
  * Everything animation needs to know about an actor this frame.
@@ -31,6 +31,8 @@ data class Motion(
     /** Seconds since the weapon last fired. [Double.MAX_VALUE] when it never has. */
     val secondsSinceShot: Double = Double.MAX_VALUE,
     val secondsSinceSwing: Double = Double.MAX_VALUE,
+    /** An attack is telegraphing: the arm is drawn back and held there until it resolves (PROD-063). */
+    val windingUp: Boolean = false,
     /**
      * How long each action lasts, taken from the simulation's own visual rather than duplicated.
      *

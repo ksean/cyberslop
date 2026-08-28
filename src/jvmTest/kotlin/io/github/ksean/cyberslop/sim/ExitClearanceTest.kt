@@ -30,7 +30,7 @@ class ExitClearanceTest {
 
             assertTrue(blocked().isNotEmpty(), "map $map: the exit was never sealed")
 
-            sim.boss.fight.playerMoved(level.boss.leftTile + COMMIT_DEPTH)
+            sim.boss.fight.engage()
             sim.boss.fight.damage(sim.boss.spec.maxHealth)
             sim.tick(InputFrame())
 
@@ -59,6 +59,5 @@ class ExitClearanceTest {
         val SEED = 0xC0FFEEuL
         const val MAPS = 10
         const val PLAYER_TILES = 2
-        const val COMMIT_DEPTH = 8
     }
 }

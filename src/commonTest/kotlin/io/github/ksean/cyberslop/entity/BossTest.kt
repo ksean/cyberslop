@@ -41,58 +41,44 @@ class BossTest {
     }
 
     @Test
-    fun `the boss cannot be damaged before the player commits`() {
-        val fight = BossFight(Bosses.boss(1), commitColumn = COMMIT)
-
-        val landed = fight.damage(1000.0)
-
-        assertFalse(landed, "damage landed before the player committed")
-        assertEquals(Bosses.boss(1).maxHealth, fight.health)
-        assertFalse(fight.gateClosed, "the gate closed without the player committing")
-    }
-
-    @Test
-    fun `automatic fire cannot commit the player on its own`() {
-        // Weapons fire by themselves and can be aimed by the accessibility setting, so landing a hit
-        // must not be what seals the arena. Only crossing the line does.
-        val fight = BossFight(Bosses.boss(3), commitColumn = COMMIT)
+    fun `an unengaged boss cannot be damaged`() {
+        val fight = BossFight(Bosses.boss(1))
 
         repeat(100) { fight.damage(50.0) }
 
-        assertFalse(fight.committed)
-        assertEquals(Bosses.boss(3).maxHealth, fight.health)
+        assertFalse(fight.engaged, "damage engaged the boss on its own")
+        assertEquals(Bosses.boss(1).maxHealth, fight.health)
     }
 
     @Test
-    fun `crossing the commit line seals the arena and makes the boss vulnerable`() {
-        val fight = BossFight(Bosses.boss(1), commitColumn = COMMIT)
+    fun `noticing the player makes the boss vulnerable and never wears off`() {
+        val fight = BossFight(Bosses.boss(1))
 
-        fight.playerMoved(COMMIT)
+        fight.engage()
 
-        assertTrue(fight.committed)
-        assertTrue(fight.gateClosed)
+        assertTrue(fight.engaged)
         assertTrue(fight.damage(10.0))
+        assertTrue(fight.engaged)
     }
 
     @Test
     fun `the exit opens only when the boss dies`() {
         val spec = Bosses.boss(1)
-        val fight = BossFight(spec, commitColumn = COMMIT)
-        fight.playerMoved(COMMIT)
+        val fight = BossFight(spec)
+        fight.engage()
 
         assertFalse(fight.exitOpen, "exit was open with the boss alive")
         fight.damage(spec.maxHealth)
 
         assertTrue(fight.defeated)
         assertTrue(fight.exitOpen)
-        assertFalse(fight.gateClosed, "the gate stayed shut after the boss died")
     }
 
     @Test
     fun `the boss gains attacks as its health falls`() {
         val spec = Bosses.boss(5)
-        val fight = BossFight(spec, commitColumn = COMMIT)
-        fight.playerMoved(COMMIT)
+        val fight = BossFight(spec)
+        fight.engage()
 
         val opening = fight.currentPhase().attacks.size
         fight.damage(spec.maxHealth * 0.5)
@@ -132,7 +118,6 @@ class BossTest {
     }
 
     private companion object {
-        const val COMMIT = 40
         const val STEP = 1.0 / 60.0
     }
 }

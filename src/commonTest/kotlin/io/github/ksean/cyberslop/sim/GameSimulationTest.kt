@@ -49,10 +49,10 @@ class GameSimulationTest {
     }
 
     @Test
-    fun `a boss fight exists and is sealed until the player commits`() {
+    fun `a boss fight exists and is inert until the player is noticed`() {
         val sim = simulation()
 
-        assertTrue(!sim.boss.fight.committed, "the boss was committed before the player arrived")
+        assertTrue(!sim.boss.fight.engaged, "the boss noticed a player who had only just spawned")
         assertTrue(!sim.boss.fight.vulnerable, "the boss was damageable on spawn")
     }
 

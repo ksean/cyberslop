@@ -15,7 +15,7 @@ import kotlin.test.assertTrue
  * An icon is line art in a `[-1, 1]` box, and the whole reason it is line art is that a segment is
  * closed under rotation where an axis-aligned rectangle is not — which is what lets one piece of
  * geometry serve a drop on the ground, the same weapon in the player's hand and its entry in the
- * HUD (`plan.md` §16.2). These tests hold that claim up.
+ * HUD (`specs/presentation.md`, Item icons). These tests hold that claim up.
  */
 class IconTest {
     @Test

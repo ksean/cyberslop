@@ -5,7 +5,7 @@ package io.github.ksean.cyberslop.render
  *
  * Red and blue do not move with the sub-theme: a red-outlined thing is a weapon on all ten maps, or
  * the rule teaches a player nothing. What that costs, and why the halo is not optional, is measured
- * in `plan.md` §16.3 — the red outline alone is worth **2.0** of luminance separation against
+ * in `specs/presentation.md` — the red outline alone is worth **2.0** of luminance separation against
  * `ArcologyVault.tileBody`, and a near-black halo alone **0.1** against `ReactorCore.sky`. Drawn as a
  * pair so that at least one line always separates, the worst case over all ten palettes is 45.8.
  */

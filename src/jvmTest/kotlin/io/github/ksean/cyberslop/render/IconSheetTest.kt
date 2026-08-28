@@ -9,7 +9,7 @@ import kotlin.test.assertTrue
 /**
  * Renders the icon sheets and checks the little a sheet can be checked for.
  *
- * The sheets exist for a person to look at (`plan.md` §16.7); what this test can assert is that
+ * The sheets exist for a person to look at (`specs/presentation.md`, Item icons); what this test can assert is that
  * every entry actually put marks on the page at every tier, which is what catches an icon that
  * silently draws nothing. Recognisability is the owner's call, made against the files this writes.
  */

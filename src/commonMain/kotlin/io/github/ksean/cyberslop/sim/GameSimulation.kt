@@ -15,6 +15,7 @@ import io.github.ksean.cyberslop.core.Rng
 import io.github.ksean.cyberslop.core.TrigTable
 import io.github.ksean.cyberslop.core.Vec2
 import io.github.ksean.cyberslop.entity.Balance
+import io.github.ksean.cyberslop.entity.EnemyAttacks
 import io.github.ksean.cyberslop.entity.Bosses
 import io.github.ksean.cyberslop.loot.DropTable
 import io.github.ksean.cyberslop.loot.Pickup
@@ -108,7 +109,7 @@ class GameSimulation(
         private set
 
     /**
-     * How far the player has walked, which is what the gait cycle reads (`plan.md` §15.4).
+     * How far the player has walked, which is what the gait cycle reads (`specs/presentation.md`).
      *
      * Here rather than on `PlayerState` on purpose. That value's hash is pinned to a committed
      * golden across both targets by `PhysicsDeterminismTest`; putting a presentational field into it
@@ -118,18 +119,15 @@ class GameSimulation(
     var playerStridePx: Double = 0.0
         private set
 
+    /** How long the player has been grounded and clear of committed columns; see [playerExposed]. */
+    private var exposedSeconds: Double = LANDING_GRACE
+
     val enemies = mutableListOf<LiveEnemy>()
     val projectiles = mutableListOf<LiveProjectile>()
     val items = mutableListOf<GroundItem>()
 
-    val miniboss = LiveBoss(
-        Bosses.miniboss(level.mapIndex), level.miniboss,
-        commitColumn = level.miniboss.leftTile + COMMIT_OFFSET,
-    )
-    val boss = LiveBoss(
-        Bosses.boss(level.mapIndex), level.boss,
-        commitColumn = level.boss.leftTile + COMMIT_OFFSET,
-    )
+    val miniboss = LiveBoss(Bosses.miniboss(level.mapIndex), level.miniboss, level.tiles)
+    val boss = LiveBoss(Bosses.boss(level.mapIndex), level.boss, level.tiles)
 
     /** Declared above `init`, which places static pickups and therefore draws from it. */
     private val runPool = DropTable.runPool(Rng.derive(seed, 0, "pool"), level.mapIndex)
@@ -146,7 +144,7 @@ class GameSimulation(
 
     /**
      * The map-one starter cache, which is a different award from the optional static drops beside
-     * it — PROD-047 says so, and change 0003 requires this one so a mini-boss is never met with the
+     * it — PROD-047 says so, and `specs/enemies.md` requires this one so a mini-boss is never met with the
      * broken bottle.
      *
      * Its own stream because sharing one made the *guaranteed* award depend on how many *optional*
@@ -240,6 +238,7 @@ class GameSimulation(
         autoFire.tick(TICK_SECONDS, muzzle, aim).forEach { emit(it, muzzle, aim) }
         advanceProjectiles()
         advanceStatuses()
+        advanceExposure()
         advanceEnemies()
         advanceBosses()
         collectItems()
@@ -506,7 +505,7 @@ class GameSimulation(
             } else if ((centreOf(player) - projectile.position).lengthSquared <
                 projectile.radius * projectile.radius * 4.0
             ) {
-                run = run.damaged(projectile.damage)
+                if (playerExposed()) run = run.damaged(projectile.damage)
                 projectile.secondsLeft = 0.0
             }
         }
@@ -535,69 +534,245 @@ class GameSimulation(
     }
 
     /**
-     * Enemies stay inside the patrol span generation constrained them to, and non-flyers respect
-     * terrain.
-     *
-     * That is not a simplification — it is what makes the generation-time invariant true at
-     * runtime. An enemy free to chase would walk into the corridor the invariant promises is
-     * crossable without forced combat, and the promise would be worthless.
+     * Enemies act by role once they have noticed the player, and patrol until then
+     * (`specs/enemies.md`). Walkers have gravity and never take a step off a ledge or onto a lethal
+     * tile; a Flyer never enters a committed column, which is what keeps the route-safety argument
+     * true once enemies are free to move.
      */
     private fun advanceEnemies() {
-        val contact = Balance.contactDamage(level.mapIndex)
+        val playerCentre = centreOf(player)
         enemies.filter { it.alive }.forEach { enemy ->
+            updateAwareness(enemy, playerCentre)
+            if (!enemy.archetype.ignoresTerrain) fall(enemy)
+            decayVisuals(enemy)
+            if (!enemy.alive) return@forEach
+            enemy.cooldownLeft -= TICK_SECONDS
             if (enemy.stunned) return@forEach
+
+            if (enemy.windingUp) {
+                windUp(enemy, playerCentre)
+                return@forEach
+            }
+
             val speed = ENEMY_SPEED * enemy.speedScale(DamagePipeline.MIN_ENEMY_SPEED_FRACTION) *
-                enemy.archetype.speedScale()
+                enemy.archetype.speedScale
+            if (enemy.engaged) act(enemy, playerCentre, speed) else patrol(enemy, speed)
 
-            if (enemy.position.x > enemy.homeX + enemy.patrolPx) enemy.facing = -1
-            if (enemy.position.x < enemy.homeX - enemy.patrolPx) enemy.facing = 1
-
-            val step = Vec2(enemy.facing * speed * TICK_SECONDS, 0.0)
-            val next = enemy.position + step
-            if (enemy.archetype.ignoresTerrain || !blocked(next)) {
-                enemy.position = next
-                enemy.stridePx += speed * TICK_SECONDS
-            } else {
-                enemy.facing = -enemy.facing
-            }
-
-            if (enemy.archetype.shoots) shootAtPlayer(enemy)
-
-            if ((centreOf(player) - centreOfEnemy(enemy)).lengthSquared < CONTACT_RADIUS_SQUARED) {
-                run = run.damaged(contact * TICK_SECONDS)
-            }
+            if (enemy.cooldownLeft <= 0.0) beginAttack(enemy, playerCentre)
         }
     }
 
-    private fun shootAtPlayer(enemy: LiveEnemy) {
-        enemy.fireCooldown -= TICK_SECONDS
-        if (enemy.fireCooldown > 0.0) return
-        val offset = centreOf(player) - centreOfEnemy(enemy)
-        if (offset.lengthSquared > SHOOTER_RANGE * SHOOTER_RANGE) return
-        // Terrain has to matter. Firing on range alone meant shooting through walls and floors,
-        // which also made the generation-time line-of-fire invariant describe nothing about play.
-        if (!hasLineOfSight(centreOfEnemy(enemy), centreOf(player))) return
-        enemy.fireCooldown = SHOOTER_COOLDOWN
+    private fun decayVisuals(enemy: LiveEnemy) {
+        enemy.lastSwing = enemy.lastSwing?.let { it.copy(secondsLeft = it.secondsLeft - TICK_SECONDS) }
+            ?.takeIf { it.secondsLeft > 0.0 }
+        enemy.lastShot = enemy.lastShot?.let { it.copy(secondsLeft = it.secondsLeft - TICK_SECONDS) }
+            ?.takeIf { it.secondsLeft > 0.0 }
+    }
+
+    /**
+     * Starts a telegraph when the attack's condition holds: a melee enemy with the player in
+     * reach, or a shooter with the player in range and in sight. The aim is fixed now, so the
+     * player can read the wind-up and move out of it.
+     */
+    private fun beginAttack(enemy: LiveEnemy, playerCentre: Vec2) {
+        val offset = playerCentre - centreOfEnemy(enemy)
+        if (enemy.archetype.shoots) {
+            val shot = EnemyAttacks.SHOT
+            if (offset.lengthSquared > shot.rangePx * shot.rangePx) return
+            if (!hasLineOfSight(centreOfEnemy(enemy), playerCentre)) return
+            enemy.attackTarget = playerCentre
+            enemy.attackDirection = offset.normalisedOr(Vec2.Right)
+            enemy.windUpTotal = shot.windUpSeconds
+            enemy.windUpLeft = shot.windUpSeconds
+        } else {
+            val swing = EnemyAttacks.swing(enemy.archetype)
+            if (offset.lengthSquared > swing.reachPx * swing.reachPx) return
+            enemy.attackDirection = offset.normalisedOr(Vec2(enemy.facing.toDouble(), 0.0))
+            enemy.windUpTotal = swing.windUpSeconds
+            enemy.windUpLeft = swing.windUpSeconds
+        }
+    }
+
+    private fun windUp(enemy: LiveEnemy, playerCentre: Vec2) {
+        enemy.windUpLeft -= TICK_SECONDS
+        // Half a tick of slack, so a wind-up of n ticks resolves on tick n rather than n + 1 when
+        // the subtraction leaves a residue of 1e-17.
+        if (enemy.windUpLeft > TICK_SECONDS / 2.0) return
+        enemy.windUpLeft = 0.0
+        if (enemy.archetype.shoots) fire(enemy) else strike(enemy, playerCentre)
+    }
+
+    private fun strike(enemy: LiveEnemy, playerCentre: Vec2) {
+        val swing = EnemyAttacks.swing(enemy.archetype)
+        enemy.cooldownLeft = swing.cooldownSeconds
+        enemy.lastSwing = SwingVisual(
+            origin = centreOfEnemy(enemy),
+            direction = enemy.attackDirection,
+            arcDegrees = swing.arcDegrees,
+            reachPx = swing.reachPx,
+            secondsLeft = SWING_VISIBLE_SECONDS,
+            totalSeconds = SWING_VISIBLE_SECONDS,
+        )
+        val offset = playerCentre - centreOfEnemy(enemy)
+        if (offset.lengthSquared > swing.reachPx * swing.reachPx) return
+        if (!TrigTable.withinArc(enemy.attackDirection, offset, swing.arcDegrees / 2.0)) return
+        if (!playerExposed()) return
+        run = run.damaged(Balance.contactDamage(level.mapIndex) * swing.damageShare)
+    }
+
+    private fun fire(enemy: LiveEnemy) {
+        val shot = EnemyAttacks.SHOT
+        enemy.cooldownLeft = shot.cooldownSeconds
+        val origin = centreOfEnemy(enemy)
+        val direction = (enemy.attackTarget - origin).normalisedOr(enemy.attackDirection)
+        enemy.lastShot = MuzzleFlash(direction, FLASH_VISIBLE_SECONDS, FLASH_VISIBLE_SECONDS)
         projectiles.add(
             LiveProjectile(
-                position = centreOfEnemy(enemy),
-                velocity = offset.normalisedOr(Vec2.Right) * SHOOTER_SPEED,
-                damage = Balance.contactDamage(level.mapIndex) * SHOOTER_DAMAGE_SHARE,
+                position = origin,
+                velocity = direction * shot.speedPx,
+                damage = Balance.contactDamage(level.mapIndex) * shot.damageShare,
                 pierceLeft = 0,
-                secondsLeft = SHOOTER_LIFETIME,
+                secondsLeft = shot.lifetimeSeconds,
                 passesTerrain = false,
                 fromPlayer = false,
             ),
         )
     }
 
-    private fun advanceBosses() {
-        val column = TileMap.toTile(centreOf(player).x)
-        miniboss.fight.playerMoved(if (level.miniboss.containsColumn(column)) column else -1)
-        boss.fight.playerMoved(if (level.boss.containsColumn(column)) column else -1)
+    /**
+     * The fairness rule (`specs/completability.md`): nothing an enemy does lands while the player's
+     * box overlaps a committed column, nor until they have been grounded and clear of one for the
+     * landing grace — so the first grounded tick after a crossing is never a hit with no reaction
+     * window.
+     */
+    private fun playerExposed(): Boolean = exposedSeconds >= LANDING_GRACE
 
-        run = run.damaged(miniboss.tick(TICK_SECONDS, centreOf(player)))
-        run = run.damaged(boss.tick(TICK_SECONDS, centreOf(player)))
+    private fun playerOverCommitted(): Boolean {
+        val left = TileMap.toTile(player.x)
+        val right = TileMap.toTile(player.x + Physics.Default.width - 1.0)
+        return (left..right).any { level.isCommitted(it) }
+    }
+
+    private fun advanceExposure() {
+        exposedSeconds = if (player.onGround && !playerOverCommitted()) exposedSeconds + TICK_SECONDS else 0.0
+    }
+
+    /** Euclidean, inclusive at the radius, with hysteresis so an enemy at the edge does not flicker. */
+    private fun updateAwareness(enemy: LiveEnemy, playerCentre: Vec2) {
+        val distanceSquared = (playerCentre - centreOfEnemy(enemy)).lengthSquared
+        // Strictly inside, the same predicate auto-aim uses, so the two boundaries agree at equality.
+        enemy.engaged = when {
+            enemy.engaged -> distanceSquared < DISENGAGE_PX * DISENGAGE_PX
+            else -> distanceSquared < AWARE_PX * AWARE_PX
+        }
+    }
+
+    private fun patrol(enemy: LiveEnemy, speed: Double) {
+        if (enemy.position.x > enemy.homeX + enemy.patrolPx) enemy.facing = -1
+        if (enemy.position.x < enemy.homeX - enemy.patrolPx) enemy.facing = 1
+        if (!walk(enemy, enemy.facing * speed * TICK_SECONDS)) enemy.facing = -enemy.facing
+    }
+
+    private fun act(enemy: LiveEnemy, playerCentre: Vec2, speed: Double) {
+        val offset = playerCentre - centreOfEnemy(enemy)
+        val toward = if (offset.x < 0.0) -1 else 1
+        enemy.facing = toward
+        when {
+            enemy.archetype == io.github.ksean.cyberslop.entity.EnemyArchetype.Turret -> Unit
+            enemy.archetype.ignoresTerrain -> fly(enemy, offset, speed)
+            enemy.archetype.melee -> {
+                if (kotlin.math.abs(offset.x) > CLOSE_ENOUGH_PX) walk(enemy, toward * speed * TICK_SECONDS)
+            }
+            else -> {
+                val distanceSquared = offset.lengthSquared
+                when {
+                    distanceSquared > SHOOTER_RANGE * SHOOTER_RANGE -> walk(enemy, toward * speed * TICK_SECONDS)
+                    distanceSquared < RETREAT_PX * RETREAT_PX -> walk(enemy, -toward * speed * TICK_SECONDS)
+                    else -> Unit
+                }
+            }
+        }
+    }
+
+    /**
+     * A voluntary horizontal step under the ledge rule: refused unless the destination footprint is
+     * supported by non-lethal ground and nothing solid stands at body height. Returns whether it
+     * was taken.
+     */
+    private fun walk(enemy: LiveEnemy, dx: Double): Boolean {
+        if (dx == 0.0) return true
+        val next = enemy.position + Vec2(dx, 0.0)
+        val feetRow = TileMap.toTile(next.y + ENEMY_FEET)
+        val headRow = TileMap.toTile(next.y + 1.0)
+        val bodyRow = TileMap.toTile(next.y + ENEMY_SIZE - 1.0)
+        val leading = TileMap.toTile(if (dx > 0) next.x + ENEMY_SIZE - 1.0 else next.x)
+        val trailing = TileMap.toTile(if (dx > 0) next.x else next.x + ENEMY_SIZE - 1.0)
+        val tiles = level.tiles
+        if (!enemy.archetype.ignoresTerrain) {
+            if (tiles.blocksMovement(leading, headRow) || tiles.blocksMovement(leading, bodyRow)) return false
+            if (enemy.vy == 0.0) {
+                if (!tiles.blocksMovement(leading, feetRow) || !tiles.blocksMovement(trailing, feetRow)) return false
+                if (tiles.isLethal(leading, feetRow) || tiles.isLethal(trailing, feetRow)) return false
+            }
+        }
+        enemy.position = next
+        enemy.stridePx += kotlin.math.abs(dx)
+        return true
+    }
+
+    private fun fly(enemy: LiveEnemy, offset: Vec2, speed: Double) {
+        val direction = offset.normalisedOr(Vec2.Right)
+        val step = direction * (speed * TICK_SECONDS)
+        val nextColumn = TileMap.toTile(enemy.position.x + step.x + ENEMY_HALF)
+        val horizontal = if (level.isCommitted(nextColumn)) 0.0 else step.x
+        enemy.position = enemy.position + Vec2(horizontal, step.y)
+        enemy.stridePx += kotlin.math.abs(horizontal)
+    }
+
+    /** Gravity for walkers. Landing on a lethal tile kills; landing on solid ground stops the fall. */
+    private fun fall(enemy: LiveEnemy) {
+        val physics = Physics.Default
+        val feetRow = TileMap.toTile(enemy.position.y + ENEMY_FEET)
+        val left = TileMap.toTile(enemy.position.x)
+        val right = TileMap.toTile(enemy.position.x + ENEMY_SIZE - 1.0)
+        val supported = enemy.vy == 0.0 &&
+            (level.tiles.blocksMovement(left, feetRow) || level.tiles.blocksMovement(right, feetRow))
+        if (supported) return
+
+        enemy.vy = (enemy.vy + physics.gravity * TICK_SECONDS).coerceAtMost(physics.terminalVelocity)
+        var travel = enemy.vy * TICK_SECONDS
+        while (travel > 0.0) {
+            val slice = minOf(travel, TILE_SIZE / 2.0)
+            travel -= slice
+            val nextY = enemy.position.y + slice
+            val row = TileMap.toTile(nextY + ENEMY_FEET)
+            if (level.tiles.isLethal(left, row) || level.tiles.isLethal(right, row)) {
+                enemy.health = 0.0
+                enemy.position = Vec2(enemy.position.x, nextY)
+                return
+            }
+            if (level.tiles.blocksMovement(left, row) || level.tiles.blocksMovement(right, row)) {
+                enemy.position = Vec2(enemy.position.x, TileMap.toWorld(row) - ENEMY_FEET)
+                enemy.vy = 0.0
+                return
+            }
+            enemy.position = Vec2(enemy.position.x, nextY)
+        }
+    }
+
+    private fun advanceBosses() {
+        val target = BossTarget(
+            centre = centreOf(player),
+            onGround = player.onGround,
+            crouched = player.stance == io.github.ksean.cyberslop.physics.Stance.Crouch,
+        )
+        listOf(miniboss, boss).forEach { live ->
+            if (!live.fight.engaged && (target.centre - live.centre).lengthSquared < AWARE_PX * AWARE_PX) {
+                live.fight.engage()
+            }
+            val damage = live.tick(TICK_SECONDS, target)
+            if (damage > 0.0 && playerExposed()) run = run.damaged(damage)
+        }
 
         if (miniboss.fight.defeated && !minibossRewarded) {
             minibossRewarded = true
@@ -754,7 +929,6 @@ class GameSimulation(
         (weapon.spec.pattern as? FirePattern.Projectile)?.lifetimeSeconds ?: DEFAULT_LIFETIME
 
     companion object {
-        const val COMMIT_OFFSET = 4
         const val STARTER_CACHE_TILES = 6
         const val MAX_PROJECTILES = 300
         const val MAX_PIERCE = 8
@@ -762,7 +936,17 @@ class GameSimulation(
         const val DEFAULT_LIFETIME = 2.0
         const val PROJECTILE_RADIUS = 7.0
         const val ENEMY_HALF = 7.0
-        const val CONTACT_RADIUS_SQUARED = 18.0 * 18.0
+        const val ENEMY_SIZE = 14.0
+        /** An enemy stands in a cell: its feet are the cell's bottom edge, not its 14 px body's. */
+        const val ENEMY_FEET = TILE_SIZE.toDouble()
+        /** How near the player has to be for an enemy to notice them (`specs/enemies.md`). */
+        const val AWARE_PX = 22.0 * TILE_SIZE
+        const val DISENGAGE_PX = 33.0 * TILE_SIZE
+        /** Inside this a shooter backs away. */
+        const val RETREAT_PX = 5.0 * TILE_SIZE
+        const val CLOSE_ENOUGH_PX = 4.0
+        /** Grounded-and-clear time an enemy attack needs before it can land after a crossing. */
+        const val LANDING_GRACE = 0.25
         const val ENEMY_SPEED = 70.0
         /**
          * How close the player has to be for a shooter or a turret to open fire.
@@ -771,14 +955,10 @@ class GameSimulation(
          * like it is, and a second constant in the renderer would drift from this one the way the
          * swing window already did.
          */
-        const val SHOOTER_RANGE = 220.0
-        const val SHOOTER_COOLDOWN = 1.6
-        const val SHOOTER_SPEED = 260.0
-        const val SHOOTER_LIFETIME = 2.5
-        const val SHOOTER_DAMAGE_SHARE = 0.6
+        const val SHOOTER_RANGE = EnemyAttacks.SHOT_RANGE_PX
         const val SCRAP_PER_KILL = 2
         const val BOSS_SCRAP = 40
-        /** A static cache draws twice for its tier and keeps the better roll (`plan.md` §6.7). */
+        /** A static cache draws twice for its tier and keeps the better roll (`specs/combat.md`). */
         const val CACHE_TIER_SHIFTS = 1
         const val BLAST_RADIUS = 36.0
         const val BURN_SECONDS = 3.0
@@ -790,12 +970,4 @@ class GameSimulation(
         const val FLASH_VISIBLE_SECONDS = 0.10
         const val EXIT_CLEARANCE = 6
     }
-}
-
-private fun io.github.ksean.cyberslop.entity.EnemyArchetype.speedScale(): Double = when (this) {
-    io.github.ksean.cyberslop.entity.EnemyArchetype.Swarm -> 1.4
-    io.github.ksean.cyberslop.entity.EnemyArchetype.Brute -> 0.6
-    io.github.ksean.cyberslop.entity.EnemyArchetype.Flyer -> 1.1
-    io.github.ksean.cyberslop.entity.EnemyArchetype.Turret -> 0.0
-    io.github.ksean.cyberslop.entity.EnemyArchetype.Shooter -> 0.8
 }

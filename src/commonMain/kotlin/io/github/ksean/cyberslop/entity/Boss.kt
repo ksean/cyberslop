@@ -4,6 +4,25 @@ package io.github.ksean.cyberslop.entity
 enum class Dodge { Jump, Crouch, MoveAside }
 
 /**
+ * How an attack's active window is drawn (`specs/enemies.md`, "Drawn as"). Every telegraph is the
+ * same wind-up pose; this is what follows it.
+ */
+enum class AttackVisual {
+    /** A downward swing and a ground swoosh. */
+    GroundSlam,
+    /** A level swing and swoosh. */
+    LevelSweep,
+    /** A muzzle flash and a fan of projectile dots. */
+    MuzzleFan,
+    /** A lunge with a trailing swoosh. */
+    Lunge,
+    ;
+
+    /** Whether the window is a shot rather than a swing. */
+    val ranged: Boolean get() = this == MuzzleFan
+}
+
+/**
  * One boss attack.
  *
  * [telegraphSeconds] is not decoration: [damageAt] returns nothing until it has elapsed, so the
@@ -16,6 +35,9 @@ data class BossAttack(
     val activeSeconds: Double,
     val damage: Double,
     val dodge: Dodge,
+    /** How far from the boss's feet the attack can reach a player who is not dodging it. */
+    val reachPx: Double,
+    val visual: AttackVisual,
 ) {
     init {
         require(telegraphSeconds >= MIN_TELEGRAPH_SECONDS) {
@@ -53,28 +75,27 @@ data class BossSpec(
 /**
  * The boss encounter.
  *
- * The gate closes when the player crosses a **commit line** inside the arena, and the boss cannot be
- * damaged before it does. Making the lock trigger on entry, or on first damage, both fail the same
- * way: weapons fire automatically and can be aimed by an accessibility setting, so the player can
- * land a hit without ever choosing to fight. Crossing a line is unambiguously the player's act.
+ * Inert and invulnerable until the player comes within the awareness radius; from then on it
+ * fights wherever the player stands (`specs/enemies.md`, Activation). Nothing the player or their
+ * automatic weapon does can seal an arena: the exit gate is carved with the map and only the
+ * boss's death clears it.
  */
-class BossFight(private val spec: BossSpec, private val commitColumn: Int) {
+class BossFight(private val spec: BossSpec) {
     var health: Double = spec.maxHealth
         private set
-    var committed: Boolean = false
+    var engaged: Boolean = false
         private set
 
-    val gateClosed: Boolean get() = committed && !defeated
     val defeated: Boolean get() = health <= 0.0
     val exitOpen: Boolean get() = defeated
+    val vulnerable: Boolean get() = engaged
 
-    val vulnerable: Boolean get() = committed
-
-    fun playerMoved(column: Int) {
-        if (column >= commitColumn) committed = true
+    /** Once noticed, never forgotten. */
+    fun engage() {
+        engaged = true
     }
 
-    /** Damage is refused entirely before the player commits. */
+    /** Damage is refused entirely before the boss has noticed the player. */
     fun damage(amount: Double): Boolean {
         if (!vulnerable || defeated) return false
         health = (health - amount).coerceAtLeast(0.0)

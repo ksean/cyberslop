@@ -7,7 +7,7 @@ import kotlin.test.assertEquals
 /**
  * PROD-046: one in five slain enemies drops something, at every map index.
  *
- * The rate had been a ramp, and two documents disagreed about which ramp: `plan.md` §6.7 printed
+ * The rate had been a ramp, and two documents disagreed about which ramp: the old design document printed
  * 1.5% to 3% while the code ran 3% to 6%. A number nobody can look up is a number nobody can hold
  * the game to, so it is a requirement now rather than a pair of private constants.
  */

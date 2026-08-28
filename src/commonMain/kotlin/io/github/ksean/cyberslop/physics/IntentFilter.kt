@@ -16,7 +16,7 @@ data class Keys(
  * `InputFrame`s, and if the model's reading of a frame depended on assist state then replaying a
  * tape would not be deterministic and the completability guarantee would be undischargeable. With
  * the split, a frame means exactly one thing, and the assists only ever widen what a human can
- * express — never what a tape means (plan.md §4.3).
+ * express — never what a tape means (`specs/simulation.md`).
  */
 class IntentFilter {
     private var ticksSinceGrounded = COYOTE_TICKS + 1

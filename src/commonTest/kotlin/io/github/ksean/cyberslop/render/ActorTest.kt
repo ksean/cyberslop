@@ -11,7 +11,7 @@ import kotlin.test.assertTrue
  * PROD-041 and ENG-062: the player is animated across eight distinguishable states, weapon
  * animation composes over movement, and the whole thing is a pure function of simulation state.
  *
- * Posing is arithmetic, which is the reason `plan.md` §15.1 chose a rig over a sprite atlas: "the
+ * Posing is arithmetic, which is the reason `specs/presentation.md` chose a rig over a sprite atlas: "the
  * crouch pose is shorter than the standing pose" is an assertion here, where a frame index into an
  * atlas would only be a screenshot.
  */
@@ -168,6 +168,27 @@ class ActorTest {
         )
     }
 
+    /** P-38: a telegraph is a held pose, and it is the arm that holds it. */
+    @Test
+    fun `a wind-up draws the lead arm back and raised and leaves the legs running`() {
+        val physics = Physics.Default
+        val plain = Actor.pose(running(), physics)
+        val telegraph = Actor.pose(running(windingUp = true), physics)
+
+        assertEquals(Action.WindUp, telegraph.action)
+        assertEquals(Clip.Run, telegraph.clip, "the wind-up replaced the locomotion clip")
+        assertEquals(plain.leadFoot, telegraph.leadFoot, "the legs stopped running to wind up")
+        assertEquals(plain.rearFoot, telegraph.rearFoot, "the legs stopped running to wind up")
+        assertTrue(
+            telegraph.leadHand.x < telegraph.leadShoulder.x,
+            "the lead hand is not drawn back behind the shoulder: ${telegraph.leadHand}",
+        )
+        assertTrue(
+            telegraph.leadHand.y < telegraph.leadShoulder.y,
+            "the lead hand is not raised above the shoulder: ${telegraph.leadHand}",
+        )
+    }
+
     @Test
     fun `facing mirrors the figure`() {
         val physics = Physics.Default
@@ -210,6 +231,7 @@ class ActorTest {
             facing: Int = 1,
             secondsSinceShot: Double = Double.MAX_VALUE,
             secondsSinceSwing: Double = Double.MAX_VALUE,
+            windingUp: Boolean = false,
         ) = Motion(
             speedX = 200.0 * facing,
             onGround = true,
@@ -217,6 +239,7 @@ class ActorTest {
             facing = facing,
             secondsSinceShot = secondsSinceShot,
             secondsSinceSwing = secondsSinceSwing,
+            windingUp = windingUp,
         )
 
         fun airborne(verticalSpeed: Double) =
@@ -231,6 +254,7 @@ class ActorTest {
             airborne(verticalSpeed = 400.0),
             running(secondsSinceShot = 0.0),
             running(secondsSinceSwing = 0.0),
+            running(windingUp = true),
         )
     }
 }

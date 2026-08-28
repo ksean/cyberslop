@@ -1,5 +1,7 @@
 package io.github.ksean.cyberslop.entity
 
+import io.github.ksean.cyberslop.world.TILE_SIZE
+
 /**
  * Boss and mini-boss definitions, one per map.
  *
@@ -44,21 +46,25 @@ object Bosses {
 
     private fun slam(mapIndex: Int) = BossAttack(
         name = "Slam", telegraphSeconds = telegraph(mapIndex, 0.70), activeSeconds = 0.25,
-        damage = Balance.contactDamage(mapIndex) * 1.4, dodge = Dodge.Jump,
+        damage = Balance.contactDamage(mapIndex) * 1.4, dodge = Dodge.Jump, reachPx = 80.0,
+        visual = AttackVisual.GroundSlam,
     )
 
     private fun sweep(mapIndex: Int) = BossAttack(
         name = "Sweep", telegraphSeconds = telegraph(mapIndex, 0.65), activeSeconds = 0.30,
-        damage = Balance.contactDamage(mapIndex) * 1.1, dodge = Dodge.Crouch,
+        damage = Balance.contactDamage(mapIndex) * 1.1, dodge = Dodge.Crouch, reachPx = 80.0,
+        visual = AttackVisual.LevelSweep,
     )
 
     private fun volley(mapIndex: Int) = BossAttack(
         name = "Volley", telegraphSeconds = telegraph(mapIndex, 0.60), activeSeconds = 0.50,
-        damage = Balance.contactDamage(mapIndex) * 0.8, dodge = Dodge.MoveAside,
+        damage = Balance.contactDamage(mapIndex) * 0.8, dodge = Dodge.MoveAside, reachPx = 8.0 * TILE_SIZE,
+        visual = AttackVisual.MuzzleFan,
     )
 
     private fun rush(mapIndex: Int) = BossAttack(
         name = "Rush", telegraphSeconds = telegraph(mapIndex, 0.55), activeSeconds = 0.40,
-        damage = Balance.contactDamage(mapIndex) * 1.6, dodge = Dodge.Jump,
+        damage = Balance.contactDamage(mapIndex) * 1.6, dodge = Dodge.Jump, reachPx = 128.0,
+        visual = AttackVisual.Lunge,
     )
 }

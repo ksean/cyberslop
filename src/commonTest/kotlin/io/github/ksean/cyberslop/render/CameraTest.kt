@@ -84,23 +84,6 @@ class CameraTest {
         assertEquals(5480.0, farWorld)
     }
 
-    @Test
-    fun `an arena is framed within the map bounds`() {
-        val level = LevelGenerator.generate(SEED, mapIndex = 1).level
-        val boss = level.boss
-
-        val camera = Camera.framing(
-            start(),
-            leftPx = boss.leftTile * 16.0,
-            rightPx = boss.rightTile * 16.0,
-            floorPx = boss.floorRow * 16.0,
-            level = level,
-        )
-
-        assertTrue(camera.x >= 0.0)
-        assertTrue(camera.x <= level.tiles.widthPx - camera.viewWidth)
-    }
-
     private fun start() = Camera(x = 0.0, y = 0.0, viewWidth = VIEW_W, viewHeight = VIEW_H)
 
     private companion object {

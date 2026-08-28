@@ -107,11 +107,13 @@ object Actor {
 
     /**
      * A swing outranks a shot because a melee weapon does not shoot, so the two never really
-     * compete — and where a weapon does both, the swing is the one that resolved damage.
+     * compete — and where a weapon does both, the swing is the one that resolved damage. A
+     * wind-up ranks under both: the strike it led to is the newer thing to show.
      */
     fun actionOf(motion: Motion): Action = when {
         motion.secondsSinceSwing in 0.0..motion.swingSeconds -> Action.Swing
         motion.secondsSinceShot in 0.0..motion.shotSeconds -> Action.Fire
+        motion.windingUp -> Action.WindUp
         else -> Action.None
     }
 
@@ -194,6 +196,10 @@ object Actor {
         return when (action) {
             Action.None -> rest
 
+            // Drawn back behind the shoulder and raised, and held there: a telegraph is a pose the
+            // player has time to read, not a motion.
+            Action.WindUp -> Vec2(shoulder.x - WINDUP_BACK * height, shoulder.y - WINDUP_UP * height)
+
             Action.Fire -> {
                 // One at the shot, easing to zero: the arm snaps back and returns.
                 val recoil = 1.0 - (motion.secondsSinceShot / motion.shotSeconds).coerceIn(0.0, 1.0)
@@ -270,6 +276,8 @@ object Actor {
     private const val RECOIL_X = 0.14
     private const val RECOIL_Y = 0.06
     private const val ARM_REACH = 0.40
+    private const val WINDUP_BACK = 0.22
+    private const val WINDUP_UP = 0.18
     private const val ARM_SWING = 0.18
     private const val HANG = 0.30
     private const val KNEE_BEND = 0.05

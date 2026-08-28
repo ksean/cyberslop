@@ -18,7 +18,7 @@ import kotlin.test.assertTrue
 class LootFloorTest {
     @Test
     fun `map one never faces its mini-boss with the starting weapon`() {
-        // The bottle's 3 DPS against a 108 HP mini-boss is 36 s, far outside an 18 s band. The
+        // The bottle's 4 DPS against a 108 HP mini-boss is 27 s, far outside an 18 s band. The
         // guaranteed starter cache is what stops that being the opening experience.
         assertTrue(
             LootFloor.damagePerSecondAt(1) > Weapons.startingWeapon.baseDps * 2.0,

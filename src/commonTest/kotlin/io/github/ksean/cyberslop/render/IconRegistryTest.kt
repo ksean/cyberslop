@@ -9,14 +9,14 @@ import kotlin.test.assertEquals
 import kotlin.test.assertTrue
 
 /**
- * Property 27 and property 29: the authored registries (PROD-049, PROD-050).
+ * P-27 and P-29 (specs/presentation.md): the authored registries (PROD-049, PROD-050).
  *
  * Totality runs over `entries` rather than over a hand-written list, so a twenty-seventh weapon added
  * later fails here rather than drawing nothing on the floor of a map.
  *
  * What these cannot assert is the thing the owner actually asked for — that a shotgun looks like a
- * shotgun. That is a human judgement, made against the sheet `IconSheetTest` writes (`plan.md`
- * §16.7). What they do assert is everything that would make the sheet a lie: an icon that is missing,
+ * shotgun. That is a human judgement, made against the sheet `IconSheetTest` writes (`specs/presentation.md`,
+ * Item icons). What they do assert is everything that would make the sheet a lie: an icon that is missing,
  * empty, duplicated, or wearing the wrong kind's casing.
  */
 class IconRegistryTest {

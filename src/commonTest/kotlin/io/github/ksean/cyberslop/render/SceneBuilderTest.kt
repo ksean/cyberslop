@@ -8,7 +8,7 @@ import kotlin.test.assertTrue
  * ENG-061: drawing-state changes per frame are bounded by the number of style batches and do not
  * grow with what is drawn.
  *
- * `plan.md` §8.1 measured per-sprite `save`/`translate`/`rotate`/`restore` at 7.61x a bare draw —
+ * `specs/presentation.md` measured per-sprite `save`/`translate`/`rotate`/`restore` at 7.61x a bare draw —
  * 21% of the frame budget at 600 entities — and a rig multiplies per-entity draw count by roughly
  * six. The batch is what keeps that from mattering: one style assignment per batch, then a loop.
  */

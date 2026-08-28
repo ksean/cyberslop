@@ -13,7 +13,7 @@ import kotlin.test.assertEquals
 import kotlin.test.assertTrue
 
 /**
- * The weapon in the player's hand is the weapon that was on the floor (PROD-049, property 28).
+ * The weapon in the player's hand is the weapon that was on the floor (PROD-049, P-28 (specs/presentation.md)).
  *
  * This is the clause that makes a drop *teach* something. If the shotgun on the ground and the
  * shotgun being carried are two different drawings, the player learns nothing by picking one up, and
@@ -50,7 +50,7 @@ class HeldWeaponTest {
 
     /**
      * Aiming is automatic (PROD-022), so the held weapon is the only thing that tells the player
-     * what the game has locked onto — including above and below, which is where change 0005 found
+     * what the game has locked onto — including above and below, which is where an earlier review found
      * the enemy barrel throwing away everything but the sign of its aim.
      */
     @Test

@@ -8,7 +8,7 @@ import io.github.ksean.cyberslop.core.Vec2
  * One place, because the order is load-bearing and it would otherwise be repeated at three call
  * sites: a coloured line over a dark backing reads as an object edged in that colour, where the
  * reverse reads as a dark object with a coloured core. The halo is also the whole of PROD-051 —
- * neither line separates from all ten palettes alone (`plan.md` §16.3).
+ * neither line separates from all ten palettes alone (`specs/presentation.md`, Item icons).
  *
  * **The two passes go on two layers, and that is not tidiness.** Drawn on one layer the order is
  * whichever batch was opened first, and a frame holding drops of two rarities opens them in the
@@ -17,7 +17,7 @@ import io.github.ksean.cyberslop.core.Vec2
  * every thin stroke on the larger drop came out solid black.
  *
  * Two small sinks are allocated per icon drawn. That is tens of allocations in a frame that already
- * builds a `Pose` per visible actor, and none of it is per-primitive, which is the property §15.3
+ * builds a `Pose` per visible actor, and none of it is per-primitive, which is the property `specs/presentation.md`
  * cares about.
  */
 object IconPainter {

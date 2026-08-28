@@ -27,7 +27,7 @@ object Populator {
     const val COMMITTED_BUFFER = 3
 
     fun populate(level: Level, rng: Rng, curve: DifficultyCurve): List<EnemySpawn> {
-        // Density follows the difficulty curve, as plan.md 5.2 says it should.
+        // Density follows the difficulty curve, as `specs/generation.md` says it should.
         val target = (level.widthTiles / 100.0 * curve.enemiesPerHundredTiles)
             .toInt()
             .coerceIn(MIN_ENEMIES, MAX_ENEMIES)
@@ -98,15 +98,7 @@ object Populator {
         return false
     }
 
-    fun isCommitted(level: Level, column: Int): Boolean {
-        for (row in 0 until level.tiles.height) {
-            if (level.tiles.isLethal(column, row)) return true
-        }
-        // A column with no floor beneath the corridor is a gap the player is airborne over.
-        val corridorRow = (0 until level.tiles.height).firstOrNull { level.arcMask[column, it] }
-            ?: return false
-        return (corridorRow until level.tiles.height).none { level.tiles.blocksMovement(column, it) }
-    }
+    fun isCommitted(level: Level, column: Int): Boolean = level.isCommitted(column)
 
     private fun hasLineOfFire(
         level: Level,

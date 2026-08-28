@@ -85,7 +85,7 @@ enum class Primitive(val stride: Int) {
 /**
  * Every primitive of one style and one shape, as a flat run of coordinates.
  *
- * Flat rather than a list of point objects because `plan.md` §8.1 measured boxed collections as a
+ * Flat rather than a list of point objects because `specs/presentation.md` measured boxed collections as a
  * real cost in the hot path, and because the renderer's inner loop should read numbers rather than
  * chase references.
  */

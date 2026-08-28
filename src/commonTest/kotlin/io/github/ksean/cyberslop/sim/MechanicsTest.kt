@@ -24,6 +24,9 @@ class MechanicsTest {
         // Measured across exactly one swing. Over many swings auto-aim legitimately re-targets as
         // the nearest thing changes, so counting damage over time proves nothing about the arc.
         val sim = simulation(WeaponId.RustlineMachete)
+        // Only the two fixtures: the generated map seeds a Swarm near spawn that a longer reach
+        // would otherwise take the single allowed hit.
+        sim.enemies.clear()
         val behind = enemyNear(sim, offsetX = -20.0)
         val ahead = enemyNear(sim, offsetX = 20.0)
 
@@ -50,12 +53,12 @@ class MechanicsTest {
     fun `a boss telegraphs before it can hurt anyone`() {
         val sim = simulation()
         val boss = sim.boss
-        boss.fight.playerMoved(boss.fight.let { sim.level.boss.leftTile + 8 })
+        boss.fight.engage()
 
         var damageBeforeTelegraph = 0.0
         var elapsed = 0.0
         while (elapsed < 0.35) {
-            damageBeforeTelegraph += boss.tick(TICK_SECONDS, boss.position)
+            damageBeforeTelegraph += boss.tick(TICK_SECONDS, BossTarget(boss.position, onGround = true, crouched = false))
             elapsed += TICK_SECONDS
         }
 
@@ -63,15 +66,15 @@ class MechanicsTest {
     }
 
     @Test
-    fun `a boss eventually lands an attack once committed`() {
+    fun `a boss eventually lands an attack once engaged`() {
         val sim = simulation()
         val boss = sim.boss
-        boss.fight.playerMoved(sim.level.boss.leftTile + 8)
+        boss.fight.engage()
 
         var total = 0.0
-        repeat(600) { total += boss.tick(TICK_SECONDS, boss.position) }
+        repeat(600) { total += boss.tick(TICK_SECONDS, BossTarget(boss.position, onGround = true, crouched = false)) }
 
-        assertTrue(total > 0.0, "a committed boss never attacked across ten seconds")
+        assertTrue(total > 0.0, "an engaged boss never attacked across ten seconds")
     }
 
     @Test
@@ -79,7 +82,7 @@ class MechanicsTest {
         val sim = simulation()
 
         assertFalse(sim.boss.fight.exitOpen)
-        sim.boss.fight.playerMoved(sim.level.boss.leftTile + 8)
+        sim.boss.fight.engage()
         sim.boss.fight.damage(sim.boss.spec.maxHealth)
 
         assertTrue(sim.boss.fight.exitOpen, "the exit did not open when the boss died")
@@ -89,7 +92,7 @@ class MechanicsTest {
     fun `killing the boss is not the same as clearing the map`() {
         // The exit opens on its death; the player still has to walk out of the arena.
         val sim = simulation()
-        sim.boss.fight.playerMoved(sim.level.boss.leftTile + 8)
+        sim.boss.fight.engage()
         sim.boss.fight.damage(sim.boss.spec.maxHealth)
 
         val report = sim.tick(InputFrame())
@@ -143,24 +146,6 @@ class MechanicsTest {
         repeat(60) { sim.tick(InputFrame()) }
 
         assertEquals(where, enemy.position.x, "a stunned enemy kept moving")
-    }
-
-    @Test
-    fun `enemies never leave the patrol span generation gave them`() {
-        // This is what makes the corridor invariant true at runtime rather than only at carve time.
-        val sim = simulation()
-        val watched = sim.enemies.filter { it.alive }.take(6)
-        val bounds = watched.map { it to (it.homeX - it.patrolPx to it.homeX + it.patrolPx) }
-
-        repeat(900) { sim.tick(InputFrame(right = true)) }
-
-        bounds.forEach { (enemy, span) ->
-            assertTrue(
-                enemy.position.x >= span.first - TOLERANCE &&
-                    enemy.position.x <= span.second + TOLERANCE,
-                "an enemy wandered to ${enemy.position.x}, outside $span",
-            )
-        }
     }
 
     @Test

@@ -49,8 +49,8 @@ class BrowserTitleScreenTest {
     }
 
     /**
-     * Supersedes change 0001's TITLE-005, which made activation a deliberate no-op with a test
-     * asserting the screen did not change. Change 0003 gives the buttons their behaviour, so the
+     * Supersedes TITLE-005, which made activation a deliberate no-op with a test
+     * asserting the screen did not change. `specs/product.md` gives the buttons their behaviour, so the
      * assertion is replaced rather than deleted: activating an action must report exactly which
      * action was chosen.
      */

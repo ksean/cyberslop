@@ -1,7 +1,8 @@
 # Cyberslop
 
-Cyberslop is a dystopian side-scrolling adventure game being built with Kotlin and WebAssembly for modern web browsers. It is in early development. The design and its verification strategy are recorded in
-[plan.md](plan.md).
+Cyberslop is a cyberpunk-dystopian side-scrolling roguelite built with Kotlin and WebAssembly for
+modern web browsers. Ten procedurally generated, provably completable maps; four keys; a weapon
+that fires by itself; permadeath with persistent unlocks.
 
 ## Run locally
 
@@ -20,6 +21,7 @@ Run the project checks with:
 
 If that fails to download `binaryen`, see [scripts/local-binaryen.md](scripts/local-binaryen.md).
 
-Project requirements and the two-phase development workflow live in [specs](specs/README.md). Pending implementation work is tracked in [tasks.md](tasks.md).
+Requirements and design live in [specs](specs/README.md). Current work is planned in
+[plan.md](plan.md) and tracked in [tasks.md](tasks.md).
 
 Licensed under the [Apache License 2.0](LICENSE).

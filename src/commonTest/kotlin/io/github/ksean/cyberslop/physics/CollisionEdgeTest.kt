@@ -14,7 +14,7 @@ import kotlin.test.assertTrue
  * Resolution moves the whole X component of a sub-step before any of the Y component. That is not a
  * true simultaneous sweep, so a trajectory grazing a tile's corner is judged by the L-shaped path
  * rather than the diagonal one. These tests pin the resulting behaviour rather than assert it is
- * ideal: the guarantee in plan.md §3 rests on the verifier and the game using the *same* model, and
+ * ideal: the guarantee in `specs/completability.md` rests on the verifier and the game using the *same* model, and
  * both call this code, so whatever it decides they agree on. What would break the guarantee is the
  * behaviour changing silently, which is what these tests prevent.
  */
