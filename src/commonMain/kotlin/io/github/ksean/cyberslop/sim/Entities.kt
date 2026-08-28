@@ -1,5 +1,7 @@
 package io.github.ksean.cyberslop.sim
 
+import io.github.ksean.cyberslop.combat.ResolvedWeapon
+
 import io.github.ksean.cyberslop.core.Vec2
 import io.github.ksean.cyberslop.entity.AttackVisual
 import io.github.ksean.cyberslop.entity.BossAttack
@@ -115,6 +117,9 @@ class LiveBoss(val spec: BossSpec, val arena: Arena, private val tiles: TileMap)
         TileMap.toWorld(arena.floorRow),
     )
         private set
+
+    /** Test hook: stand the boss somewhere in particular. */
+    internal fun placeAt(feet: Vec2) { position = feet }
 
     val height: Double = BODY_HEIGHT
     val halfWidth: Double = BODY_WIDTH / 2.0
@@ -252,7 +257,7 @@ class LiveBoss(val spec: BossSpec, val arena: Arena, private val tiles: TileMap)
         const val LUNGE_SPEED = 300.0
         private const val CLOSE_ENOUGH = 8.0
         /** Half the width of the band a Volley covers around where it was aimed. */
-        private const val VOLLEY_WIDTH = 24.0
+        const val VOLLEY_WIDTH = 24.0
     }
 }
 
@@ -290,6 +295,34 @@ data class MuzzleFlash(
     val strength: Double get() = (secondsLeft / totalSeconds).coerceIn(0.0, 1.0)
 }
 
+/**
+ * Where an instantly resolving attack went (PROD-071): the geometry the hit test used, kept for
+ * the flash window so the renderer can draw it. Presentation only — outside the digest like
+ * [SwingVisual] and [MuzzleFlash].
+ */
+sealed interface HitShape {
+    /** A strike from above: the beam's [foot] is the strike centre, [radius] the scaled blast radius. */
+    data class Beam(val foot: Vec2, val radius: Double) : HitShape
+
+    /** The weapon, then every target struck, in strike order. */
+    data class Chain(val points: List<Vec2>) : HitShape
+
+    /** A blast, pull or orbit at its resolved [radius]. */
+    data class Ring(val centre: Vec2, val radius: Double) : HitShape
+
+    /** A projectile spent this tick — by a hit or by terrain — where it stopped and how it was moving. */
+    data class Impact(val at: Vec2, val velocity: Vec2, val fromPlayer: Boolean) : HitShape
+}
+
+data class HitIndicator(
+    val shape: HitShape,
+    val secondsLeft: Double,
+    val totalSeconds: Double,
+) {
+    /** One at the hit, falling to zero as it fades. */
+    val strength: Double get() = (secondsLeft / totalSeconds).coerceIn(0.0, 1.0)
+}
+
 class LiveProjectile(
     var position: Vec2,
     var velocity: Vec2,
@@ -301,6 +334,8 @@ class LiveProjectile(
     val homingTurn: Double = 0.0,
     val homingRadius: Double = 0.0,
     val radius: Double = 6.0,
+    /** The build that fired a player's shot: its hit effects land as fired, whatever is held when it lands (PROD-070). */
+    val weapon: ResolvedWeapon? = null,
 ) {
     val spent: Boolean get() = secondsLeft <= 0.0 || pierceLeft < 0
 }

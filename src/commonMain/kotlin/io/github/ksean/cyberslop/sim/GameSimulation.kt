@@ -18,6 +18,7 @@ import io.github.ksean.cyberslop.entity.Balance
 import io.github.ksean.cyberslop.entity.EnemyAttacks
 import io.github.ksean.cyberslop.entity.Bosses
 import io.github.ksean.cyberslop.loot.DropTable
+import io.github.ksean.cyberslop.loot.Loadout
 import io.github.ksean.cyberslop.loot.Pickup
 import io.github.ksean.cyberslop.loot.Powerup
 import io.github.ksean.cyberslop.loot.WeaponPickup
@@ -41,12 +42,28 @@ import io.github.ksean.cyberslop.world.TileMap
  * one's starter cache. They are never refused by a full build, which is what makes the floor a bound
  * on a real player rather than on one particular route.
  */
+/**
+ * Something lying on the map. An item that holds both a [weapon] and a [powerup] is a paired
+ * award and resolves weapon then powerup on one contact (PROD-070).
+ */
 class GroundItem(
     val position: Vec2,
     val weapon: WeaponSpec?,
     val powerup: Powerup?,
     val guaranteed: Boolean = false,
-)
+) {
+    /** Where the powerup is drawn: beside the weapon when paired, else where the item is. */
+    val powerupPosition: Vec2 get() = if (weapon != null && powerup != null) position + Vec2(PAIRED_OFFSET, 0.0) else position
+
+    /** Contact is made at whichever icon the player is standing on (PROD-030). */
+    fun inReachOf(centre: Vec2, reach: Double): Boolean =
+        (position - centre).lengthSquared < reach * reach || (powerupPosition - centre).lengthSquared < reach * reach
+
+    companion object {
+        /** A paired award's powerup icon sits one tile to the right of its weapon. */
+        const val PAIRED_OFFSET = 16.0
+    }
+}
 
 data class TickReport(
     val playerDied: Boolean = false,
@@ -105,6 +122,18 @@ class GameSimulation(
     /** The most recent shot leaving the muzzle, for the renderer. */
     var lastShot: MuzzleFlash? = null
         private set
+
+    /** Where the last instantly resolving attack went (PROD-071); presentation only. */
+    var lastHit: HitIndicator? = null
+        internal set
+
+    /**
+     * Projectiles spent this flash window (PROD-071): a shot that spawns, flies and hits inside one
+     * tick is never in [projectiles] when a frame is drawn, so its line of flight is kept here.
+     * Presentation only.
+     */
+    val impacts: List<HitIndicator> get() = spent
+    private val spent = mutableListOf<HitIndicator>()
 
     /**
      * Where the weapon is currently pointing — a unit vector, updated every tick.
@@ -260,6 +289,12 @@ class GameSimulation(
             val remaining = flash.secondsLeft - TICK_SECONDS
             if (remaining > 0.0) flash.copy(secondsLeft = remaining) else null
         }
+        lastHit = lastHit?.let { hit ->
+            val remaining = hit.secondsLeft - TICK_SECONDS
+            if (remaining > 0.0) hit.copy(secondsLeft = remaining) else null
+        }
+        for (index in spent.indices) spent[index] = spent[index].copy(secondsLeft = spent[index].secondsLeft - TICK_SECONDS)
+        spent.removeAll { it.secondsLeft <= 0.0 }
         // Exposure is read off the box the movement model just produced, *before* anything can
         // hit it: resolved after the projectiles, the tick on which the player entered a committed
         // column still carried the previous tick's exposure and could hurt.
@@ -271,6 +306,7 @@ class GameSimulation(
         advanceBosses()
         collectItems()
         drainHazards()
+        drainContact()
 
         if (player.touchedLethal || burnedByJet()) run = run.copy(health = 0.0)
 
@@ -311,6 +347,15 @@ class GameSimulation(
         projectiles.forEach { p ->
             add(p.position); add(p.velocity); add(p.damage); add(p.pierceLeft); add(p.secondsLeft)
             add(p.passesTerrain); add(p.fromPlayer); add(p.homingTurn); add(p.homingRadius); add(p.radius)
+            // The payload a player's shot carries to its hit: every resolved field that changes what
+            // landing does, keyed by the weapon it resolved from.
+            val w = p.weapon
+            add(w?.spec?.id?.ordinal ?: -1)
+            if (w != null) {
+                add(w.damagePerProjectile); add(w.critChance); add(w.critMultiplier); add(w.chainTargets); add(w.ricochets)
+                add(w.hitboxScale); add(w.knockbackScale); add(w.stunChance); add(w.slowFraction)
+                add(w.blastFraction); add(w.igniteFraction); add(w.lifestealFraction)
+            }
         }
         add(items.size)
         items.forEach { i ->
@@ -364,13 +409,14 @@ class GameSimulation(
                     secondsLeft = FLASH_VISIBLE_SECONDS,
                     totalSeconds = FLASH_VISIBLE_SECONDS,
                 )
-                when (weapon.spec.pattern) {
-                    is FirePattern.Blast, is FirePattern.Strike ->
-                        resolveBlast(shot, origin, (weapon.spec.pattern as? FirePattern.Blast)?.radius
-                            ?: (weapon.spec.pattern as FirePattern.Strike).radius)
+                // An instant attack leaves the geometry its hit test used, so the frame can show
+                // where it went and not only that it fired (PROD-071).
+                when (val pattern = weapon.spec.pattern) {
+                    is FirePattern.Blast -> showHit(HitShape.Ring(origin, resolveBlast(shot, origin, pattern.radius)))
+                    is FirePattern.Strike -> showHit(HitShape.Beam(origin, resolveBlast(shot, origin, pattern.radius)))
                     is FirePattern.Chain -> resolveChain(shot, origin)
-                    is FirePattern.Orbit -> resolveBlast(shot, origin, weapon.spec.rangePx)
-                    is FirePattern.Pull -> resolveBlast(shot, origin, (weapon.spec.pattern as FirePattern.Pull).radius)
+                    is FirePattern.Orbit -> showHit(HitShape.Ring(origin, resolveBlast(shot, origin, pattern.radius)))
+                    is FirePattern.Pull -> showHit(HitShape.Ring(origin, resolveBlast(shot, origin, pattern.radius)))
                     else -> spawnProjectiles(shot, origin)
                 }
             }
@@ -403,9 +449,15 @@ class GameSimulation(
         }
     }
 
-    private fun resolveBlast(shot: Shot, centre: Vec2, radius: Double) {
+    /** Resolves a blast and returns the radius it actually used. */
+    private fun resolveBlast(shot: Shot, centre: Vec2, radius: Double): Double {
         val scaled = radius * shot.weapon.hitboxScale
         forEachTargetNear(centre, scaled) { applyHit(it, shot.weapon, shot.direction) }
+        return scaled
+    }
+
+    private fun showHit(shape: HitShape) {
+        lastHit = HitIndicator(shape, FLASH_VISIBLE_SECONDS, FLASH_VISIBLE_SECONDS)
     }
 
     /**
@@ -418,18 +470,22 @@ class GameSimulation(
         var from = origin
         var scale = 1.0
         val struck = mutableSetOf<Any>()
+        val points = mutableListOf(origin)
 
-        repeat(jumps) {
+        for (jump in 0 until jumps) {
             val candidates = enemies.filter { it.alive && it !in struck }.map { Target.Enemy(it) } +
                 listOf(miniboss, boss).filter { it.fight.vulnerable && !it.fight.defeated && it !in struck }
                     .map { Target.Boss(it) }
-            val next = candidates.minByOrNull { (it.position - from).lengthSquared } ?: return
-            if ((next.position - from).lengthSquared > pattern.jumpRange * pattern.jumpRange) return
+            val next = candidates.minByOrNull { (it.position - from).lengthSquared } ?: break
+            if ((next.position - from).lengthSquared > pattern.jumpRange * pattern.jumpRange) break
             struck.add(if (next is Target.Enemy) next.enemy else (next as Target.Boss).boss)
             applyHit(next, shot.weapon, shot.direction, scale)
             from = next.position
+            points.add(from)
             scale *= (1.0 - pattern.decay)
         }
+        // A chain that struck nothing has nowhere to draw; the activation pulse is its only cue.
+        if (points.size > 1) showHit(HitShape.Chain(points))
     }
 
     private fun spawnProjectiles(shot: Shot, origin: Vec2) {
@@ -461,6 +517,7 @@ class GameSimulation(
                     homingTurn = homing?.turnDegreesPerSecond ?: 0.0,
                     homingRadius = homing?.radiusPx ?: 0.0,
                     radius = PROJECTILE_RADIUS * weapon.hitboxScale,
+                    weapon = weapon,
                 ),
             )
         }
@@ -586,7 +643,7 @@ class GameSimulation(
                     if (projectile.spent) return@forEachTargetNear
                     when (target) {
                         is Target.Enemy ->
-                            damageEnemy(target.enemy, projectile.damage, autoFire.weapon, projectile.velocity)
+                            damageEnemy(target.enemy, projectile.damage, projectile.weapon ?: autoFire.weapon, projectile.velocity)
                         is Target.Boss -> target.boss.fight.damage(projectile.damage)
                     }
                     projectile.pierceLeft--
@@ -598,6 +655,7 @@ class GameSimulation(
                 projectile.secondsLeft = 0.0
             }
         }
+        projectiles.forEach { if (it.spent) spent.add(HitIndicator(HitShape.Impact(it.position, it.velocity, it.fromPlayer), FLASH_VISIBLE_SECONDS, FLASH_VISIBLE_SECONDS)) }
         projectiles.removeAll { it.spent }
     }
 
@@ -939,25 +997,21 @@ class GameSimulation(
         shifts: Int = 1,
         powerupFloor: io.github.ksean.cyberslop.loot.PowerupTier? = null,
     ) {
-        items.add(
-            GroundItem(
-                at,
-                DropTable.rollWeapon(rng, level.mapIndex, floor, shifts, unlockedWeapons),
-                null,
-                guaranteed = true,
-            ),
-        )
-        if (powerup) {
-            items.add(
-                GroundItem(
-                    at + Vec2(TILE_SIZE.toDouble(), 0.0),
-                    null,
-                    DropTable.rollPowerup(rng, level.mapIndex, runPool, floor = powerupFloor),
-                    guaranteed = true,
-                ),
-            )
-        }
+        // One item, weapon and powerup together: collected as a pair, weapon first, so the
+        // powerup is never wiped by the weapon it was awarded with (PROD-070).
+        // Rolled whether or not an override replaces them, so the loot stream is the same either way.
+        val rolled = DropTable.rollWeapon(rng, level.mapIndex, floor, shifts, unlockedWeapons)
+        val pairedRoll = if (powerup) DropTable.rollPowerup(rng, level.mapIndex, runPool, floor = powerupFloor) else null
+        val (weapon, paired) = awardOverride?.invoke(rolled, pairedRoll) ?: (rolled to pairedRoll)
+        items.add(GroundItem(at, weapon, paired, guaranteed = true))
     }
+
+    /**
+     * Harness hook: what a guaranteed award becomes, given what was rolled. The loot floor's
+     * reference player takes every award at its weakest outcome; the pressure harness sets this so
+     * an award is the floor's before it can be collected — which can be the tick it drops.
+     */
+    internal var awardOverride: ((WeaponSpec, Powerup?) -> Pair<WeaponSpec, Powerup?>)? = null
 
 
     private fun onKilled(enemy: LiveEnemy) {
@@ -980,36 +1034,36 @@ class GameSimulation(
 
     private fun collectItems() {
         val reach = TILE_SIZE.toDouble()
-        val taken = items.filter { (it.position - centreOf(player)).lengthSquared < reach * reach }
+        val centre = centreOf(player)
+        val taken = items.filter { it.inReachOf(centre, reach) }
         taken.forEach { item ->
-            when {
-                item.weapon != null -> {
-                    val (next, outcome) = run.loadout.collect(item.weapon, level.mapIndex)
-                    // Both outcomes yield Scrap: an upgrade sells what it displaced, and a weapon
-                    // that loses the comparison is sold where it lies.
-                    val scrap = when (outcome) {
-                        is WeaponPickup.Equipped -> outcome.scrap
-                        is WeaponPickup.Scrapped -> outcome.scrap
-                    }
-                    run = run.copy(loadout = next, scrap = run.scrap + scrap)
+            // Weapon first, then powerup (PROD-070): a paired award is one item, so its powerup
+            // lands on its weapon whichever side the player walked in from.
+            item.weapon?.let { weapon ->
+                val (next, outcome) = run.loadout.collect(weapon)
+                // The weapon replaced and every slot cleared are sold.
+                run = run.copy(loadout = next, scrap = run.scrap + (outcome as WeaponPickup.Equipped).scrap)
+            }
+            item.powerup?.let { powerup ->
+                val (next, outcome) = run.loadout.collect(powerup.id, level.mapIndex, item.guaranteed)
+                run = run.copy(loadout = next)
+                // Both losing outcomes pay out: the pickup that lost, or the slot it displaced.
+                val scrap = when (outcome) {
+                    is Pickup.Scrapped -> outcome.scrap
+                    is Pickup.Displaced -> outcome.scrap
+                    is Pickup.Applied -> 0
                 }
-
-                item.powerup != null -> {
-                    val (next, outcome) =
-                        run.loadout.collect(item.powerup.id, level.mapIndex, item.guaranteed)
-                    run = run.copy(loadout = next)
-                    // Both losing outcomes pay out: the pickup that lost, or the slot it displaced.
-                    val scrap = when (outcome) {
-                        is Pickup.Scrapped -> outcome.scrap
-                        is Pickup.Displaced -> outcome.scrap
-                        is Pickup.Applied -> 0
-                    }
-                    if (scrap > 0) run = run.copy(scrap = run.scrap + scrap)
-                }
+                if (scrap > 0) run = run.copy(scrap = run.scrap + scrap)
             }
             autoFire.rebuild(run.loadout.weapon, run.loadout.slots)
         }
         items.removeAll(taken)
+    }
+
+    /** Harness hook: hold exactly this loadout, as the loot-floor model assumes. */
+    internal fun holdLoadout(loadout: Loadout) {
+        run = run.copy(loadout = loadout)
+        autoFire.rebuild(loadout.weapon, loadout.slots)
     }
 
     // ---- helpers ------------------------------------------------------------------------------
@@ -1038,6 +1092,25 @@ class GameSimulation(
             level, player.x, player.y, Physics.Default.width, player.height(Physics.Default),
         )
         if (rate > 0.0) hurt(rate * Balance.contactDamage(level.mapIndex) * TICK_SECONDS)
+    }
+
+    /**
+     * A living enemy's body drains by overlap like a hazard (`specs/enemies.md`, PROD-069): no
+     * wind-up, not cancelled by a stun, never displacing the player, and never on a committed span
+     * or the boss's ground. Bosses have no body drain; their attacks are their damage.
+     */
+    private fun drainContact() {
+        if (!enemyDamageAllowed()) return
+        val touching = enemies.count { it.alive && overlapsPlayer(it) }
+        if (touching == 0) return
+        hurt(touching * EnemyAttacks.CONTACT_DRAIN * Balance.contactDamage(level.mapIndex) * TICK_SECONDS)
+    }
+
+    private fun overlapsPlayer(enemy: LiveEnemy): Boolean {
+        val width = Physics.Default.width
+        val height = player.height(Physics.Default)
+        return enemy.position.x < player.x + width && enemy.position.x + ENEMY_SIZE > player.x &&
+            enemy.position.y < player.y + height && enemy.position.y + ENEMY_SIZE > player.y
     }
 
     private fun burnedByJet(): Boolean {

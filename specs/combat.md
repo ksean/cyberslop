@@ -1,7 +1,8 @@
 # Combat, Weapons and Powerups
 
 The player carries one weapon. Powerups are **player-owned and weapon-applied**: five slots of up
-to three stacks each, re-applied to whatever weapon is held, never lost on a weapon swap.
+to three stacks each, applied to the weapon held — and emptied whenever a weapon is picked up
+(PROD-070): a build is made around one weapon and does not survive it.
 
 ## The firing tick
 
@@ -33,19 +34,21 @@ hitbox and reach scale, knockback, stun, slow, blast, ignite, lifesteal, kill re
 powerup resolves for every weapon; a field a pattern cannot use (extra projectiles on a blast)
 simply has no effect there.
 
-## Swapping on contact
+## Weapon pickup
 
-Contact always resolves (PROD-030). A weapon on the ground is compared to the held one with the
-player's current build:
+Contact always resolves (PROD-030, PROD-070). A weapon on the ground is **always taken**: it
+becomes the held weapon, the previous weapon converts to Scrap at its tier value, and every powerup
+slot is cleared, each converting to Scrap at its tier value. There is no comparison and no refusal;
+tier governs drop rarity and Scrap value, never whether a pickup is taken. A player's shot carries
+the build that fired it: a pickup while it is in flight changes nothing about where it lands or
+what landing does. A guaranteed award that carries both a weapon and a powerup — a
+mini-boss from map 4, every main boss — applies the weapon first and the powerup second, so the
+award leaves the player with the new weapon and one powerup on it.
 
-```
-score(w) = WeaponScore(w, slots, mapIndex)     // resolved damage × crowd factor, conditional terms
-if score(ground) > score(held) swap, previous weapon → Scrap; else ground weapon → Scrap
-```
-
-Conditional terms resolve against a **reference target**: one enemy at 60 % of the current map's
-trash health, 4 m away, unslowed, unstunned, full uptime, damage-over-time at full expected value.
-Tier governs drop rarity only, never swapping.
+`WeaponScore` still decides powerup displacement (below) and still resolves conditional terms
+against a **reference target**: one enemy at 60 % of the current map's trash health, 4 m away,
+unslowed, unstunned, full uptime, damage-over-time at full expected value. It no longer decides
+weapon pickups.
 
 A powerup arriving at a full build follows PROD-028: a guaranteed award is never refused and
 displaces the slot whose loss costs least damage; an optional award displaces a slot only when doing
@@ -164,12 +167,17 @@ Scrap per displaced item by tier: 8, 20, 45, 100, 240.
   mean ranged DPS; the bottle's DPS stays below map 1's required rate.
 - **P-25** Kill drop rate is 0.20 at every map index, three in ten of them weapons; static drops
   average 2.0 ± 0.15 per map over a seed cohort, each count in {1, 2, 3}.
+- **P-42** Weapon pickup: collecting any weapon — including one of lower tier and lower score than
+  the held one — equips it; the previous weapon's Scrap and the Scrap of every cleared slot are
+  paid; the slots are empty afterwards; a powerup collected next lands in the emptied build; a
+  boss award's powerup is held after the award and its weapon is the one equipped; collecting a
+  weapon while holding none of the five slots pays only the weapon's Scrap.
 
 ## Known gaps
 
-- `WeaponScore` and `expectedDps` order weapons differently, so an accepted optional weapon swap
-  can lower single-target damage (measured: 381 of 3,243 accepted swaps across ten maps). Closing
-  it is a balance change: recalibrate the score's crowd and conditional terms, or measure the loot
-  floor in the units swaps are decided in.
+- Every weapon pickup is taken (PROD-070), so an optional pickup can lower the player's damage
+  and wipes their build; the loot floor accounts for guaranteed pickups but no test bounds how far
+  an optional one can set a player back. Whether the drop table should stop rolling weapons below
+  the held tier is a balance decision not yet taken.
 - `WeaponScore` does not weigh lifesteal, seeking, slowing, reach, knockback, stun or kill refunds,
   so a guaranteed award can displace a slot whose unmeasured effect was worth keeping.

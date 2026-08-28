@@ -13,9 +13,8 @@ sealed interface Pickup {
  * The player's build: at most [MAX_SLOTS] distinct powerups, each stacked at most
  * [Powerup.MAX_STACKS] times.
  *
- * Slots belong to the **player**, not to the weapon. Picking up a weapon therefore swaps base stats
- * and never wipes a build, which is what makes walk-over pickup safe to make automatic: there is no
- * pickup the player would want to refuse.
+ * Slots are applied to the weapon held and emptied when a weapon is picked up (PROD-070); this
+ * type only holds and stacks them. [Loadout] owns the reset.
  */
 class PowerupSlots private constructor(private val stacks: Map<PowerupId, Int>) {
     val held: Map<PowerupId, Int> get() = stacks

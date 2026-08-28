@@ -44,12 +44,23 @@ class SimulationDeterminismTest {
         mutated("projectiles") {
             it.projectiles.add(LiveProjectile(Vec2.Zero, Vec2.Right, 1.0, 0, 1.0, passesTerrain = false, fromPlayer = true))
         }
+        mutated("projectile payload") {
+            it.projectiles.add(LiveProjectile(Vec2.Zero, Vec2.Right, 1.0, 0, 1.0, passesTerrain = false, fromPlayer = true, weapon = it.autoFire.weapon))
+        }
         mutated("items") { it.items.add(GroundItem(Vec2.Zero, null, null)) }
         mutated("bosses") { it.boss.fight.engage() }
         mutated("boss rest") { it.miniboss.restSecondsLeft += 0.1 }
     }
 
-    /** Runs out along the route, then stands and lets the population arrive. */
+    /** A hit indicator is presentation only (PROD-071): it never touches the digest. */
+    @Test
+    fun `a hit indicator does not change the digest`() {
+        val sim = simulate()
+        val before = sim.digest()
+        sim.lastHit = HitIndicator(HitShape.Ring(Vec2.Zero, 10.0), 0.1, 0.1)
+        assertEquals(before, sim.digest())
+    }
+
     /** Round-3 finding: the exit state is the gate's tiles, which `openGate` mutates — not a flag. */
     @Test
     fun `the exit geometry is part of the digest`() {
@@ -76,7 +87,7 @@ class SimulationDeterminismTest {
         val SEED = 0xD1CE5uL
         const val TICKS = 720
         const val RUN_TICKS = 300
-        const val GOLDEN = 6827669262270049212uL
+        const val GOLDEN = 7583559373744013130uL
 
         /** Generated once: nothing the tape does writes to the tiles, and generation is the slow part. */
         val level by lazy { LevelGenerator.generate(SEED, 1).level }

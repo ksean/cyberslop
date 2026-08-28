@@ -803,7 +803,10 @@ class SceneTest {
                 radii.add((Vec2(batch[i + 2], batch[i + 3]) - weapon).length)
             }
         }
-        assertTrue(radii.min() > 1.0 && radii.max() - radii.min() < 1e-6, "the cue is not a ring around the weapon: radii $radii")
+        // Tracers and hit indicators share the layer (PROD-071), so the pulse is the one radius
+        // that a whole polygon of endpoints sits on.
+        val onRing = radii.filter { it > 1.0 }.groupBy { kotlin.math.round(it * 1e6) / 1e6 }.values.maxOfOrNull { it.size } ?: 0
+        assertTrue(onRing >= 8, "the cue is not a ring around the weapon: radii $radii")
     }
 
     private fun playerCentre(sim: GameSimulation) =
@@ -920,6 +923,224 @@ class SceneTest {
         assertEquals(sim.level.theme.displayName, model.themeName)
         assertEquals(sim.run.mapIndex, model.mapIndex)
         assertTrue(model.healthFraction in 0.0..1.0)
+    }
+
+    // ---- PROD-071 / P-43: every shot shows where it went ---------------------------------------
+
+    private fun segmentsOf(frame: DrawList, style: String? = null): List<Pair<Vec2, Vec2>> =
+        frame.batches.filter { it.layer == Layer.Effects && it.primitive == Primitive.Segment && (style == null || it.style == style) }
+            .flatMap { batch ->
+                (0 until batch.size).map { n ->
+                    val i = n * Primitive.Segment.stride
+                    Vec2(batch[i], batch[i + 1]) to Vec2(batch[i + 2], batch[i + 3])
+                }
+            }
+
+    private fun dotsOf(frame: DrawList, style: String? = null): List<Pair<Vec2, Double>> =
+        frame.batches.filter { it.layer == Layer.Effects && it.primitive == Primitive.Dot && (style == null || it.style == style) }
+            .flatMap { batch ->
+                (0 until batch.size).map { n ->
+                    val i = n * Primitive.Dot.stride
+                    Vec2(batch[i], batch[i + 1]) to batch[i + 2]
+                }
+            }
+
+    private fun hasSegment(segments: List<Pair<Vec2, Vec2>>, a: Vec2, b: Vec2) =
+        segments.any { (p, q) -> ((p - a).length < 1e-6 && (q - b).length < 1e-6) || ((p - b).length < 1e-6 && (q - a).length < 1e-6) }
+
+    private fun frameOf(sim: GameSimulation) = Scene.compose(sim, camera(), backdrop(sim), hudOf(sim), 0.0, SceneBuilder())
+
+    @Test
+    fun `a projectile draws a body and a tracer back along its velocity`() {
+        val pistol = Weapons.of(WeaponId.ScraplineZipPistol)
+        val sim = simulation(pistol.id)
+        while (sim.projectiles.none { it.fromPlayer }) sim.tick(InputFrame())
+        trimTo(sim, 0)
+        val palette = Palettes.of(sim.level.theme)
+        val shot = sim.projectiles.first { it.fromPlayer }
+        val head = shot.position * Scene.ZOOM
+        val tail = (shot.position - shot.velocity * Scene.TRACER_SECONDS) * Scene.ZOOM
+
+        val frame = frameOf(sim)
+
+        val style = palette.glow[palette.glow.size - 1]
+        val body = dotsOf(frame, style).firstOrNull { (at, _) -> (at - head).length < 1e-6 }
+        assertTrue(body != null, "no body at $head")
+        assertEquals(shot.radius * Scene.ZOOM, body!!.second, 1e-9, "the body is not drawn at the hit radius")
+        assertTrue(hasSegment(segmentsOf(frame, style), head, tail), "no tracer from $head to $tail: ${segmentsOf(frame, style)}")
+    }
+
+    @Test
+    fun `an enemy projectile draws its body and tracer in the hazard colour`() {
+        val sim = simulation()
+        trimTo(sim, 0)
+        val palette = Palettes.of(sim.level.theme)
+        val position = playerCentre(sim) + Vec2(40.0, 0.0)
+        val velocity = Vec2(-340.0, 0.0)
+        sim.projectiles.add(io.github.ksean.cyberslop.sim.LiveProjectile(position, velocity, 1.0, 0, 1.0, passesTerrain = false, fromPlayer = false))
+
+        val frame = frameOf(sim)
+
+        val head = position * Scene.ZOOM
+        val tail = (position - velocity * Scene.TRACER_SECONDS) * Scene.ZOOM
+        assertTrue(dotsOf(frame, palette.hazard).any { (at, _) -> (at - head).length < 1e-6 }, "no enemy body at $head")
+        assertTrue(hasSegment(segmentsOf(frame, palette.hazard), head, tail), "no enemy tracer from $head to $tail")
+    }
+
+    /** The Kessler resolves instantly at the aim point: a beam from the top of the view onto it, and a ring at its radius. */
+    @Test
+    fun `a Kessler strike draws a beam onto the strike point and a ring at its radius`() {
+        val sim = simulation(WeaponId.KesslerOrbitalUplink)
+        while (sim.lastHit == null) sim.tick(InputFrame())
+        val hit = sim.lastHit!!
+        val beam = hit.shape as io.github.ksean.cyberslop.sim.HitShape.Beam
+        val foot = beam.foot * Scene.ZOOM
+
+        val frame = frameOf(sim)
+
+        val segments = segmentsOf(frame)
+        assertTrue(segments.any { (p, q) -> (q - foot).length < 1e-6 && p.x == foot.x && p.y == 0.0 }, "no beam from the top of the view onto $foot")
+        val ring = segments.filter { (p, _) -> kotlin.math.abs((p - foot).length - beam.radius * Scene.ZOOM) < 1e-6 }
+        assertTrue(ring.size >= 8, "no ring of radius ${beam.radius * Scene.ZOOM} around $foot")
+    }
+
+    @Test
+    fun `a chain draws one segment per jump through the targets it struck, in order`() {
+        val sim = simulation(WeaponId.GhostwireTether)
+        while (sim.lastHit == null) sim.tick(InputFrame())
+        val chain = sim.lastHit!!.shape as io.github.ksean.cyberslop.sim.HitShape.Chain
+        assertTrue(chain.points.size >= 2, "fixture: a chain with nothing struck was recorded")
+
+        val frame = frameOf(sim)
+
+        val segments = segmentsOf(frame)
+        chain.points.zipWithNext().forEach { (a, b) ->
+            assertTrue(hasSegment(segments, a * Scene.ZOOM, b * Scene.ZOOM), "no chain segment from $a to $b")
+        }
+    }
+
+    @Test
+    fun `a chain that strikes nothing leaves no indicator`() {
+        val sim = io.github.ksean.cyberslop.sim.GameSimulation(
+            TestLevels.flat(),
+            RunState.begin(TestLevels.SEED).copy(loadout = RunState.begin(TestLevels.SEED).loadout.copy(weapon = Weapons.of(WeaponId.GhostwireTether))),
+            TestLevels.SEED,
+        )
+        repeat(120) { sim.tick(InputFrame()) }
+        assertTrue(sim.lastHit == null, "an empty chain recorded ${sim.lastHit}")
+    }
+
+    @Test
+    fun `a blast draws a ring of the resolved radius where it resolved`() {
+        val sim = simulation(WeaponId.MigraineLoop)
+        while (sim.lastHit == null) sim.tick(InputFrame())
+        val ring = sim.lastHit!!.shape as io.github.ksean.cyberslop.sim.HitShape.Ring
+        val centre = ring.centre * Scene.ZOOM
+
+        val frame = frameOf(sim)
+
+        val radii = segmentsOf(frame).filter { (p, _) -> kotlin.math.abs((p - centre).length - ring.radius * Scene.ZOOM) < 1e-6 }
+        assertTrue(radii.size >= 8, "no ring of radius ${ring.radius * Scene.ZOOM} around $centre")
+    }
+
+    @Test
+    fun `a hit indicator is gone after the flash window`() {
+        val sim = simulation(WeaponId.MigraineLoop)
+        while (sim.lastHit == null) sim.tick(InputFrame())
+        trimTo(sim, 0)
+        sim.autoFire.remaining = 100.0
+        repeat((GameSimulation.FLASH_VISIBLE_SECONDS / io.github.ksean.cyberslop.physics.TICK_SECONDS).toInt() + 1) { sim.tick(InputFrame()) }
+        assertTrue(sim.lastHit == null, "the indicator outlived its window")
+    }
+
+    /** Round-1 finding: a shot that spawns, travels and hits inside one tick was never drawn. */
+    @Test
+    fun `a projectile spent on the tick it was fired still leaves its line of flight`() {
+        val sim = simulation(WeaponId.ScraplineZipPistol)
+        trimTo(sim, 0)
+        val palette = Palettes.of(sim.level.theme)
+        // Standing in the muzzle: the slug hits before the frame it would have been drawn in.
+        val target = enemy(sim, EnemyArchetype.Brute)
+        target.position = playerCentre(sim) + Vec2(8.0, -7.0)
+        target.health = 1e9
+        sim.enemies.add(target)
+        while (sim.lastShot == null) sim.tick(InputFrame())
+        assertTrue(sim.projectiles.isEmpty(), "fixture: the slug is still flying")
+        val impact = sim.impacts.singleOrNull() ?: error("no impact recorded for a same-tick hit")
+        val shape = impact.shape as io.github.ksean.cyberslop.sim.HitShape.Impact
+        val head = shape.at * Scene.ZOOM
+        val tail = (shape.at - shape.velocity * Scene.TRACER_SECONDS) * Scene.ZOOM
+
+        val frame = frameOf(sim)
+
+        val style = palette.glow[palette.glow.size - 1]
+        assertTrue(hasSegment(segmentsOf(frame, style), head, tail), "no tracer for the spent slug from $head to $tail")
+
+        // Round-2 finding: the impact's tracer thins with the window like every other indicator.
+        fun width(f: DrawList) = f.batches.filter { it.layer == Layer.Effects && it.primitive == Primitive.Segment && it.style == style }
+            .filter { b -> (0 until b.size).any { n -> (Vec2(b[n * 4], b[n * 4 + 1]) - head).length < 1e-6 } }.maxOf { it.width }
+        val fresh = width(frame)
+        sim.autoFire.remaining = 100.0
+        repeat(4) { sim.tick(InputFrame()) }
+        assertTrue(sim.impacts.isNotEmpty(), "fixture: the impact expired")
+        assertTrue(width(frameOf(sim)) < fresh, "the impact tracer did not fade")
+    }
+
+    /** Round-1 finding: the Volley showed a fan along the boss's facing, not the band it aims at. */
+    @Test
+    fun `an active Volley shows the band it was aimed at, in the enemy shot colour`() {
+        val sim = TestLevels.simulation()
+        val boss = sim.boss
+        boss.fight.engage()
+        boss.fight.damage(boss.spec.maxHealth * 0.5)
+        val palette = Palettes.of(sim.level.theme)
+        var ticks = 0
+        while (!(boss.striking && boss.currentAttack?.visual?.ranged == true) && ticks < 3000) { sim.tick(InputFrame()); ticks++ }
+        assertTrue(boss.striking, "fixture: no Volley struck in $ticks ticks")
+
+        val frame = frameOf(sim)
+
+        val left = Vec2((boss.aimedX - io.github.ksean.cyberslop.sim.LiveBoss.VOLLEY_WIDTH) * Scene.ZOOM, boss.position.y * Scene.ZOOM)
+        val right = Vec2((boss.aimedX + io.github.ksean.cyberslop.sim.LiveBoss.VOLLEY_WIDTH) * Scene.ZOOM, boss.position.y * Scene.ZOOM)
+        val shots = segmentsOf(frame, palette.hazard)
+        assertTrue(hasSegment(shots, left, right), "no band from $left to $right in the shot colour; segments $shots")
+        assertTrue(shots.size > 1, "no tracers toward the band")
+    }
+
+    @Test
+    fun `a pull draws a ring at its declared radius and an orbit at its orbit radius`() {
+        listOf(WeaponId.BlackboxChorus, WeaponId.NullEgoSingularity).forEach { id ->
+            val sim = simulation(id)
+            while (sim.lastHit == null) sim.tick(InputFrame())
+            val ring = sim.lastHit!!.shape as io.github.ksean.cyberslop.sim.HitShape.Ring
+            val pattern = Weapons.of(id).pattern
+            val declared = when (pattern) {
+                is io.github.ksean.cyberslop.combat.FirePattern.Pull -> pattern.radius
+                is io.github.ksean.cyberslop.combat.FirePattern.Orbit -> pattern.radius
+                else -> error("$id is not a pull or orbit")
+            }
+            assertEquals(declared, ring.radius, 1e-9, "$id resolved at a radius other than its declared one")
+            val centre = ring.centre * Scene.ZOOM
+            val on = segmentsOf(frameOf(sim)).count { (p, _) -> kotlin.math.abs((p - centre).length - ring.radius * Scene.ZOOM) < 1e-6 }
+            assertTrue(on >= 8, "$id: no ring of radius ${ring.radius * Scene.ZOOM}")
+        }
+    }
+
+    @Test
+    fun `a hit indicator fades over its window`() {
+        val sim = simulation(WeaponId.MigraineLoop)
+        while (sim.lastHit == null) sim.tick(InputFrame())
+        trimTo(sim, 0)
+        sim.autoFire.remaining = 100.0
+        val ring = sim.lastHit!!.shape as io.github.ksean.cyberslop.sim.HitShape.Ring
+        val centre = ring.centre * Scene.ZOOM
+        fun ringWidth(): Double = frameOf(sim).batches.filter { it.layer == Layer.Effects && it.primitive == Primitive.Segment }
+            .filter { batch -> (0 until batch.size).any { n -> kotlin.math.abs((Vec2(batch[n * 4], batch[n * 4 + 1]) - centre).length - ring.radius * Scene.ZOOM) < 1e-6 } }
+            .maxOf { it.width }
+        val fresh = ringWidth()
+        repeat(4) { sim.tick(InputFrame()) }
+        val faded = ringWidth()
+        assertTrue(faded < fresh, "the ring did not fade: $fresh then $faded")
     }
 
     private fun simulation(weapon: WeaponId = WeaponId.BrokenBottle, slots: PowerupSlots? = null): GameSimulation {

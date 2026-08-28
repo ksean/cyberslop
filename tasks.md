@@ -138,7 +138,7 @@ seeds the main-boss powerup is ≥ T2 and the weapon ≥ T3 (`DropTable.rollPowe
 ### DIFF-8 — Determinism digest — done
 
 `SimulationDeterminismTest` (commonTest): a 720-tick tape on map 1 matches a committed golden
-(`7460885450017593737`, re-pinned after DIFF-9's tuning) and a mutation in each family — player/run,
+(`7583559373744013130`, re-pinned after CPS) and a mutation in each family — player/run,
 auto-fire accumulator, loot RNG, enemies, engagement, projectiles, items, bosses, boss rest — changes
 it. `GameSimulation.digest()` per P-40; `internal` hooks on `AutoFire.remaining`, `lootRng`,
 `LiveBoss.restSecondsLeft/attackIndex`; `Rng.state` readable.
@@ -231,6 +231,164 @@ it. `GameSimulation.digest()` per P-40; `internal` hooks on `AutoFire.remaining`
       fixed above). ENG-072 says rounds continue until one returns nothing load-bearing; the plan
       capped each gate at three. A fourth round is the user's call.
 
+### CPS — Contact drain, weapon-pickup reset, shot indicators (plan step 10)
+
+**Approval:** given by the user after reviewing phase one — "approve and proceed". The request ("Walking into enemies should cause the player to take
+damage. Picking up a weapon should always change the player's current weapon, but reset their
+weapon powerups. Range weapons should always have a visual indicator that shows where the weapon
+was aimed/would hit an enemy … Implement using adversarial review.") directs the implementation and
+the review; phase one stops here for the user to approve the specification below before any test
+is written. Clarifications answered by the user: contact is a per-second drain (not bosses); every
+weapon is taken and every slot converts to Scrap, boss awards included; indicators cover ranged
+and psychic patterns for player, enemies and bosses; the loot floor is re-derived, not waived.
+
+Specs amended: `product.md` PROD-030, PROD-061 restated, PROD-069, PROD-070, PROD-071;
+`enemies.md` Contact, fairness rule, the loot floor, P-34, P-41; `combat.md` Weapon pickup, P-42,
+Known gaps; `presentation.md` Weapon effects, P-43; `hazards.md` cross-reference; `plan.md`
+decision 9 and step 10.
+
+#### CPS-1 — Contact drain (PROD-069, P-41)
+
+- [x] Red: `EnemyAttackTest` (or a new `ContactDrainTest` beside it) — overlap drains exactly
+      `contactDamage × TICK_SECONDS` per tick; one tick does not kill; two overlapping enemies drain
+      twice; a dead enemy, an enemy one pixel clear, a stunned enemy (still drains), a boss body
+      (nothing); no drain over a committed column, within `LANDING_GRACE`, or on the boss's ground;
+      the player's position is unchanged (P-19 clause). The existing "overlap outside a strike
+      deals nothing" case is inverted, not deleted.
+- [x] Green: `GameSimulation.drainContact()` beside `drainHazards()`, AABB-vs-14×14 overlap using
+      the `EDGE` convention, gated by `enemyDamageAllowed()`; `EnemyAttacks.CONTACT_DRAIN = 1.0`.
+- [x] Red then green: `ContactDrainTest` (7), `EnemyAttackTest` overlap case inverted and the two
+      swing cases re-anchored on strikes (damage above the drain ceiling) since a pursuing enemy
+      now drains while it swings. `GameSimulation.drainContact()`, `EnemyAttacks.CONTACT_DRAIN`.
+- [x] **Measured after CPS-1 alone:** `RoutePressureTest`/`BossPressureTest` — map 5 seed 4 dies on
+      the route with the (old) guaranteed loadout. Not retuned; re-measured after CPS-2's floor
+      re-derivation decides whether map 5 is still covered. Digest golden moves (re-pinned once
+      after CPS-3).
+- [ ] `RoutePressureTest` / `BossPressureTest` / `ThreatScoreTest`: re-measure. `ThreatScore`
+      excludes contact by spec; route pressure will rise — re-pin the thirds and confirm they still
+      rise strictly and the floor still survives. If a floor-covered map is lost on any seed, stop
+      and report rather than retune silently.
+
+#### CPS-2 — Weapon pickup resets the build (PROD-070, P-42)
+
+- [x] Red: `LoadoutTest` — `collect(weapon)` always equips, returns the old weapon's Scrap plus the
+      Scrap of every cleared slot (by each powerup's tier), leaves `slots` empty; a lower-tier,
+      lower-score weapon is still taken; with empty slots only the weapon's Scrap is paid.
+      `BossAwardTest` — after the award the weapon is equipped **and** the powerup is held, from
+      either approach direction. `GameSimulationTest` — a kill-drop weapon wipes a three-slot build
+      and the Scrap total matches.
+- [x] Green: `Loadout.collect(found, mapIndex)` returns `WeaponPickup.Equipped(replaced, scrap,
+      clearedSlots)` with `slots = PowerupSlots.empty()`; `WeaponPickup.Scrapped` is deleted with
+      its branch in `collectItems`. A paired award becomes **one** `GroundItem` carrying both
+      weapon and powerup (`award()` stops dropping a second item a tile away), resolved weapon
+      then powerup in `collectItems`; the digest encodes the new field (`SimulationDeterminismTest`
+      mutation case, golden re-pinned once).
+- [x] `LootFloor`: `weaponAt(map)` for the **boss fight** is the mini-boss award's weakest (Scav)
+      on every map; `weaponArrivingAt(map)` is the previous boss's weakest (Chromed from map 2,
+      Street on map 1); `slotsAt(map)` is exactly {the mini-boss powerup} from map 4 and empty
+      before; `slotsArrivingAt(map)` is exactly {the previous boss's powerup} from map 2.
+      `LootFloorTest` re-anchored; `furthestClearableMap` judges with the loadout *held at the
+      boss* (`damagePerSecondAt`), because the arriving weapon is gone by then.
+      **Coverage before → after: maps 1–5 → maps 1–3.** At every boss the floor holds the
+      mini-boss's weakest Scav weapon (Migraine Loop, 16.1 DPS; Kinetic Damper from map 4 adds
+      nothing to it); map 4's boss takes 38.8 s against a 33.3 s band. Arriving loadout: Zip
+      Pistol (9.2 DPS) on map 1, Grenade Lobber + Spike Driver (24.8 DPS) from map 2. **For the
+      user to weigh** (not tuned here): raising the mini-boss weapon floor, or letting a
+      guaranteed award keep the better weapon, would restore coverage. The CPS-1 map-5 death is
+      now outside coverage.
+- [x] `WeaponScore` remains for powerup displacement only; its Known-gaps paragraph about weapon
+      swaps is gone (done in the spec); delete any code path that compared weapons.
+- [x] `HudModelTest`/HUD: nothing to change unless the HUD cached slots by weapon.
+
+#### CPS-3 — Shots show where they went (PROD-071, P-43)
+
+- [x] Red: `SceneTest` — a player projectile draws a dot at its position and a segment of length
+      `speed × TRACER_SECONDS` back along its velocity in the player style; an enemy projectile the
+      same in the hazard style; a Volley dot likewise; after a Kessler activation a beam segment
+      whose lower end is the strike centre and a ring at `radius × hitboxScale`; after a Ghostwire
+      Tether chain, one segment per jump with endpoints at the struck targets in order and none
+      when no target was in range; after a Migraine Loop blast a ring of the resolved radius; every
+      indicator gone after `FLASH_VISIBLE_SECONDS`. `SimulationDeterminismTest` — an indicator
+      does not change the digest.
+- [x] Green: `HitIndicator` sealed type in `Entities` (`Beam(foot, radius)`, `Chain(points)`,
+      `Ring(centre, radius)`) with `secondsLeft/totalSeconds` like `MuzzleFlash`; set in
+      `resolveBlast`, `resolveChain` and the `Strike`/`Orbit`/`Pull` branches of `emit`; the boss
+      Volley and enemy `fire()` need nothing new because their shots are projectiles.
+      `Scene.projectiles` draws body + tracer in two batches per side (dot, segment);
+      `Scene.hitIndicator` draws beam/chain/ring on `Layer.Effects`. Batch count stays constant
+      (P-23, P-31 still green).
+- [x] Note for the reviewer: the Kessler's `Strike.delaySeconds` (0.35 s in the table) is declared
+      and not consumed — the strike resolves on the firing tick. The beam is drawn at resolution;
+      the delay is not implemented by this step and the table's claim is a pre-existing gap to be
+      recorded or fixed by the user's decision.
+
+#### CPS-gate — `./scripts/check.sh`, then gate 3
+
+- [x] Check green on both targets (JVM, wasm browser tests, distribution).
+- [x] Gate 3, round 1 (codex gpt-5.6-sol, high, read-only; 13 findings). Dispositions:
+  - MAJOR Volley drew a fan along the boss's facing in the accent colour, not the band at
+    `aimedX ± VOLLEY_WIDTH` — **confirmed**. Fixed: floor band and barrel-to-band tracers in the
+    enemy-shot style; `LiveBoss.VOLLEY_WIDTH` public; `SceneTest` active-Volley case; spec text.
+  - MAJOR a projectile spawned, flown and spent in one tick was never drawn — **confirmed**. Fixed:
+    `GameSimulation.impacts` (`HitShape.Impact`, flash window, outside the digest) drawn as the
+    same tracer; `SceneTest` point-blank case; presentation.md.
+  - MAJOR boss pressure fought with whatever the mini-boss happened to roll, not the floor —
+    **confirmed**. Fixed: `PressureHarness.holdFloor` → `GameSimulation.holdLoadout` (internal);
+    `BossPressureTest` asserts the held weapon and slots equal `weaponAt`/`slotsAt` before the fight.
+  - MODERATE enemies.md loot-floor bullet still judged coverage by `slotsArrivingAt` — **confirmed**.
+    Fixed: coverage by the loadout held at the boss; route and mini-boss by the arriving loadout.
+  - MODERATE P-43 narrower than PROD-071 — **confirmed**. Fixed: P-43 names enemy and boss
+    projectiles, Volley, pull and orbit, body radius, fading; a test per branch.
+  - MODERATE Orbit resolved at `rangePx` (6 m) instead of `pattern.radius` (3 m) — **confirmed**
+    (pre-existing balance bug the indicator exposed). Fixed: `pattern.radius`; `OrbitWeaponTest`
+    hit boundary around the aimed target.
+  - MODERATE body drawn at 0.7 × hit radius against a spec that says hit radius — **confirmed**.
+    Fixed: `SHOT_SCALE` deleted; radius asserted.
+  - MODERATE mini-boss judged with the award it earns — **confirmed**. Fixed:
+    `damagePerSecondArrivingAt` for trash and mini-boss.
+  - MODERATE "no verification gate recorded" — **rejected**: `./scripts/check.sh` ran green
+    (JVM, wasm, distribution) before the round was launched; `tasks.md` was ticked after launch,
+    so the reviewer's clone predated the tick. Recorded here.
+  - MINOR boss's-ground sentence omitted contact — **confirmed**. Fixed.
+  - MINOR `WeaponScore`/`Weapon`/`Weapons` comments said score decides pickups — **confirmed**. Fixed.
+  - MINOR indicators did not fade — **confirmed**. Fixed: every stroke width × strength; fade test.
+  - MINOR P-41 lacked landing-grace and mini-boss cases — **confirmed**. Fixed: both added.
+- [x] Gate 3, round 2 (6 findings). Dispositions:
+  - MAJOR the route let the mini-boss roll a random ≥ Scav award, so P-39 was not discharged with
+    the floor's loadout; `MapExitTest` started the route with `weaponAt` — **confirmed**. Fixed:
+    `PressureHarness.pinAwards` replaces a dropped guaranteed award with the floor's weakest
+    (`weaponAt`/`slotsAt`) where it lies; `BossPressureTest` asserts the held loadout equals the
+    floor whenever the mini-boss fell; `MapExitTest` uses the arriving APIs; enemies.md states the
+    per-map timeline (arriving → mini-boss award → held at the boss).
+  - MODERATE enemies.md named `weaponAt` where it meant the arriving weapon, and the harness
+    paragraph contradicted the timeline — **confirmed**. Fixed.
+  - MODERATE a paired award's powerup is drawn a tile from the weapon but contact tested only the
+    weapon's centre — **confirmed**. Fixed: `GroundItem.powerupPosition`/`inReachOf` (either icon
+    collects the pair, `PAIRED_OFFSET` shared with the renderer); `WeaponPickupTest` collects from
+    the powerup's side.
+  - MINOR the Orbit row said "around the weapon" for a cursor-anchored pattern — **confirmed**.
+    Fixed: around the pattern's anchor.
+  - MINOR `EnemyAttacks` comment still said nothing hurts by touch — **confirmed**. Fixed.
+  - MINOR impact tracers did not fade — **confirmed**. Fixed: width × strength; test extended.
+- [x] Gate 3, round 3 (5 findings, none MAJOR). Dispositions:
+  - MODERATE the post-tick award pin missed an award dropped and collected inside one tick —
+    **confirmed**. Fixed: `GameSimulation.awardOverride` (internal hook applied in `award()` after
+    the rolls, so the loot stream is unchanged); `PressureHarness.pinAwards` installs it before the
+    route; `PressureHarnessTest` kills the mini-boss with its centre in reach and proves the
+    post-tick loadout is the floor's.
+  - MODERATE a projectile's hit read `autoFire.weapon`, so a pickup in flight rewrote its effects
+    (pre-existing; PROD-070 made it matter) — **confirmed**. Fixed: `LiveProjectile.weapon` carries
+    the firing `ResolvedWeapon`; the digest encodes its payload (golden re-pinned once more,
+    `7583559373744013130`, encoding change only); `ProjectileOwnershipTest`; combat.md sentence.
+  - MINOR combat.md "tier governs drop rarity only" beside tier-valued Scrap — **confirmed**. Fixed.
+  - MINOR `LootFloorTest` comments still spoke of a sealing arena and a commit line — **confirmed**.
+    Fixed.
+  - MINOR no test collected a copy of the held weapon over a stacked build — **confirmed**. Fixed:
+    `LoadoutTest` same-weapon case.
+- [ ] **Gate 3 reached the plan's three-round cap with round 3 still returning (non-major)
+      findings**, all fixed above. As at gate 2, ENG-072 says rounds continue until one returns
+      nothing load-bearing; the plan caps each gate at three. A fourth round is the user's call.
+
 ## Deferred
 
 Not scheduled by the current plan; kept so they are not forgotten.
@@ -239,5 +397,5 @@ Not scheduled by the current plan; kept so they are not forgotten.
 - Sound effects: kotlinx-browser exposes no Web Audio API, so this needs hand-written externals.
 - Recalibrate `WeaponScore` against `expectedDps` (see `specs/combat.md`, Known gaps).
 - A committed, reproducible frame-time benchmark (the 7.6× transform figure is unretained).
-- Draw projectiles as their weapon rather than as one dot.
+- Draw projectiles as their weapon's own shape (a slug, a nail, a grenade) — the tracer in CPS-3 gives them a line of flight, not a silhouette.
 - Pass-two styling: grime, scanlines, screen shake, hit flashes, particles.

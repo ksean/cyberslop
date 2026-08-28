@@ -49,7 +49,7 @@ class RoutePressureTest {
         for (seed in 1uL..COHORT) {
             val outcome = PressureHarness.route(seed * SPREAD, LevelGenerator.generate(seed * SPREAD, 1))
             if (outcome.sim.miniboss.fight.defeated) continue
-            assertTrue(outcome.sim.run.loadout.weapon.id == LootFloor.weaponAt(1).id, "seed $seed: the bot ended map 1 holding ${outcome.sim.run.loadout.weapon.name}")
+            assertTrue(outcome.sim.run.loadout.weapon.id == LootFloor.weaponArrivingAt(1).id, "seed $seed: the bot ended map 1 holding ${outcome.sim.run.loadout.weapon.name}")
         }
     }
 

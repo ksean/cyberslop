@@ -62,9 +62,14 @@ powerups collected by walking over them, and permadeath with persistent unlocks.
 - **PROD-060:** An enemy within engagement range of the player must act on the player rather than
   patrol: a melee enemy pursues, a ranged enemy holds range and shoots. An engaged enemy is not
   confined to its patrol zone.
-- **PROD-061:** A melee enemy must close on the player and attack with a telegraphed swing; no
-  enemy may deal damage by mere overlap. A ranged enemy must keep its distance when the player
-  closes, but no enemy may move faster than the player runs.
+- **PROD-061:** A melee enemy must close on the player and attack with a telegraphed swing. A
+  ranged enemy must keep its distance when the player closes, but no enemy may move faster than
+  the player runs.
+- **PROD-069:** A rank-and-file enemy's body must hurt to touch: while the player overlaps a living
+  enemy, health drains per second of contact at a rate the map index scales, in addition to any
+  swing or shot, never displacing the player, and never faster than the fairness rules for
+  committed spans and the boss's ground allow. Bosses and mini-bosses hurt only through their
+  attacks.
 - **PROD-062:** A boss and a mini-boss must activate — move, attack and become vulnerable — as soon
   as the player is within its awareness radius, not on crossing a line; an engaged boss is free to
   leave its arena and pursue.
@@ -97,7 +102,11 @@ powerups collected by walking over them, and permadeath with persistent unlocks.
 - **PROD-029:** Stronger weapons and powerups must be rarer: drop weight strictly decreasing in
   rarity tier at every map index.
 - **PROD-030:** Weapons and powerups resolve on contact with no additional input, and contact always
-  resolves: a pickup that is not taken converts to Scrap.
+  resolves: a powerup that is not taken converts to Scrap.
+- **PROD-070:** Walking over a weapon must always equip it, whatever it is and whatever is held:
+  the previous weapon converts to Scrap, and every powerup held is cleared and converts to Scrap.
+  A guaranteed award that pairs a weapon with a powerup applies the weapon first, so the powerup
+  lands on the new weapon.
 - **PROD-046:** One slain rank-and-file enemy in five drops something at every map index, three in
   ten of those a weapon. Mini-bosses and main bosses award loot on every death and are outside this
   rate.
@@ -117,6 +126,11 @@ powerups collected by walking over them, and permadeath with persistent unlocks.
   reach the hit test used. Every ranged or psychic activation must show a firing cue at the moment
   it happens: a muzzle flash at the barrel for a weapon that has one, an activation pulse at the
   weapon for one that does not (the Kessler dish). Player and enemies alike.
+- **PROD-071:** Every ranged or psychic attack must also show where it went, not only that it
+  fired: a travelling projectile is drawn as a visible body with a tracer along its motion, and an
+  attack that resolves instantly draws its hit geometry — a beam onto a strike point, a chain
+  through the targets struck, a ring at a blast's radius — at the moment it resolves. Player,
+  enemies and bosses alike.
 - **PROD-067:** A crouching character must be drawn crouching — limbs the same length as when
   standing, hips dropped, knees bent, torso forward — not as a shrunken standing figure.
 - **PROD-042:** The five enemy archetypes are distinguishable by silhouette, not colour alone, on

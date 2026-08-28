@@ -90,7 +90,7 @@ class FullMapRunTest {
         return run.copy(
             health = run.maxHealth,
             loadout = run.loadout.copy(
-                weapon = LootFloor.weaponAt(mapIndex),
+                weapon = LootFloor.weaponArrivingAt(mapIndex),
                 slots = LootFloor.slotsArrivingAt(mapIndex),
             ),
         )

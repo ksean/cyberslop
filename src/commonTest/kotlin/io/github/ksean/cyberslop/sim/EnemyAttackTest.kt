@@ -16,14 +16,31 @@ import kotlin.test.assertTrue
 /** Telegraphed swings and shots, and the committed-span fairness rule (P-34; `specs/enemies.md`). */
 class EnemyAttackTest {
     @Test
-    fun `an enemy overlapping the player outside a strike deals nothing`() {
+    fun `an enemy overlapping the player outside a strike deals exactly its contact drain`() {
         val sim = TestLevels.simulation()
         val swarm = TestLevels.enemyAt(sim, EnemyArchetype.Swarm, column = TestLevels.SPAWN_COLUMN)
         swarm.stun(seconds = 5.0)
 
         repeat(120) { sim.tick(InputFrame()) }
 
-        assertEquals(sim.run.maxHealth, sim.run.health, "a stunned enemy standing in the player hurt them")
+        val drain = 120 * EnemyAttacks.CONTACT_DRAIN * Balance.contactDamage(1) * TICK_SECONDS
+        assertEquals(sim.run.maxHealth - drain, sim.run.health, 1e-6, "a stunned enemy standing in the player did more or less than drain")
+    }
+
+    /**
+     * Ticks [count] times and returns the damage of every tick that hurt more than the contact
+     * drain could: the strikes, separated from the body drain of an enemy standing in the player.
+     */
+    private fun strikesOver(sim: GameSimulation, count: Int): List<Double> {
+        val drainCeiling = 2 * EnemyAttacks.CONTACT_DRAIN * Balance.contactDamage(1) * TICK_SECONDS
+        val strikes = mutableListOf<Double>()
+        repeat(count) {
+            val before = sim.run.health
+            sim.tick(InputFrame())
+            val taken = before - sim.run.health
+            if (taken > drainCeiling) strikes.add(taken)
+        }
+        return strikes
     }
 
     @Test
@@ -32,20 +49,19 @@ class EnemyAttackTest {
         TestLevels.enemyAt(sim, EnemyArchetype.Swarm, column = TestLevels.SPAWN_COLUMN + 1)
         val swing = EnemyAttacks.swing(EnemyArchetype.Swarm)
         val windUpTicks = (swing.windUpSeconds / TICK_SECONDS).roundToInt()
+        val drain = EnemyAttacks.CONTACT_DRAIN * Balance.contactDamage(1) * TICK_SECONDS
         val expected = Balance.contactDamage(1) * swing.damageShare
 
-        repeat(windUpTicks - 1) { sim.tick(InputFrame()) }
-        assertEquals(sim.run.maxHealth, sim.run.health, "damage landed during the wind-up")
+        assertEquals(emptyList(), strikesOver(sim, windUpTicks - 1), "damage landed during the wind-up")
 
-        repeat(3) { sim.tick(InputFrame()) }
-        assertEquals(sim.run.maxHealth - expected, sim.run.health, 1e-9, "the swing did not land once")
+        val first = strikesOver(sim, 3)
+        assertEquals(1, first.size, "the swing did not land once")
+        assertEquals(expected, first.single(), drain + 1e-9, "the swing's damage is not its share")
 
         val cooldownTicks = (swing.cooldownSeconds / TICK_SECONDS).roundToInt()
-        repeat(cooldownTicks - 2) { sim.tick(InputFrame()) }
-        assertEquals(sim.run.maxHealth - expected, sim.run.health, 1e-9, "a second strike landed inside the cooldown")
+        assertEquals(emptyList(), strikesOver(sim, cooldownTicks - 2), "a second strike landed inside the cooldown")
 
-        repeat(windUpTicks + 4) { sim.tick(InputFrame()) }
-        assertEquals(sim.run.maxHealth - 2 * expected, sim.run.health, 1e-9, "the second swing did not land")
+        assertEquals(1, strikesOver(sim, windUpTicks + 4).size, "the second swing did not land")
     }
 
     @Test
@@ -95,12 +111,12 @@ class EnemyAttackTest {
 
         // The brute winds up facing left, at the player; the player runs through it and stops behind.
         repeat(10) { sim.tick(InputFrame(right = true)) }
-        repeat(windUpTicks + 2 - 10) { sim.tick(InputFrame()) }
+        val strikes = strikesOver(sim, windUpTicks + 2 - 10)
 
         val offset = sim.player.x + 6.0 - (brute.position.x + GameSimulation.ENEMY_HALF)
         assertTrue(offset > 0.0 && offset < swing.reachPx, "fixture: player at offset $offset is not behind and in reach")
         assertTrue(brute.lastSwing != null, "fixture: the brute never struck")
-        assertEquals(sim.run.maxHealth, sim.run.health, "a swing aimed left hit a player standing to the right")
+        assertEquals(emptyList(), strikes, "a swing aimed left hit a player standing to the right")
     }
 
     @Test

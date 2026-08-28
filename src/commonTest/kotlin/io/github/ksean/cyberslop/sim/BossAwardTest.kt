@@ -17,9 +17,11 @@ class BossAwardTest {
             val before = sim.items.size
             sim.tick(InputFrame())
 
-            val awards = sim.items.drop(before).filter { it.guaranteed }
-            val weapon = awards.mapNotNull { it.weapon }.single()
-            val powerup = awards.mapNotNull { it.powerup }.single()
+            // One item carries both (PROD-070): the weapon resolves first whichever side the
+            // player walks in from, so the award cannot wipe its own powerup.
+            val award = sim.items.drop(before).filter { it.guaranteed }.single()
+            val weapon = award.weapon ?: error("seed $seed: the award holds no weapon")
+            val powerup = award.powerup ?: error("seed $seed: the award holds no powerup")
             assertTrue(weapon.tier.ordinal >= Tier.Chromed.ordinal, "seed $seed: boss weapon was ${weapon.tier}")
             assertTrue(powerup.tier.ordinal >= PowerupTier.Scav.ordinal, "seed $seed: boss powerup was ${powerup.tier}")
         }

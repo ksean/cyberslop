@@ -1,7 +1,8 @@
 # Map Hazards
 
 Hazards are part of the world, not of the enemy population, and are the only things besides
-enemies and bosses that can hurt the player (PROD-026, PROD-064). Two classes exist: **lethal**
+enemies and bosses that can hurt the player (PROD-026, PROD-064). An enemy's body drains contact
+the same way a damaging hazard does (enemies.md, PROD-069). Two classes exist: **lethal**
 hazards, which the witness route never touches, and **damaging** hazards, which are survivable and
 are placed off the witness route so the proven path stays hazard-free.
 

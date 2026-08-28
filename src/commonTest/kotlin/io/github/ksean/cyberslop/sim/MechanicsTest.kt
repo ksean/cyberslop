@@ -7,6 +7,7 @@ import io.github.ksean.cyberslop.gen.LevelGenerator
 import io.github.ksean.cyberslop.loot.PowerupId
 import io.github.ksean.cyberslop.physics.InputFrame
 import io.github.ksean.cyberslop.physics.TICK_SECONDS
+import io.github.ksean.cyberslop.loot.WeaponPickup
 import io.github.ksean.cyberslop.run.RunState
 import io.github.ksean.cyberslop.world.TileMap
 import kotlin.test.Test
@@ -173,16 +174,11 @@ class MechanicsTest {
     }
 
     @Test
-    fun `a winning swap banks the displaced weapon rather than losing it`() {
-        var run = RunState.begin(SEED)
-        val before = run.scrap
-        val (next, _) = run.loadout.collect(Weapons.of(WeaponId.SableCorpRailgun), 5)
-        run = run.copy(loadout = next)
+    fun `a weapon pickup banks the replaced weapon rather than losing it`() {
+        val run = RunState.begin(SEED)
+        val (_, outcome) = run.loadout.collect(Weapons.of(WeaponId.SableCorpRailgun))
 
-        // The pickup path credits Scrap for both outcomes; here the point is that the displaced
-        // weapon has a value at all.
-        assertTrue(Weapons.startingWeapon.tier.ordinal >= 0)
-        assertEquals(before, run.scrap)
+        assertTrue((outcome as WeaponPickup.Equipped).scrap > 0, "the replaced bottle was worth nothing")
     }
 
     @Test

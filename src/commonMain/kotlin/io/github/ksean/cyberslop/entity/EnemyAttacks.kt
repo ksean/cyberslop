@@ -27,12 +27,16 @@ data class EnemyShot(
 )
 
 /**
- * What each archetype does to the player (`specs/enemies.md`, Attacks). Nothing hurts by touch:
- * every point of enemy damage comes through one of these.
+ * What each archetype does to the player (`specs/enemies.md`, Attacks): a telegraphed swing or
+ * shot, and — separately, with no wind-up — the drain of a living body the player overlaps
+ * ([CONTACT_DRAIN], PROD-069).
  */
 object EnemyAttacks {
     /** Public so the renderer's tracking pose reads the same range the shot does. */
     const val SHOT_RANGE_PX = 220.0
+
+    /** A living body drains this many `contactDamage` per second of overlap (`specs/enemies.md`). */
+    const val CONTACT_DRAIN = 1.0
 
     val SHOT = EnemyShot(
         windUpSeconds = 0.25,

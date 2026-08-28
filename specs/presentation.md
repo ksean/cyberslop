@@ -97,8 +97,31 @@ highest point stays within the physics' crouch height; nothing is scaled.
   drawn from the weapon's tip inward, with spark dots at the leading edge, fading over the swing
   window. The outer arc is the reach the hit test used.
 - A ranged shot draws a **muzzle flash** at the barrel: a bright core dot, a longer bloom segment
-  along the aim and two short spikes at ±35°, fading over the flash window. The projectile is a
-  dot in the palette accent.
+  along the aim and two short spikes at ±35°, fading over the flash window.
+- **Every shot shows where it went (PROD-071).** A travelling projectile is drawn as a **body and
+  tracer**: a dot at its position at its hit radius, and a segment trailing it along its velocity
+  for `TRACER_SECONDS = 0.05 s` of travel (17 px at the enemy shot speed), so a shot reads as a
+  line of flight rather than a floating dot. The player's projectiles use the palette's brightest
+  glow; enemy and boss projectiles the palette hazard colour; the Volley's fan of dots is the
+  same tracer treatment. An attack that resolves instantly leaves a **hit indicator** on the
+  simulation for the flash window, presentation-only and outside the digest like the swoosh, whose
+  geometry is the geometry the hit test used:
+
+  | Pattern | Indicator |
+  |---|---|
+  | `Strike` (Kessler) | a **beam**: a vertical segment from the top of the view down onto the strike point, with a core and a wider bloom, and a ring at the strike's scaled radius |
+  | `Chain` | a **chain**: one segment from the weapon to the first target struck and one between each consecutive pair, in strike order, with a spark dot at every vertex |
+  | `Blast`, `Pull` | a **ring** at the resolved radius, centred where the blast resolved |
+  | `Orbit` | a ring at the orbit radius around the pattern's anchor — the aimed target for a cursor-anchored weapon |
+
+  Each fades over the flash window: every indicator stroke thins with the window's remaining
+  fraction. A chain that struck nothing draws nothing beyond the pulse; a beam is drawn whether or
+  not the strike hit, because the strike point is what the player aimed. A projectile spent inside
+  the tick it was fired — a point-blank hit, or terrain at the muzzle — is never in the live list
+  when a frame is drawn, so its last line of flight is kept as an **impact** for the flash window
+  and drawn as the same tracer. A boss **Volley** shows the band it lands on: a segment on the
+  floor across `aimedX ± VOLLEY_WIDTH` in the enemy-shot colour, and a fan of tracers travelling
+  from the barrel to that band through the active window — not a fan along the boss's facing.
 - A weapon with no barrel — every psychic weapon (orbs, blasts and chains) and every
   cursor-anchored one (the Kessler dish) — draws an **activation pulse** instead: a ring around
   the held weapon that grows as it fades over the flash window.
@@ -173,6 +196,17 @@ visually hidden live region for run state. Focus loss clears input and pauses.
   posed barrel; the crouch pose's limb segment lengths equal the standing pose's, its knees sit
   forward of the hip–ankle line, and its highest point is within the crouch height; the swoosh's
   outer arc radius equals the swing's reach.
+- **P-43** Shots show where they went: a live projectile draws a dot at its position **at its hit
+  radius** and a segment from it back along its velocity of `speed × TRACER_SECONDS`, player and
+  enemy shots in their own styles; a projectile spent on the tick it was fired still leaves that
+  tracer; an active boss Volley draws the floor band `aimedX ± VOLLEY_WIDTH` and tracers toward it
+  in the enemy-shot style; a Kessler strike leaves a beam whose foot is the strike centre and a
+  ring whose radius is the scaled strike radius; a chain leaves a segment per jump whose endpoints
+  are the struck targets in strike order and none when nothing was struck; a blast, a pull and an
+  orbit each leave a ring of the radius they resolved at — the pattern's own declared radius, scaled
+  — and an orbit hits inside that radius and not beyond it; an indicator's stroke width falls
+  across its window; every indicator is gone after the flash window; the digest (P-40) is unchanged
+  by any indicator.
 - **P-27** Icon totality and distinctness: every id resolves to an icon, purely; no two icons are
   equal as geometry; every op is inside the box; every icon has at least three strokes spanning at
   least 60 % of the box's longer axis.

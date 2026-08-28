@@ -3,16 +3,17 @@ package io.github.ksean.cyberslop.combat
 import io.github.ksean.cyberslop.loot.PowerupSlots
 
 /**
- * How two weapons are compared when the player walks over one.
+ * What a build is worth: the held weapon under a candidate set of powerups. It decides which slot
+ * a powerup displaces (`Loadout.collect(powerup)`); it decides nothing about weapon pickup, which
+ * always equips (PROD-070).
  *
  * Comparison happens against a **declared reference target**, because half the registry's damage is
  * conditional — execute thresholds, falloff, chain decay, damage-over-time — and without a target to
  * resolve against, "which weapon is better" has no answer. The reference is deliberately plain: one
  * enemy at a middling health fraction, at medium range, unslowed, with full uptime.
  *
- * The score is the player's *current build* applied to each weapon, so a powerup that suits one
- * weapon and not another is accounted for rather than ignored. That is what lets walk-over pickup be
- * automatic and still never be a downgrade.
+ * The score is a build applied to the weapon it feeds, so a powerup that suits one weapon and not
+ * another is accounted for rather than ignored.
  */
 object WeaponScore {
     /** Distance the reference target stands at. */

@@ -7,6 +7,7 @@ import io.github.ksean.cyberslop.core.Vec2
 import io.github.ksean.cyberslop.entity.AttackVisual
 import io.github.ksean.cyberslop.physics.Physics
 import io.github.ksean.cyberslop.sim.GameSimulation
+import io.github.ksean.cyberslop.sim.HitShape
 import io.github.ksean.cyberslop.sim.LiveBoss
 import io.github.ksean.cyberslop.sim.LiveEnemy
 import io.github.ksean.cyberslop.sim.MuzzleFlash
@@ -105,6 +106,7 @@ object Scene {
         enemies(builder, palette, sim, camera, timeSeconds)
         bosses(builder, palette, sim, camera)
         projectiles(builder, palette, sim, camera)
+        hitIndicator(builder, palette, sim, camera)
         // Both the arc and the figure hang off one interpolated position, or the swing sits ahead
         // of the hand that threw it by a tick of travel.
         val muzzle = drawnMuzzle(sim, alpha)
@@ -348,25 +350,21 @@ object Scene {
         camera: Camera,
     ) {
         sim.items.forEach { item ->
-            val weapon = item.weapon
-            val powerup = item.powerup
-            val look = when {
-                weapon != null -> PickupLook.of(weapon)
-                powerup != null -> PickupLook.of(powerup)
-                else -> return@forEach
-            }
-            val icon = when {
-                weapon != null -> WeaponIcons.of(weapon.id)
-                else -> PowerupIcons.of(powerup!!.id)
-            }
-            val x = (item.position.x - camera.x) * ZOOM
-            val y = (item.position.y - camera.y) * ZOOM
-            if (x < -OFF_SCREEN || x > camera.viewWidth * ZOOM + OFF_SCREEN) return@forEach
-
-            val scale = PICKUP_PX * look.scale
-            IconPainter.paint(builder, icon, look.weapon, x, y, scale, Layer.ItemHalo, Layer.Items)
-            tierPips(builder, look, x, y + scale + PIP_DROP)
+            // A paired award (weapon and powerup on one item) draws both, the powerup a tile to
+            // the right, so it looks like the two drops it resolves as.
+            item.weapon?.let { pickup(builder, camera, item.position, PickupLook.of(it), WeaponIcons.of(it.id)) }
+            item.powerup?.let { pickup(builder, camera, item.powerupPosition, PickupLook.of(it), PowerupIcons.of(it.id)) }
         }
+    }
+
+    private fun pickup(builder: SceneBuilder, camera: Camera, at: Vec2, look: PickupLook, icon: Icon) {
+        val x = (at.x - camera.x) * ZOOM
+        val y = (at.y - camera.y) * ZOOM
+        if (x < -OFF_SCREEN || x > camera.viewWidth * ZOOM + OFF_SCREEN) return
+
+        val scale = PICKUP_PX * look.scale
+        IconPainter.paint(builder, icon, look.weapon, x, y, scale, Layer.ItemHalo, Layer.Items)
+        tierPips(builder, look, x, y + scale + PIP_DROP)
     }
 
     /**
@@ -780,7 +778,7 @@ object Scene {
             figure(builder, palette, pose, x, feet, look, body)
             crown(builder, palette, look, x, feet - look.height * ZOOM)
             healthBar(builder, palette, x, feet - look.height * ZOOM - BAR_GAP, look.height * ZOOM, live)
-            bossStrike(builder, palette, live, pose, Vec2(x, feet))
+            bossStrike(builder, palette, live, pose, Vec2(x, feet), camera)
         }
     }
 
@@ -817,7 +815,7 @@ object Scene {
     }
 
     /** The effect of an attack's active window, from the posed hand, over exactly that window. */
-    private fun bossStrike(builder: SceneBuilder, palette: Palette, live: LiveBoss, pose: Pose, feet: Vec2) {
+    private fun bossStrike(builder: SceneBuilder, palette: Palette, live: LiveBoss, pose: Pose, feet: Vec2, camera: Camera) {
         val attack = live.currentAttack ?: return
         if (!live.striking) return
         val secondsLeft = (attack.totalSeconds - live.attackElapsed).coerceAtLeast(0.0)
@@ -827,13 +825,24 @@ object Scene {
             val flash = MuzzleFlash(direction, secondsLeft, attack.activeSeconds)
             val barrel = feet + barrelTip(pose) * ZOOM
             muzzleFlash(builder, style, style, barrel, flash)
-            // The fan: a spread of dots leaving the barrel, further along the later in the window.
-            val travelled = (1.0 - flash.strength) * attack.reachPx * ZOOM
-            val dots = builder.batch(Layer.Effects, palette.accent, Primitive.Dot)
+            // Where it went (PROD-071): the Volley lands on the band around the x it was aimed at
+            // when the telegraph began, not along the boss's facing. The band is drawn on the
+            // floor in the enemy-shot colour, and the fan is tracers travelling from the barrel to
+            // it, further along the later in the window.
+            val aimed = Vec2((live.aimedX - camera.x) * ZOOM, feet.y)
+            val bandY = feet.y
+            val shots = builder.batch(Layer.Effects, palette.hazard, Primitive.Segment, strokeWidth(TRACER_WIDTH))
+            val left = aimed.x - LiveBoss.VOLLEY_WIDTH * ZOOM
+            val right = aimed.x + LiveBoss.VOLLEY_WIDTH * ZOOM
+            shots.segment(left, bandY, right, bandY)
+            val bodies = builder.batch(Layer.Effects, palette.hazard, Primitive.Dot)
+            val progress = 1.0 - flash.strength
             for (n in 0 until FAN_DOTS) {
-                val spread = -FAN_DEGREES / 2.0 + FAN_DEGREES * n / (FAN_DOTS - 1)
-                val along = TrigTable.rotate(direction, spread)
-                dots.dot(barrel.x + along.x * travelled, barrel.y + along.y * travelled, FAN_DOT_PX)
+                val landing = Vec2(left + (right - left) * n / (FAN_DOTS - 1), bandY)
+                val head = barrel + (landing - barrel) * progress
+                val tail = barrel + (landing - barrel) * (progress - FAN_TRACER).coerceAtLeast(0.0)
+                bodies.dot(head.x, head.y, FAN_DOT_PX)
+                shots.segment(head.x, head.y, tail.x, tail.y)
             }
         } else {
             val swing = SwingVisual(
@@ -886,15 +895,81 @@ object Scene {
         sim: GameSimulation,
         camera: Camera,
     ) {
-        val mine = builder.batch(Layer.Effects, palette.glow[palette.glow.size - 1], Primitive.Dot)
+        // A body and a tracer (PROD-071): the dot is the shot, the segment behind it is
+        // TRACER_SECONDS of its travel, so a shot reads as a line of flight rather than a
+        // floating point. Two batches per side, never one per shot.
+        val mineStyle = palette.glow[palette.glow.size - 1]
+        val mine = builder.batch(Layer.Effects, mineStyle, Primitive.Dot)
+        val mineTracer = builder.batch(Layer.Effects, mineStyle, Primitive.Segment, strokeWidth(TRACER_WIDTH))
         val theirs = builder.batch(Layer.Effects, palette.hazard, Primitive.Dot)
+        val theirTracer = builder.batch(Layer.Effects, palette.hazard, Primitive.Segment, strokeWidth(TRACER_WIDTH))
         sim.projectiles.forEach { shot ->
-            val batch = if (shot.fromPlayer) mine else theirs
-            batch.dot(
-                (shot.position.x - camera.x) * ZOOM,
-                (shot.position.y - camera.y) * ZOOM,
-                shot.radius * ZOOM * SHOT_SCALE,
+            val x = (shot.position.x - camera.x) * ZOOM
+            val y = (shot.position.y - camera.y) * ZOOM
+            (if (shot.fromPlayer) mine else theirs).dot(x, y, shot.radius * ZOOM)
+            (if (shot.fromPlayer) mineTracer else theirTracer).segment(
+                x, y,
+                x - shot.velocity.x * TRACER_SECONDS * ZOOM, y - shot.velocity.y * TRACER_SECONDS * ZOOM,
             )
+        }
+        // A shot spent inside the tick it was fired was never in the list above; its last line of
+        // flight is kept for the flash window so a point-blank hit is still seen to go somewhere.
+        sim.impacts.forEach { hit ->
+            val impact = hit.shape as? HitShape.Impact ?: return@forEach
+            val x = (impact.at.x - camera.x) * ZOOM
+            val y = (impact.at.y - camera.y) * ZOOM
+            // Thins with the window like every indicator; the ladder bounds how many batches open.
+            val style = if (impact.fromPlayer) mineStyle else palette.hazard
+            builder.batch(Layer.Effects, style, Primitive.Segment, strokeWidth(TRACER_WIDTH * hit.strength)).segment(
+                x, y,
+                x - impact.velocity.x * TRACER_SECONDS * ZOOM, y - impact.velocity.y * TRACER_SECONDS * ZOOM,
+            )
+        }
+    }
+
+    /**
+     * Where an instant attack went (PROD-071), at the geometry its hit test used: a beam from the
+     * top of the view onto a strike point with a ring at its radius, a chain through the targets
+     * struck, or a ring at a blast's radius. Fades over the flash window.
+     */
+    private fun hitIndicator(builder: SceneBuilder, palette: Palette, sim: GameSimulation, camera: Camera) {
+        val hit = sim.lastHit ?: return
+        val core = palette.glow[palette.glow.size - 1]
+        val bloom = palette.hazardGlow
+        fun screen(at: Vec2) = Vec2((at.x - camera.x) * ZOOM, (at.y - camera.y) * ZOOM)
+        when (val shape = hit.shape) {
+            // Every stroke thins with the window (`specs/presentation.md`: each fades), so the
+            // indicator is seen to be an event, not a fixture.
+            is HitShape.Beam -> {
+                val foot = screen(shape.foot)
+                builder.batch(Layer.Effects, bloom, Primitive.Segment, strokeWidth(BEAM_BLOOM_WIDTH * hit.strength))
+                    .segment(foot.x, 0.0, foot.x, foot.y)
+                builder.batch(Layer.Effects, core, Primitive.Segment, strokeWidth(BEAM_CORE_WIDTH * hit.strength))
+                    .segment(foot.x, 0.0, foot.x, foot.y)
+                ring(builder, bloom, foot, shape.radius * ZOOM, FLASH_WIDTH * hit.strength)
+            }
+            is HitShape.Chain -> {
+                val links = builder.batch(Layer.Effects, core, Primitive.Segment, strokeWidth(CHAIN_WIDTH * hit.strength))
+                val sparks = builder.batch(Layer.Effects, core, Primitive.Dot)
+                shape.points.map(::screen).zipWithNext().forEach { (a, b) ->
+                    links.segment(a.x, a.y, b.x, b.y)
+                    sparks.dot(b.x, b.y, CHAIN_SPARK_PX * hit.strength)
+                }
+            }
+            is HitShape.Ring -> ring(builder, bloom, screen(shape.centre), shape.radius * ZOOM, FLASH_WIDTH * hit.strength)
+            is HitShape.Impact -> Unit // drawn with the projectiles, in the shooter's colour
+        }
+    }
+
+    /** A ring as a closed polygon of segments, in one batch. */
+    private fun ring(builder: SceneBuilder, style: String, at: Vec2, radius: Double, width: Double = FLASH_WIDTH) {
+        val batch = builder.batch(Layer.Effects, style, Primitive.Segment, strokeWidth(width))
+        var previous = Vec2(at.x + radius, at.y)
+        for (step in 1..PULSE_SEGMENTS) {
+            val direction = TrigTable.rotate(Vec2.Right, 360.0 * step / PULSE_SEGMENTS)
+            val point = Vec2(at.x + direction.x * radius, at.y + direction.y * radius)
+            batch.segment(previous.x, previous.y, point.x, point.y)
+            previous = point
         }
     }
 
@@ -950,17 +1025,8 @@ object Scene {
     }
 
     /** An activation pulse: a ring around the weapon that grows as it fades (PROD-066). */
-    private fun pulse(builder: SceneBuilder, style: String, at: Vec2, flash: MuzzleFlash) {
-        val ring = builder.batch(Layer.Effects, style, Primitive.Segment, strokeWidth(FLASH_WIDTH))
-        val radius = PULSE_PX * (1.0 + PULSE_GROWTH * (1.0 - flash.strength))
-        var previous = Vec2(at.x + radius, at.y)
-        for (step in 1..PULSE_SEGMENTS) {
-            val direction = TrigTable.rotate(Vec2.Right, 360.0 * step / PULSE_SEGMENTS)
-            val point = Vec2(at.x + direction.x * radius, at.y + direction.y * radius)
-            ring.segment(previous.x, previous.y, point.x, point.y)
-            previous = point
-        }
-    }
+    private fun pulse(builder: SceneBuilder, style: String, at: Vec2, flash: MuzzleFlash) =
+        ring(builder, style, at, PULSE_PX * (1.0 + PULSE_GROWTH * (1.0 - flash.strength)))
 
     /**
      * A shot leaving the barrel (PROD-066): a bright core dot, a longer bloom segment along the
@@ -1335,7 +1401,13 @@ object Scene {
     private const val CROWN_WIDTH = 0.05
     private const val BAR_GAP = 10.0
     private const val BAR_HEIGHT = 6.0
-    private const val SHOT_SCALE = 0.7
+    /** How much of a projectile's travel its tracer shows (`specs/presentation.md`). */
+    const val TRACER_SECONDS = 0.05
+    private const val TRACER_WIDTH = 2.0
+    private const val BEAM_CORE_WIDTH = 2.0
+    private const val BEAM_BLOOM_WIDTH = 8.0
+    private const val CHAIN_WIDTH = 2.0
+    private const val CHAIN_SPARK_PX = 4.0
     private const val SWING_SEGMENTS = 10
     private const val SWING_WIDTH = 4.0
     private const val FLASH_PX = 7.0
@@ -1360,6 +1432,8 @@ object Scene {
     private const val FAN_DOTS = 5
     private const val FAN_DEGREES = 40.0
     private const val FAN_DOT_PX = 3.0
+    /** How much of the barrel-to-band flight a Volley tracer shows. */
+    private const val FAN_TRACER = 0.15
     private const val BOSS_SWING_ARC = 90.0
     private const val SLAM_FORWARD = 0.5
     private const val SLAM_DOWN = 0.87

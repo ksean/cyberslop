@@ -7,13 +7,13 @@ import io.github.ksean.cyberslop.run.RunState
 import io.github.ksean.cyberslop.sim.GameSimulation
 import io.github.ksean.cyberslop.entity.Balance
 import io.github.ksean.cyberslop.combat.DamagePipeline
-import io.github.ksean.cyberslop.combat.WeaponScore
 import kotlin.test.Test
 import kotlin.test.assertEquals
 import kotlin.test.assertTrue
 
 /**
- * The floor bounds what a player can be holding when a boss arena seals behind them.
+ * The floor bounds what a player can be holding when they reach a boss that engages on awareness
+ * and gates the exit until it falls.
  *
  * It deliberately does not claim the floor beats every map: the required rate grows about 81x across
  * a run and a worst-case loadout does not, so optional loot is required past the early game. What is
@@ -21,12 +21,27 @@ import kotlin.test.assertTrue
  * is high enough for the last one.
  */
 class LootFloorTest {
-    /** Gate-2 finding: the pressure harness must start a map with what a player *arrives* holding. */
+    /**
+     * PROD-070 makes every weapon pickup a reset, so the loadout at any point is the last
+     * guaranteed weapon plus only the powerups awarded after it — never an accumulation.
+     */
     @Test
-    fun `the slots arriving at a map hold only the awards of the maps before it`() {
+    fun `the slots arriving at a map are exactly the previous boss's powerup`() {
         assertEquals(0, LootFloor.slotsArrivingAt(1).totalStacks, "map 1 is entered with a powerup nobody has awarded")
         (2..10).forEach { map ->
-            assertEquals(LootFloor.slotsAt(map - 1).held, LootFloor.slotsArrivingAt(map).held, "arriving at map $map")
+            val arriving = LootFloor.slotsArrivingAt(map)
+            assertEquals(1, arriving.distinctCount, "arriving at map $map with ${arriving.held}")
+            assertEquals(1, arriving.totalStacks, "arriving at map $map with ${arriving.held}")
+            val powerup = Powerups.of(arriving.held.keys.single())
+            assertTrue(powerup.tier.ordinal >= PowerupTier.Scav.ordinal, "a main boss guarantees a Scav powerup; the floor assumed ${powerup.tier}")
+        }
+    }
+
+    @Test
+    fun `the slots at a map's boss are the mini-boss's powerup from map four and nothing before`() {
+        (1..3).forEach { map -> assertEquals(0, LootFloor.slotsAt(map).totalStacks, "map $map's mini-boss awards no powerup") }
+        (4..10).forEach { map ->
+            assertEquals(1, LootFloor.slotsAt(map).totalStacks, "map $map: the mini-boss award replaced the boss weapon and emptied the build")
         }
     }
 
@@ -43,29 +58,34 @@ class LootFloorTest {
         assertTrue(cache.id != Weapons.startingWeapon.id, "seed $seed: the starter cache holds the ${cache.name}")
     }
 
-    /** Round-3 finding: a boss is judged with what the player arrives holding, never with its own award. */
+    /**
+     * A boss is judged with what the player holds when they fight it: under PROD-070 that is the
+     * mini-boss award — the arriving weapon is gone by then — and never the boss's own award.
+     */
     @Test
-    fun `the furthest clearable map is judged with the arriving loadout`() {
+    fun `the furthest clearable map is judged with the loadout held at the boss`() {
         val furthest = LootFloor.furthestClearableMap()
         assertTrue(furthest >= 1, "the floor clears nothing")
         (1..furthest).forEach { map ->
-            val seconds = Balance.bossHealth(map) / LootFloor.damagePerSecondArrivingAt(map)
-            assertTrue(seconds <= Balance.targetBossSeconds(map) * LootFloor.BAND_SLACK, "map $map is counted as covered but its boss takes $seconds s with the arriving loadout")
+            val seconds = Balance.bossHealth(map) / LootFloor.damagePerSecondAt(map)
+            assertTrue(seconds <= Balance.targetBossSeconds(map) * LootFloor.BAND_SLACK, "map $map is counted as covered but its boss takes $seconds s with the held loadout")
         }
         if (furthest < 10) {
             val next = furthest + 1
-            val seconds = Balance.bossHealth(next) / LootFloor.damagePerSecondArrivingAt(next)
-            assertTrue(seconds > Balance.targetBossSeconds(next) * LootFloor.BAND_SLACK, "map $next is clearable on arrival but not counted")
+            val seconds = Balance.bossHealth(next) / LootFloor.damagePerSecondAt(next)
+            assertTrue(seconds > Balance.targetBossSeconds(next) * LootFloor.BAND_SLACK, "map $next is clearable but not counted")
         }
     }
 
-    /** Gate-2 finding: the floor is what the awards *guarantee*, and a main boss guarantees T3, never T4. */
+    /** The floor is what the awards *guarantee*, and a forced pickup can be a downgrade (PROD-070). */
     @Test
-    fun `the floor's weapon is the weakest tier the awards guarantee`() {
-        assertTrue(LootFloor.weaponAt(1).tier == Tier.Street, "map 1 opens above the starter cache")
+    fun `the floor's weapons are the weakest tiers the awards guarantee`() {
+        assertEquals(Tier.Street, LootFloor.weaponArrivingAt(1).tier, "map 1 opens above the starter cache")
         (2..10).forEach { map ->
-            assertTrue(LootFloor.weaponAt(map).tier == Tier.Chromed, "map $map assumes a ${LootFloor.weaponAt(map).tier} weapon; a main boss guarantees only Chromed")
+            assertEquals(Tier.Chromed, LootFloor.weaponArrivingAt(map).tier, "map $map is entered with a ${LootFloor.weaponArrivingAt(map).tier} weapon; a main boss guarantees only Chromed")
+            assertEquals(Tier.Scav, LootFloor.weaponAt(map).tier, "map $map's boss is fought with a ${LootFloor.weaponAt(map).tier} weapon; the mini-boss award guarantees only Scav and is always taken")
         }
+        assertEquals(Tier.Scav, LootFloor.weaponAt(1).tier)
     }
 
     @Test
@@ -92,13 +112,16 @@ class LootFloorTest {
     }
 
     @Test
-    fun `the guaranteed floor rises substantially across a run`() {
-        // Measured at 9.9 -> 48.7 (4.9x) once the weapon floor was corrected to what the awards
-        // guarantee — Chromed from map 2, never above — so the rise is the powerups' doing.
+    fun `the arriving floor steps up once, from the starter cache to a Chromed weapon`() {
+        // Under PROD-070 nothing accumulates: the rise the floor can promise is the weapon tier of
+        // the previous boss's award plus its one powerup, and it is the same on every later map.
         assertTrue(
-            LootFloor.damagePerSecondAt(10) > LootFloor.damagePerSecondAt(1) * 4.0,
-            "the floor barely moves across ten maps: ${LootFloor.damagePerSecondAt(1)} -> ${LootFloor.damagePerSecondAt(10)}",
+            LootFloor.damagePerSecondArrivingAt(2) > LootFloor.damagePerSecondArrivingAt(1),
+            "arriving at map 2 is no better than arriving at map 1",
         )
+        (3..10).forEach { map ->
+            assertEquals(LootFloor.damagePerSecondArrivingAt(2), LootFloor.damagePerSecondArrivingAt(map), 1e-9, "map $map arrives with something map 2 did not")
+        }
     }
 
     @Test
@@ -111,10 +134,11 @@ class LootFloorTest {
         )
     }
 
+    /** Round-1 finding: the mini-boss is fought with what the player arrives holding, not with its own award. */
     @Test
     fun `the floor clears trash and mini-bosses on the maps it carries`() {
         (1..LootFloor.furthestClearableMap()).forEach { map ->
-            val dps = LootFloor.damagePerSecondAt(map)
+            val dps = LootFloor.damagePerSecondArrivingAt(map)
             assertTrue(
                 Balance.trashHealth(map) / dps <= Balance.targetTrashSeconds(map) * LootFloor.BAND_SLACK,
                 "map $map: trash is out of band on the guaranteed floor",
@@ -137,8 +161,8 @@ class LootFloorTest {
 
     @Test
     fun `beyond the floor, the run genuinely needs optional loot`() {
-        // Stated as a property rather than left implicit: this is the intended difficulty, and the
-        // commit line is what keeps it from becoming a trap.
+        // Stated as a property rather than left implicit: this is the intended difficulty. There is
+        // no commit line; the exit gate opens on the boss's death and nothing seals a player in.
         val furthest = LootFloor.furthestClearableMap()
 
         assertTrue(furthest < 10, "the guaranteed floor trivialises the whole run")
@@ -152,18 +176,9 @@ class LootFloorTest {
     }
 
     /**
-     * The guarantee itself: **no optional route can leave a player below the floor.**
-     *
-     * The shape matters and three earlier versions of this test had it wrong. It is not enough to
-     * walk one long route and check the end, nor to check monotonicity as you go: monotonicity says
-     * a build never gets worse *than it was*, and the floor is a comparison with a **different**
-     * route's build. Each case here therefore starts fresh, takes some optional powerups, and only
-     * then takes the guaranteed awards — which is exactly the shape round eleven used to find a
-     * map-four route ending at 30.27 against a 32.01 floor while every step obeyed the rules.
-     *
-     * Measured over every three-powerup optional route on all ten maps: the score-and-damage rule
-     * left **10 of 8,160** below the floor, worst by 21.1 damage, and a Pareto rule failed on the
-     * same ten. Guaranteed awards landing unconditionally leaves **0 of 8,160**.
+     * The guarantee itself: **no optional route can leave a player below the floor.** Under
+     * PROD-070 the guaranteed weapon pickup resets whatever the route collected, so the end of
+     * every route is the weapon plus the powerups awarded after it — the floor exactly.
      */
     @Test
     fun `no optional route can put a player below the floor`() {
@@ -173,13 +188,14 @@ class LootFloorTest {
             val guaranteed = guaranteedRoute(map)
 
             optionalRoutes().forEach { optional ->
-                var loadout = Loadout(weapon, PowerupSlots.empty())
+                var loadout = Loadout(LootFloor.weaponArrivingAt(map), PowerupSlots.empty())
                 optional.forEach { loadout = loadout.collect(it, map).first }
+                loadout = loadout.collect(weapon).first
                 guaranteed.forEach {
                     loadout = loadout.collect(it, map, guaranteed = true).first
                 }
 
-                val dps = DamagePipeline.resolve(weapon, loadout.slots).expectedDps
+                val dps = DamagePipeline.resolve(loadout.weapon, loadout.slots).expectedDps
                 assertTrue(
                     dps >= floor - TOLERANCE,
                     "map $map: optional $optional then the guaranteed awards ends at $dps, " +
@@ -211,39 +227,9 @@ class LootFloorTest {
         return triples
     }
 
-    @Test
-    fun `a build only ever does more as it collects, weapons and powerups alike`() {
-        val map = 5
-        var loadout = Loadout(Weapons.startingWeapon, PowerupSlots.empty())
-        var best = WeaponScore.of(loadout.weapon, loadout.slots, map)
-
-        val powerups = Powerups.all + Powerups.all.reversed()
-        val weapons = Weapons.all + Weapons.all.reversed()
-        powerups.forEachIndexed { index, powerup ->
-            loadout = loadout.collect(powerup.id, map).first
-            val afterPowerup = WeaponScore.of(loadout.weapon, loadout.slots, map)
-            assertTrue(
-                afterPowerup >= best,
-                "collecting ${powerup.name} took the build from $best to $afterPowerup",
-            )
-            best = afterPowerup
-
-            val found = weapons[index % weapons.size]
-            loadout = loadout.collect(found, map).first
-            val afterWeapon = WeaponScore.of(loadout.weapon, loadout.slots, map)
-            assertTrue(
-                afterWeapon >= best,
-                "walking over ${found.name} took the build from $best to $afterWeapon",
-            )
-            best = afterWeapon
-        }
-    }
-
-    /** The guaranteed awards, in the order and count the floor is computed from. */
-    private fun guaranteedRoute(map: Int): List<PowerupId> {
-        val pool = Powerups.ofTier(PowerupTier.Street) + Powerups.ofTier(PowerupTier.Scav)
-        return (0 until LootFloor.guaranteedPowerups(map)).map { pool[it % pool.size].id }
-    }
+    /** The guaranteed powerups awarded after the map's mini-boss weapon: its own, from map 4. */
+    private fun guaranteedRoute(map: Int): List<PowerupId> =
+        LootFloor.slotsAt(map).held.keys.toList()
 
     private fun one(powerup: Powerup): PowerupSlots =
         PowerupSlots.empty().collect(powerup.id).first

@@ -51,8 +51,8 @@ the player's weapon can target is one that is acting on the player.
   (`Level.isArenaGround`): a walker stops there as at a ledge and a Flyer holds as at a committed
   column, so a pack the player has outrun waits at the door instead of joining a fight that is
   tuned as a boss fight. A Shooter held there is still within its range of someone inside, so
-  the ground is fair as well as unenterable: **no enemy swing or projectile deals damage to a
-  player whose box overlaps the boss's ground** — the second clause of the fairness rule below.
+  the ground is fair as well as unenterable: **no enemy swing, projectile or contact drain deals
+  damage to a player whose box overlaps the boss's ground** — the second clause of the fairness rule below.
   Bosses are not bound by it; their ground is where they fight. The rule applies to every arena;
   an enemy already on that ground is not trapped by it.
 - **Approach, hold, retreat (ranged).** An engaged Shooter faces the player and: beyond
@@ -62,8 +62,17 @@ the player's weapon can target is one that is acting on the player.
 
 ## Attacks (PROD-061, PROD-063)
 
-Nothing hurts by touch: there is no contact aura. `contactDamage(mapIndex)` is the unit every enemy
-attack scales from.
+`contactDamage(mapIndex)` is the unit every enemy attack scales from.
+
+- **Contact (PROD-069).** A living rank-and-file enemy's body hurts to touch: while the player's
+  AABB overlaps the enemy's 14 × 14 px box, health drains at `CONTACT_DRAIN = 1.0 × contactDamage`
+  per second (`× dt` per tick, the way a damaging hazard drains — hazards.md). Overlapping two
+  enemies drains both. Contact is not an attack: it needs no wind-up, is not cancelled by a stun,
+  and stacks with a swing that lands in the same tick. It never displaces the player (ENG-051)
+  and it is subject to the fairness rule below like everything else an enemy does. Bosses and
+  mini-bosses have no contact drain; their attacks are their damage. Contact drain is not part
+  of `ThreatScore`, which measures attacks the population can make, but it is counted by the
+  pressure harnesses as gross damage like any other.
 
 - **Melee swing.** A melee enemy whose target's centre is within `SWING_REACH = 1.5 tiles` of its
   own starts a swing: a wind-up during which it deals nothing and does not move, then one instance
@@ -82,8 +91,8 @@ attack scales from.
   `SHOOTER_RANGE` and in line of sight, winds up for `SHOT_WINDUP = 0.25 s` (holding its aim), then
   fires one projectile at the player's centre as it was at the start of the wind-up: speed 340
   px/s, lifetime 2.5 s, radius 6 px, damage `0.45 × contactDamage`, cooldown 0.75 s after the shot.
-- **Fairness on committed spans and on the boss's ground.** No enemy swing or enemy projectile
-  deals damage while the player occupies a committed column (any column their AABB overlaps),
+- **Fairness on committed spans and on the boss's ground.** No enemy swing, enemy projectile or
+  contact drain deals damage while the player occupies a committed column (any column their AABB overlaps),
   nor until they have been grounded and clear of committed columns for `LANDING_GRACE = 0.25 s`,
   nor while their box overlaps the boss's ground; a projectile that would have hit is spent. This is the runtime form of completability.md's placement invariant and holds
   however enemies move.
@@ -121,7 +130,7 @@ round-robin through the current phase's list. Bosses resist slows entirely.
 
 **Awards as a floor.** The starter cache never holds the bottle it exists to replace. A main
 boss's weapon award guarantees Chromed; its two extra draws raise the odds of better and nothing
-more, which is why `LootFloor.weaponAt` is Street on map 1 and Chromed from map 2 on.
+more, which is why `LootFloor.weaponArrivingAt` is Street on map 1 and Chromed from map 2 on.
 
 **Activation (PROD-062).** A boss is inert and invulnerable until *engaged* — the player within
 `AWARE_PX` of it — and from then on it moves, attacks and can be damaged, wherever the player
@@ -156,10 +165,14 @@ each enemy, `damage per attack ÷ (wind-up + cooldown)` using the archetype's sw
 each damaging hazard, its per-second rate; both summed and divided by `widthTiles / 100`. Bosses
 are excluded (every map has one of each).
 
-Two harnesses in `jvmTest` measure play. Both use the guaranteed loadout a player *arrives* with
-(`LootFloor.weaponAt`, `LootFloor.slotsArrivingAt`: the awards of the maps before, none of the
-map's own) at full health, with the map's optional caches removed so nothing unearned is taken, the game's own auto-aim (nearest target, bosses included once engaged), and record
-**gross incoming damage** — every damage event before lifesteal — separately from net health.
+Two harnesses in `jvmTest` measure play. Both start a map with the guaranteed loadout a player
+*arrives* with (`LootFloor.weaponArrivingAt`, `LootFloor.slotsArrivingAt`: the awards of the maps
+before, none of the map's own) at full health, with the map's optional caches removed so nothing
+unearned is taken; when the mini-boss award drops, the harness replaces it where it lies with the
+floor's weakest outcome (`weaponAt`, `slotsAt`), so the rest of the route and the boss fight are
+played with what the floor models rather than with whatever the roll gave. They use the game's own
+auto-aim (nearest target, bosses included once engaged) and record **gross incoming damage** —
+every damage event before lifesteal — separately from net health.
 
 - **Route pressure**, all ten maps: replay the witness tape while the population acts; the tape
   ends at the boss arena entrance. A death ends the map and counts as the map's full max health.
@@ -171,12 +184,23 @@ map's own) at full health, with the map's optional caches removed so nothing une
 ## The loot floor
 
 `LootFloor` models a reference player who takes only guaranteed awards — the starter cache, then
-each mini-boss and boss award at its weakest outcome — under the game's real pickup policy.
-Optional loot is genuinely required past the early maps; the floor's claims are:
+each mini-boss and boss award at its weakest outcome — under the game's real pickup policy. That
+policy makes every weapon pickup a reset (PROD-070), so the loadout at any point on the route is
+**the last guaranteed weapon before that point, at its weakest, with only the guaranteed powerups
+awarded after it** — never an accumulation across the run. Arriving at map `N ≥ 2` the reference
+player holds map `N − 1`'s boss weapon and that boss's powerup; at map `N`'s main boss they hold
+the mini-boss's weapon (Scav at its weakest) and, from map 4, the mini-boss's powerup, because the
+mini-boss award replaced the boss weapon and emptied the build. The timeline of a map is therefore:
+the arriving loadout from the map's start through the mini-boss fight, the mini-boss award at its
+weakest from the moment it is taken, and that held loadout at the main boss. The floor is honest
+about that: a forced pickup can be a downgrade, and the floor says so rather than assuming the
+player kept the better weapon. Optional loot is genuinely required past the early maps; the floor's claims are:
 
-- it carries the opening maps unaided, and a map counts as *covered* only if its boss falls inside
-  the kill-time band to the loadout the player **arrives** with (`slotsArrivingAt`) — never to
-  that boss's own award;
+- it carries the opening maps unaided: a map counts as *covered* only if its main boss falls
+  inside the kill-time band to the loadout **held at that boss** (`weaponAt`, `slotsAt` — the
+  mini-boss award, never the boss's own), while the route and the mini-boss are judged with what
+  the player **arrives** holding (`weaponArrivingAt`, `slotsArrivingAt`); the boss-pressure
+  harness fights with exactly the held loadout the floor models;
 - it never goes backwards (non-decreasing damage across maps);
 - the ceiling (best weapon, greediest legal build) reaches the final map's required rate;
 - the guaranteed loadout survives the witness route on every map the floor covers, with the
@@ -200,7 +224,8 @@ Optional loot is genuinely required past the early maps; the floor's claims are:
   an unsupported walker falls and lands; a walker knocked into acid dies; a Flyer stops at a
   committed column; through a bot playthrough of every map in the cohort no walker's voluntary
   step ever leaves its footprint unsupported.
-- **P-34** Attacks: an enemy overlapping the player outside a strike deals nothing; a swing deals
+- **P-34** Attacks: an enemy overlapping the player outside a strike deals exactly its contact
+  drain and nothing more; a swing deals
   nothing during wind-up and its damage exactly once per cooldown; a player in reach but behind the
   swing direction is missed; a shot leaves after its wind-up at the new speed and cadence; a stun
   cancels a wind-up; no enemy damage lands while the player occupies a committed column or within
@@ -215,6 +240,11 @@ Optional loot is genuinely required past the early maps; the floor's claims are:
   1→10; route pressure's mean gross damage per 100 tiles averaged over maps 1–3, 4–6 and 7–10 is
   strictly increasing; the guaranteed loadout survives the route and wins the boss fight on every
   floor-covered map on every cohort seed.
+- **P-41** Contact drain: overlapping a living enemy drains `CONTACT_DRAIN × contactDamage × dt`
+  per tick and one tick never kills a full-health player; overlapping two enemies drains both; a
+  dead enemy, an enemy one pixel clear of the box, an enemy touched while the player is over a
+  committed column, within the landing grace or on the boss's ground drains nothing; a stunned
+  enemy still drains; a boss body drains nothing; the player is not displaced.
 - **P-40** Simulation determinism (simulation.md): `GameSimulation.digest()` is a canonical
   encoding of every mutable, future-affecting field — the player state and run (health, loadout,
   scrap), the auto-fire accumulator, the loot RNG state, every enemy in list order (position,

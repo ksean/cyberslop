@@ -4,8 +4,8 @@ package io.github.ksean.cyberslop.combat
  * The weapon registry.
  *
  * Tiers are rarity bands and are held apart in power by [WeaponRegistryTest]: a tier's weakest
- * weapon must out-damage the tier below's strongest by a margin. That is what lets rarity mean
- * something without tier ever deciding a swap.
+ * weapon must out-damage the tier below's strongest by a margin. That is what makes a rarer drop
+ * worth walking over, since walking over it always equips it (PROD-070).
  *
  * Melee is the high-risk class: every melee weapon reaches at least two metres, beyond any enemy
  * swing, and within a tier the melee mean DPS (bottle excluded) exceeds the ranged mean.

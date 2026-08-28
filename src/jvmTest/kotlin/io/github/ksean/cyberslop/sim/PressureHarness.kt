@@ -2,7 +2,9 @@ package io.github.ksean.cyberslop.sim
 
 import io.github.ksean.cyberslop.entity.Dodge
 import io.github.ksean.cyberslop.gen.GeneratedLevel
+import io.github.ksean.cyberslop.loot.Loadout
 import io.github.ksean.cyberslop.loot.LootFloor
+import io.github.ksean.cyberslop.loot.Powerups
 import io.github.ksean.cyberslop.physics.InputFrame
 import io.github.ksean.cyberslop.run.RunState
 
@@ -20,7 +22,7 @@ object PressureHarness {
         val run = RunState.begin(seed).copy(mapIndex = mapIndex)
         return run.copy(
             health = run.maxHealth,
-            loadout = run.loadout.copy(weapon = LootFloor.weaponAt(mapIndex), slots = LootFloor.slotsArrivingAt(mapIndex)),
+            loadout = run.loadout.copy(weapon = LootFloor.weaponArrivingAt(mapIndex), slots = LootFloor.slotsArrivingAt(mapIndex)),
         )
     }
 
@@ -32,9 +34,10 @@ object PressureHarness {
         // Guaranteed-only, in the simulation itself: neither the optional caches the witness
         // walks over nor the drops of whatever the auto-fire kills ever exist.
         val sim = GameSimulation(generated.level, floorRun(seed, generated.level.mapIndex), seed, optionalLoot = false)
-        // Map one's starter cache is what `LootFloor.weaponAt(1)` already models; taking it as
+        // Map one's starter cache is what `LootFloor.weaponArrivingAt(1)` already models; taking it as
         // well would give the bot two draws at a weapon where a run gets one.
         sim.items.clear()
+        pinAwards(sim, generated.level.mapIndex)
         for (step in generated.witness.steps) {
             for (frame in step.frames) {
                 if (sim.tick(frame).playerDied) return RouteOutcome(sim.run.maxHealth, died = true, sim)
@@ -42,6 +45,22 @@ object PressureHarness {
         }
         return RouteOutcome(sim.grossDamageTaken, died = false, sim)
     }
+
+    /**
+     * The reference player takes every guaranteed award at its **weakest** outcome (`LootFloor`),
+     * so every award this simulation creates is the floor's own before it can be collected — an
+     * award dropped and taken inside one tick included. The rest of the route and the boss are
+     * then played with what the floor models, not with whatever the roll gave.
+     */
+    fun pinAwards(sim: GameSimulation, mapIndex: Int) {
+        val floorWeapon = LootFloor.weaponAt(mapIndex)
+        val floorPowerup = LootFloor.slotsAt(mapIndex).held.keys.singleOrNull()?.let { Powerups.of(it) }
+        sim.awardOverride = { _, _ -> floorWeapon to floorPowerup }
+    }
+
+    /** Holds exactly the loadout the floor models at [mapIndex]'s main boss (`LootFloor.weaponAt`/`slotsAt`). */
+    fun holdFloor(sim: GameSimulation, mapIndex: Int) =
+        sim.holdLoadout(Loadout(LootFloor.weaponAt(mapIndex), LootFloor.slotsAt(mapIndex)))
 
     /** Boss pressure: after the route, fight with the dodge policy until the boss dies or time runs out. */
     fun fight(sim: GameSimulation): Boolean {

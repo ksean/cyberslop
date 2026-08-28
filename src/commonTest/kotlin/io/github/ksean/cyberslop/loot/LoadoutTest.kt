@@ -24,57 +24,92 @@ class LoadoutTest {
     fun `walking over a better weapon equips it`() {
         val loadout = Loadout.starting()
 
-        val (after, outcome) = loadout.collect(Weapons.of(WeaponId.VultureRailCarbine), mapIndex = 3)
+        val (after, outcome) = loadout.collect(Weapons.of(WeaponId.VultureRailCarbine))
 
         assertIs<WeaponPickup.Equipped>(outcome)
         assertEquals(WeaponId.VultureRailCarbine, after.weapon.id)
     }
 
+    /** PROD-070: there is no comparison — a lower-tier, lower-score weapon is taken all the same. */
     @Test
-    fun `walking over a worse weapon leaves the loadout alone and yields scrap`() {
-        val strong = Loadout.starting()
-            .collect(Weapons.of(WeaponId.SableCorpRailgun), mapIndex = 8).first
+    fun `walking over a worse weapon equips it too and scraps the one held`() {
+        val strong = Loadout.starting().collect(Weapons.of(WeaponId.SableCorpRailgun)).first
 
-        val (after, outcome) = strong.collect(Weapons.of(WeaponId.BrokenBottle), mapIndex = 8)
+        val (after, outcome) = strong.collect(Weapons.of(WeaponId.BrokenBottle))
 
-        assertIs<WeaponPickup.Scrapped>(outcome)
-        assertEquals(WeaponId.SableCorpRailgun, after.weapon.id)
+        assertIs<WeaponPickup.Equipped>(outcome)
+        assertEquals(WeaponId.BrokenBottle, after.weapon.id)
+        assertEquals(WeaponId.SableCorpRailgun, outcome.replaced.id)
+        assertEquals(100, outcome.scrap, "a Blacksite weapon scraps for 100")
     }
 
     @Test
-    fun `contact always resolves, for every weapon in the registry`() {
+    fun `contact always equips, for every weapon in the registry`() {
         val loadout = Loadout.starting()
 
         Weapons.all.forEach { weapon ->
-            val (_, outcome) = loadout.collect(weapon, mapIndex = 5)
-            assertTrue(
-                outcome is WeaponPickup.Equipped || outcome is WeaponPickup.Scrapped,
-                "${weapon.name} did not resolve on contact",
-            )
+            val (after, outcome) = loadout.collect(weapon)
+            assertIs<WeaponPickup.Equipped>(outcome, "${weapon.name} did not equip on contact")
+            assertEquals(weapon.id, after.weapon.id)
         }
     }
 
+    /** PROD-070: a build is made around one weapon and does not survive it. */
     @Test
-    fun `powerups survive a weapon swap`() {
+    fun `a weapon pickup empties the build and pays Scrap for the weapon and each slot`() {
         var loadout = Loadout.starting()
         repeat(3) { loadout = loadout.collect(PowerupId.HollowpointFirmware, MAP_FOR_SCORING).first }
         repeat(2) { loadout = loadout.collect(PowerupId.OverclockCoil, MAP_FOR_SCORING).first }
 
-        loadout = loadout.collect(Weapons.of(WeaponId.SableCorpRailgun), mapIndex = 8).first
+        val (after, outcome) = loadout.collect(Weapons.of(WeaponId.SableCorpRailgun))
 
-        assertEquals(3, loadout.slots.stacksOf(PowerupId.HollowpointFirmware))
-        assertEquals(2, loadout.slots.stacksOf(PowerupId.OverclockCoil))
+        assertIs<WeaponPickup.Equipped>(outcome)
+        assertEquals(0, after.slots.distinctCount, "the build survived a weapon pickup")
+        assertEquals(setOf(PowerupId.HollowpointFirmware, PowerupId.OverclockCoil), outcome.cleared.keys)
+        // Bottle 8, plus one Scav slot (20) and one Chromed slot (45): per slot, not per stack.
+        assertEquals(8 + 20 + 45, outcome.scrap)
+    }
+
+    /** Round-3 finding: "any weapon" includes another copy of the one held. */
+    @Test
+    fun `picking up a copy of the held weapon still empties the build`() {
+        var loadout = Loadout.starting().collect(Weapons.of(WeaponId.SableCorpRailgun)).first
+        repeat(2) { loadout = loadout.collect(PowerupId.HollowpointFirmware, MAP_FOR_SCORING).first }
+        loadout = loadout.collect(PowerupId.OverclockCoil, MAP_FOR_SCORING).first
+
+        val (after, outcome) = loadout.collect(Weapons.of(WeaponId.SableCorpRailgun))
+
+        assertIs<WeaponPickup.Equipped>(outcome)
+        assertEquals(0, after.slots.distinctCount, "a same-weapon pickup kept the build")
+        assertEquals(100 + 20 + 45, outcome.scrap, "the replaced railgun and both slots are sold")
+    }
+
+    @Test
+    fun `a weapon pickup over an empty build pays only the weapon's Scrap`() {
+        val (after, outcome) = Loadout.starting().collect(Weapons.of(WeaponId.SableCorpRailgun))
+
+        assertIs<WeaponPickup.Equipped>(outcome)
+        assertEquals(8, outcome.scrap)
+        assertEquals(0, after.slots.distinctCount)
+    }
+
+    @Test
+    fun `a powerup collected after a weapon lands in the emptied build`() {
+        var loadout = Loadout.starting()
+        repeat(3) { loadout = loadout.collect(PowerupId.HollowpointFirmware, MAP_FOR_SCORING).first }
+        loadout = loadout.collect(Weapons.of(WeaponId.SableCorpRailgun)).first
+
+        loadout = loadout.collect(PowerupId.OverclockCoil, MAP_FOR_SCORING).first
+
+        assertEquals(mapOf(PowerupId.OverclockCoil to 1), loadout.slots.held)
     }
 
     @Test
     fun `the first weapon found on map one is an upgrade over the bottle`() {
         // Every other Street-tier weapon out-damages the starting one, so the opening progression
         // beat cannot be a pickup that does nothing.
-        val loadout = Loadout.starting()
-
         Weapons.all.filter { it.id != WeaponId.BrokenBottle }.forEach { weapon ->
-            val (_, outcome) = loadout.collect(weapon, mapIndex = 1)
-            assertIs<WeaponPickup.Equipped>(outcome, "${weapon.name} was refused over the bottle")
+            assertTrue(weapon.baseDps > Weapons.startingWeapon.baseDps, "${weapon.name} is no better than the bottle")
         }
     }
 

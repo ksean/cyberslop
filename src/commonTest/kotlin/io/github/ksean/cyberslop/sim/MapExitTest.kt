@@ -102,8 +102,8 @@ class MapExitTest {
         if (guaranteedLoadout) {
             run = run.copy(
                 loadout = run.loadout.copy(
-                    weapon = io.github.ksean.cyberslop.loot.LootFloor.weaponAt(mapIndex),
-                    slots = io.github.ksean.cyberslop.loot.LootFloor.slotsAt(mapIndex),
+                    weapon = io.github.ksean.cyberslop.loot.LootFloor.weaponArrivingAt(mapIndex),
+                    slots = io.github.ksean.cyberslop.loot.LootFloor.slotsArrivingAt(mapIndex),
                 ),
             )
         }

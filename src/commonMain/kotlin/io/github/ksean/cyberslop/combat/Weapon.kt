@@ -2,7 +2,7 @@ package io.github.ksean.cyberslop.combat
 
 enum class WeaponClass { Melee, Ranged, Psychic }
 
-/** Rarity, and nothing else. Which weapon replaces which is decided by score, never by tier. */
+/** Rarity, and nothing else: drop weight and Scrap value. A weapon on the ground is always taken (PROD-070). */
 enum class Tier { Street, Scav, Chromed, Blacksite, Ascended }
 
 /** Where a pattern originates. Psychic weapons anchor to the cursor; most others to the player. */

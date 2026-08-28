@@ -30,9 +30,9 @@ Settled before implementation; the specification amendments say the same thing n
    an enemy in acid is a free kill and an enemy that jumps is a second movement model. A Flyer
    pursues in both axes but never enters a committed column. Nothing moves faster than the player
    runs, asserted.
-3. **Melee enemies swing; nothing hurts by touch.** The per-second contact aura is replaced by a
-   telegraphed swing with its own cooldown, reach and 90° arc; Shooters wind up, fire faster shots
-   more often. **Fairness on committed spans** becomes a runtime rule: no enemy damage lands while
+3. **Melee enemies swing, and their bodies hurt to touch.** The telegraphed swing with its own
+   cooldown, reach and 90° arc is the attack; a per-second contact drain (decision 9) sits under
+   it; Shooters wind up, fire faster shots more often. **Fairness on committed spans** becomes a runtime rule: no enemy damage lands while
    the player's box overlaps a committed column, nor within a quarter-second landing grace after
    one, so free movement cannot invalidate the route-safety argument that spawn placement used to
    carry alone.
@@ -57,6 +57,15 @@ Settled before implementation; the specification amendments say the same thing n
    the floor-covered maps that must win. A whole-simulation digest (P-40) over every
    future-affecting field joins the determinism check, built after hazards so its golden is cut
    once.
+9. **Touch hurts, a weapon is a build, a shot shows where it went.** (a) A living enemy's body
+   drains `1.0 × contactDamage` per second of overlap, like a hazard, under the fairness rule; not
+   bosses. (b) Every weapon pickup equips: the old weapon and every powerup slot convert to Scrap;
+   a paired boss award applies weapon then powerup. The loot floor is re-derived to that policy —
+   the arriving loadout is the last guaranteed weapon plus the powerups awarded after it — and
+   the covered-map count is re-measured, not assumed. (c) Projectiles draw a body and tracer;
+   instant patterns leave a hit indicator (beam, chain, ring) whose geometry is the hit test's.
+   *(product.md PROD-069..071; enemies.md Contact, the loot floor; combat.md Weapon pickup;
+   presentation.md Weapon effects; P-41..P-43.)*
 
 ## Steps
 
@@ -91,6 +100,9 @@ and the loot-floor expectations only.
    speeds, swing damage and hazard density until pressure rises by thirds and the floor-covered
    maps are won on every cohort seed; `./scripts/check.sh`; implementation review; disposition
    findings.
+10. **Contact, pickup reset, shot indicators.** Decision 9, one owner, three sub-steps in
+    `tasks.md` (CPS-1..3) each red then green, then `./scripts/check.sh`, then gate 3: adversarial
+    review of the whole change, findings dispositioned, up to three rounds.
 
 ## Agents
 
@@ -98,7 +110,7 @@ and the loot-floor expectations only.
 |---|---|---|
 | Main agent | Claude | every step but 6a; integrates 6a |
 | Sub-agent A | Claude (general-purpose, own worktree) | step 6a — `combat/Weapons.kt`, `WeaponRegistryTest`, `LootFloorTest` comments only; reported one out-of-scope fixture failure rather than editing it |
-| Adversarial reviewer | `codex exec --model gpt-5.6-sol -c model_reasoning_effort=high --sandbox read-only` | gate 1 after step 1; gate 2 after step 9; three lenses per ENG-071; up to three rounds each |
+| Adversarial reviewer | `codex exec --model gpt-5.6-sol -c model_reasoning_effort=high --sandbox read-only` | gate 1 after step 1; gate 2 after step 9; gate 3 after step 10; three lenses per ENG-071; up to three rounds each |
 
 The sub-agent receives the relevant spec sections verbatim and the files it owns, runs the focused
 tests then `./gradlew jvmTest`, and does not run `check.sh` or touch files outside its scope. The
