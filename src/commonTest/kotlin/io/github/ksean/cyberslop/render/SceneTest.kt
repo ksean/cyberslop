@@ -679,19 +679,20 @@ class SceneTest {
 
     /**
      * PROD-063 and P-35: a boss attack's telegraph is its `WindUp`; its active window is a `Swing`
-     * with a swoosh (Slam, Sweep, Rush) or a `Fire` with a muzzle flash (Volley).
+     * with a swoosh for each melee event or a `Fire` with a muzzle flash for each ranged event.
      */
     @Test
     fun `a telegraphing boss poses its wind-up and an active attack its swing or shot`() {
         val sim = TestLevels.simulation()
         val boss = sim.boss
         boss.fight.engage()
-        // Phase two, so the Volley is in the cycle.
+        // Phase two, so the main boss's signature is in the cycle.
         boss.fight.damage(boss.spec.maxHealth * 0.5)
 
-        val seen = mutableSetOf<String>()
+        val expected = boss.fight.currentPhase().attacks.map { it.module }.toSet()
+        val seen = mutableSetOf<io.github.ksean.cyberslop.entity.BossModule>()
         var ticks = 0
-        while (seen.size < 3 && ticks < 3000) {
+        while (seen != expected && ticks < 5000) {
             sim.tick(InputFrame())
             ticks++
             val attack = boss.currentAttack ?: continue
@@ -700,19 +701,19 @@ class SceneTest {
                 assertEquals(Action.WindUp, Actor.actionOf(motion), "${attack.name} telegraphs without a wind-up pose")
                 continue
             }
-            if (!boss.striking || attack.name in seen) continue
-            seen.add(attack.name)
+            if (boss.events.isEmpty() || attack.module in seen) continue
+            seen.add(attack.module)
             val frame = Scene.compose(sim, camera(), backdrop(sim), hudOf(sim), 0.0, SceneBuilder())
             val effects = frame.batches.filter { it.layer == Layer.Effects }
-            if (attack.name == "Volley") {
-                assertEquals(Action.Fire, Actor.actionOf(motion), "an active Volley is not a shot")
-                assertTrue(effects.any { it.primitive == Primitive.Dot }, "an active Volley draws no flash")
+            if (attack.visual.ranged) {
+                assertEquals(Action.Fire, Actor.actionOf(motion), "an active ${attack.name} event is not a shot")
+                assertTrue(effects.any { it.primitive == Primitive.Dot }, "an active ${attack.name} event draws no flash")
             } else {
-                assertEquals(Action.Swing, Actor.actionOf(motion), "an active ${attack.name} is not a swing")
-                assertTrue(effects.any { it.primitive == Primitive.Segment }, "an active ${attack.name} draws no swoosh")
+                assertEquals(Action.Swing, Actor.actionOf(motion), "an active ${attack.name} event is not a swing")
+                assertTrue(effects.any { it.primitive == Primitive.Segment }, "an active ${attack.name} event draws no swoosh")
             }
         }
-        assertTrue(seen.containsAll(listOf("Slam", "Sweep", "Volley")), "only saw $seen strike in $ticks ticks")
+        assertEquals(expected, seen, "only saw $seen strike in $ticks ticks")
     }
 
     @Test
@@ -870,6 +871,18 @@ class SceneTest {
             val telegraphing = primitives()
             assertTrue(idle != telegraphing, "a $archetype winding up is drawn exactly like one that is not")
         }
+    }
+
+    @Test
+    fun `a pursuing walker uses its real rising and falling jump clips`() {
+        val sim = simulation()
+        val enemy = enemy(sim, EnemyArchetype.Swarm)
+        enemy.leap = io.github.ksean.cyberslop.sim.EnemyLeap(1, enemy.position.x + 32.0, 4..5)
+
+        enemy.vy = -120.0
+        assertEquals(Clip.JumpRise, Actor.clipOf(Scene.enemyMotion(sim, enemy)))
+        enemy.vy = 120.0
+        assertEquals(Clip.JumpFall, Actor.clipOf(Scene.enemyMotion(sim, enemy)))
     }
 
     /** Where an enemy's posed lead hand lands on screen, with the camera at the origin. */
@@ -1240,28 +1253,32 @@ class SceneTest {
         assertTrue(width(frameOf(sim)) < fresh, "the impact tracer did not fade")
     }
 
-    /** Round-1 finding: the Volley showed a fan along the boss's facing, not the band it aims at. */
     @Test
-    fun `an active Volley shows the band it was aimed at, in the enemy shot colour`() {
+    fun `a boss Laser draws its terrain-clipped beam in the enemy shot look`() {
         val sim = TestLevels.simulation()
-        val boss = sim.boss
-        boss.fight.engage()
-        boss.fight.damage(boss.spec.maxHealth * 0.5)
         val palette = Palettes.of(sim.level.theme)
-        var ticks = 0
-        while (!(boss.striking && boss.currentAttack?.visual?.ranged == true) && ticks < 3000) { sim.tick(InputFrame()); ticks++ }
-        assertTrue(boss.striking, "fixture: no Volley struck in $ticks ticks")
+        val start = Vec2(42.0, 38.0)
+        val end = Vec2(155.0, 61.0)
+        sim.bossBeams += io.github.ksean.cyberslop.sim.LiveBossBeam(
+            start = start,
+            end = end,
+            damage = 1.0,
+            secondsLeft = 0.2,
+            totalSeconds = 0.3,
+        )
 
         val frame = frameOf(sim)
 
-        val left = Vec2((boss.aimedX - io.github.ksean.cyberslop.sim.LiveBoss.VOLLEY_WIDTH) * Scene.ZOOM, boss.position.y * Scene.ZOOM)
-        val right = Vec2((boss.aimedX + io.github.ksean.cyberslop.sim.LiveBoss.VOLLEY_WIDTH) * Scene.ZOOM, boss.position.y * Scene.ZOOM)
-        val shots = segmentsOf(frame, palette.hazard)
-        assertTrue(hasSegment(shots, left, right), "no band from $left to $right in the shot colour; segments $shots")
-        // The fan is tracers in the enemy look: bloom and core (PROD-080), bodies in the hazard colour.
-        assertTrue(segmentsOf(frame, ShotLooks.ENEMY_CORE).isNotEmpty(), "no core tracers toward the band")
-        assertTrue(segmentsOf(frame, palette.hazardGlow).isNotEmpty(), "no bloom tracers toward the band")
-        assertTrue(dotsOf(frame, palette.hazard).isNotEmpty(), "no fan bodies")
+        val screenStart = start * Scene.ZOOM
+        val screenEnd = end * Scene.ZOOM
+        assertTrue(
+            hasSegment(segmentsOf(frame, palette.hazardGlow), screenStart, screenEnd),
+            "the Laser has no bloom along its real simulation segment",
+        )
+        assertTrue(
+            hasSegment(segmentsOf(frame, ShotLooks.ENEMY_CORE), screenStart, screenEnd),
+            "the Laser has no core along its real simulation segment",
+        )
     }
 
     @Test

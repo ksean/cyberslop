@@ -11,6 +11,138 @@ that plan)" — with adversarial review directed for both the plan and the imple
 
 ## Open
 
+### VAR — Scrap feedback, seeded boss profiles and hazard-crossing pursuit
+
+**Request (verbatim):** "When the player receives scrap, you should see a golden \"+X\" above the
+character's head moving slightly upwards and fading away, i.e. if you received 10 scrap from a
+pickup (or something else) the character would have a golden \"+10\" above their head floating
+upwards and fading away. Bosses and minibosses should have more variety and be randomly assigned.
+Each mini boss and final boss should have at least 1 range attack, and 1 melee attack. They should
+be able to have a variety of different attacks, not all of them should have the same attacks. For
+example, some may should single projectiles, or spread shots like a shotgun, or laser attacks, or
+single melee swings slowly, or multiple melee swings in rapid succession. Bosses and minibosses on
+earlier maps should have weaker attacks (not only in the type of attack, but also the damage
+inflicted) and should ramp up in difficulty towards the later maps. The visual design of the bosses
+and mini bosses should also change, so that the type of attacks they can use are reflected in their
+appearance. All enemies should be able to jump over obstacles like pits and spikes, so they can
+chase the player across hazards. Ask the user any clarifying questions if needed."
+
+**Phase one:** complete. PROD-086..089 were added in `product.md`; `enemies.md` replaces the fixed
+Turret/never-jump rules with verified pursuit leaps, specifies the seeded boss roster, the three
+attack bands, eight attack modules, damage/cadence escalation and P-60..P-61; `generation.md`,
+`hazards.md` and `completability.md` carry the resulting generation/fairness boundaries;
+`presentation.md` specifies the floating Scrap label, modular boss silhouettes and P-59/P-62;
+`progression.md` identifies which Scrap counter changes produce feedback; `simulation.md` extends
+the determinism boundary.
+
+**Implementation approval:** given by the user after reviewing phase one — "approve phase two".
+
+Defaults taken in the specification, each reversible during review:
+
+1. Same-tick Scrap gains aggregate into one label. It lasts 0.90 s, rises 20 screen px, fades
+   linearly, and stays at the world position above the player's head where the gain occurred rather
+   than following the player.
+2. "All enemies" means every ground-bound enemy, including mini/main bosses and the formerly fixed
+   Turret, uses the safe leap; the Flyer achieves the same pursuit by flight. The Turret remains
+   stationary until engagement, then unfolds into a slow crawler. Ground enemies wait out an active
+   fire jet because its six-row column cannot be jumped over.
+3. Random assignment is deterministic from the run seed so saves and JVM/Wasm replays agree. The
+   mini-boss and main boss on one map cannot receive the same primary pair, nor can adjacent
+   encounters; map-themed names remain unchanged.
+4. Attack types are banded: maps 1–3 use Slam/Sweep plus Bolt/Burst, maps 4–6 use Slam/Flurry plus
+   Burst/Scatter, and maps 7–10 use Flurry/Rush plus Scatter/Laser. Every encounter has one melee
+   and one ranged module from full health; a main boss adds one visible-from-start signature at
+   60 % health and attacks faster below 25 %.
+5. Bolt, Burst and Scatter are real terrain-blocked projectiles, not only hit-condition artwork;
+   Laser is a finite locked beam. All are capped at eight tiles and keep committed-span/landing
+   grace while being allowed to hurt on boss ground.
+
+After approval, one owner completes these in order. Every item begins with the smallest named test,
+records its expected red failure here, makes the smallest production change, records the focused
+green run, and leaves refactoring until green:
+
+- [x] **VAR-1 — Scrap award boundary and label (PROD-086, P-59).** Add `ScrapGainTest` for the four
+      positive award paths, same-tick aggregation, distinct later gains, zero/profile exclusions,
+      expiry and digest/save exclusion; add focused `SceneTest` cases for exact `+X`, gold/bold
+      style, birth anchor, fixed world origin, interpolated 20 px rise and numeric opacity. Route
+      every `GameSimulation` increment through `gainScrap`, carry presentation-only live labels,
+      add `TextItem.opacity`, and make `CanvasRenderer` apply and restore it. Run the focused common
+      tests on JVM and Wasm.
+      - Red: `jvmTest --tests io.github.ksean.cyberslop.sim.ScrapGainTest` failed as expected because
+        `GameSimulation.scrapGains` did not exist.
+      - Red: the focused simulation/scene run then failed as expected because `TextItem.opacity`
+        did not exist, so the specified fade was not representable by the draw list.
+      - Green: focused `ScrapGainTest` and `ScrapGainSceneTest` runs pass on JVM and Wasm. Every
+        positive in-run award now crosses one aggregation boundary; the draw list and browser canvas
+        preserve the exact gold text, anchored rise, fade and renderer opacity restoration.
+- [x] **VAR-2 — Rank-and-file leap and traversal audit (PROD-088, P-33, P-61).** Start in
+      `EnemyMovementTest` with an engaged Swarm crossing one pit, then cover widest flat acid/void,
+      a three-tile spike strip, barrel, tallest step, no-safe-landing refusal, direction lock,
+      attack suppression in air, fire-jet waiting, Flyer crossing and folded/unfolded Turret
+      behaviour for every rank archetype. Implement a small immutable `EnemyLeap` plan plus the
+      minimum `LiveEnemy` state using the shared gravity/collision vocabulary. Add the JVM cohort
+      `EnemyPursuitEnvelopeTest` and generation rejection only after its fault-injected over-bound
+      case is red.
+      - Red: the first pit-crossing fixture stopped at the old ledge rule; the over-bound terrain
+        fixture was accepted before a pursuit audit existed; boss jet timing and duplicate
+        rank/body hazard reports then exposed missing runtime-time and immutable-removal boundaries.
+      - Green: `EnemyMovementTest`, `BossBehaviourTest`, `EnemyPursuitEnvelopeTest`,
+        `HazardPlacementTest`, `SeedCohortTest` and `GenerationBudgetTest` pass. Walkers and both boss
+        ranks cross verified gaps, acid/void, spikes, barrels and steps, wait for jets, and retain
+        direction/attack suppression through each leap; Flyers cross the same hazards in flight.
+- [x] **VAR-3 — Boss module registry and seeded roster (PROD-087, P-60).** Add `BossProfileTest`
+      first: registry totality, legal modules by band, melee+ranged from full health, signature
+      phase, adjacent-pair exclusion, fixed-seed JVM/Wasm sequence, stream isolation, strictly
+      increasing same-module damage and main-over-mini damage. Introduce typed attack/module/profile
+      ids and `BossRoster`; pass the run seed into `Bosses` without coupling roster draws to live
+      attack choice or loot. Update save reconstruction and digest mutation coverage.
+      - Red: `BossProfileTest` first failed to compile on the absent typed module/profile roster;
+        the initial damage-band cases then exposed the old shared fixed attack table.
+      - Green: `BossProfileTest` and `BossDifficultyTest` pass on JVM and Wasm, including all-module
+        coverage across 128 seeds, roster-stream isolation, adjacency exclusions, full-health
+        melee+ranged availability, signature phase and increasing band/main-boss pressure.
+- [x] **VAR-4 — Boss attack execution and boss leaps (PROD-063, PROD-072, PROD-087..088, P-17,
+      P-35, P-44, P-60..P-61).** Extend `BossBehaviourTest` and `BossAttackChoiceTest` red-first for
+      each event schedule and geometry: one Slam/Sweep/Rush hit, three Flurry swings at the declared
+      offsets, one Bolt, three straight Burst rounds, five Scatter angles, one-hit Laser, aim/facing
+      lock, terrain/range limits, boss-ground ownership, committed-span fairness, real-input dodge
+      and stand-still hit. Refactor `LiveBoss.tick` to emit typed attack events for
+      `GameSimulation`, add boss-owned projectiles/beam state, phase rest, and make both boss ranks
+      cross the P-61 fixtures with their 44 × 56 box before any attack begins.
+      - Red: the focused event and ranged tests failed on the absent typed schedules, projectile
+        ownership and beam state; the leap fixture showed bosses still stopping at hazards.
+      - Green: `BossAttackEventTest`, `BossRangedAttackTest`, `BossAttackChoiceTest` and
+        `BossBehaviourTest` pass. Slam, Sweep, Flurry, Rush, Bolt, Burst, Scatter and Laser now use
+        their declared timing/geometry, terrain and range rules, fairness windows and real dodges.
+- [x] **VAR-5 — Loadout-reflecting silhouettes and motions (PROD-089, P-38, P-43, P-53, P-62).**
+      Add `EnemyLookTest`, `SceneTest` and `HurtFlashSceneTest` cases for every module marker,
+      colour-stripped profile distinctness, mini/main crowns, left/right profiles, signature
+      hardware, jump clips and per-event Flurry/Burst poses. Add a composed `BossLook` and the
+      smallest rig/effect extensions; keep telegraph colour above hurt flash and batch count
+      independent of actor/projectile count. Extend `WorldFrameSheetTest`, generate early/mid/late
+      mini/main frames with their attacks active, and inspect the sheet before recording green.
+      - Red: render tests first failed on absent profile markers and the crawler form; motion tests
+        then showed no jump clip or per-event boss pose.
+      - Green: `EnemyLookTest`, `BossLookTest`, the focused scene/hurt-flash suites and
+        `WorldFrameSheetTest` pass. The generated early/middle/late mini/main sheet was rasterized
+        and inspected: all eight modules have distinct mounted hardware, signatures deploy by phase,
+        and leap/event silhouettes remain readable in both facings.
+- [x] **VAR-6 — Determinism and balance gate (P-39, P-40, P-60..P-61).** Extend the digest with
+      every future-affecting leap/profile/event/projectile field and re-pin the cross-target golden
+      only after mutation coverage is complete. Add `BossDifficultyTest` for profile coverage and
+      strictly rising early/middle/late mean no-dodge damage per second; rerun
+      `BossPressureTest`, route pressure/survival, the generation cohort and full-map run, tuning
+      only the specified numeric levers if needed. Finish with `./scripts/check.sh` green (JVM,
+      Wasm browser tests, production distribution and smoke).
+      - Red: mutation coverage invalidated the old cross-target golden as expected. The first full
+        gate then exposed pursuit-removal regressions in emitted difficulty/hazard/threat means and
+        a 2 s Firefox timeout that passed alone but reproduced while JVM cohorts ran concurrently.
+      - Green: the re-pinned digest (`10020045215349456527uL`) passes on JVM and Wasm; boss/route
+        pressure, route survival, full-map run, difficulty, threat, hazard, seed-cohort and pursuit
+        budget suites pass. `./scripts/check.sh` passes all JVM and Wasm browser tests, optimized
+        production distribution and title-screen smoke (30 tasks, 7m14s); browser tests now follow
+        the JVM cohort so the runner is not starved. `git diff --check` is clean.
+
 ### QOL — Alternate controls, permanent shop, first-pickup cards and liquid presentation
 
 **Request (verbatim):** "Aiming to the left should not make weapons appear upside down, just a

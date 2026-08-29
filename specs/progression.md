@@ -18,7 +18,9 @@ A new profile starts with both Scrap counters at zero, every upgrade at rank zer
 Broken Bottle discovered: it is in the player's hand from the start rather than first encountered
 as a pickup. When a run ends in death or victory, its run Scrap is added once to both counters.
 Scrap in an in-progress run is neither spendable nor part of the lifetime total until that run
-ends. Buying an upgrade subtracts only from `spendableScrap`, so it cannot reduce
+ends. Every positive change to that in-progress counter produces the transient `+X` feedback in
+presentation.md; banking, migration and shop balance changes happen outside active gameplay and do
+not. Buying an upgrade subtracts only from `spendableScrap`, so it cannot reduce
 `unlockedWeapons = min(8 + floor(lifetimeScrap / 400), 26)` or relock an item.
 
 The profile is the canonical source of persistent state and is saved immediately after banking a

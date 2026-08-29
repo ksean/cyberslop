@@ -67,7 +67,7 @@ object DifficultyScore {
     // little: it varies with a theme's look rather than with what the map asks of the player, and
     // weighting it heavily let a decorative difference outvote a real one.
     private const val GAP_WEIGHT = 60.0
-    private const val HAZARD_WEIGHT = 55.0
+    private const val HAZARD_WEIGHT = 70.0
     private const val JET_WEIGHT = 25.0
     private const val VERTICAL_WEIGHT = 12.0
     private const val OPENNESS_WEIGHT = 1.0

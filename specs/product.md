@@ -100,6 +100,19 @@ build of powerups collected by walking over them, and permadeath with persistent
   distance: the further the player stands from it, the more often it opens with a ranged attack;
   the nearer, the more often with a melee one. The choice is made when an attack begins and holds
   for that attack; it never shortens a telegraph or removes a dodge.
+- **PROD-087:** Every mini-boss and main-boss encounter must receive a run-seeded combat profile
+  which is reproducible on continue but varies between encounters. Every profile must expose at
+  least one telegraphed melee attack and one telegraphed ranged attack from full health; profiles
+  must vary in attack geometry and cadence, including single and rapid melee strikes and single,
+  burst, spread and beam shots. The available profiles, their damage and a main boss's late-fight
+  cadence must grow more dangerous from the early maps through the late maps as specified in
+  [enemies.md](enemies.md).
+- **PROD-088:** Every engaged enemy must be able to continue pursuing across generated traversal
+  hazards: a ground-bound rank-and-file enemy, mini-boss or main boss must jump a safe, reachable
+  arc over pits, acid, spike strips and low obstructions instead of stopping at them, while a Flyer
+  crosses them in flight. A fixed-looking Turret must unfold into a slower mobile form when it
+  engages. An enemy must not launch a jump with no safe landing, enter another boss's protected
+  arena ground, or gain permission to hurt a player during a committed crossing.
 
 ## Weapons, powerups and loot
 
@@ -205,6 +218,15 @@ build of powerups collected by walking over them, and permadeath with persistent
   exposed surface must retain its bright liquid edge and show several differently phased bubbles
   rising and bursting. The animation is presentational only and changes no hazard geometry,
   timing or lethality.
+- **PROD-086:** Every positive Scrap award during active gameplay must produce one bold golden
+  `+X` above the player's head, where `X` is the total awarded in that simulation tick. The label
+  must rise a small visible distance and fade completely; it is feedback only and must not alter
+  the award, simulation outcome or saved state.
+- **PROD-089:** A mini-boss or main boss's silhouette must disclose its assigned attack profile
+  without relying on colour: its melee implement must distinguish a heavy single strike, rapid
+  strikes and a rush, and its ranged hardware must distinguish a single/burst barrel, a spread
+  muzzle and a laser emitter. Mini-boss/main-boss scale and crown differences remain visible on
+  every profile.
 - **PROD-051:** An icon stays legible on every sub-theme: for every material colour and both ring
   colours, the drawn halo-and-line pair separates in Rec. 709 luminance from that palette's sky,
   backdrop and tile colours by at least 40 of 255, and no colour used for an item is used in the

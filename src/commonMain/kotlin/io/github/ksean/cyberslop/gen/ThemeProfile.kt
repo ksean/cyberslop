@@ -116,7 +116,7 @@ data class DifficultyCurve(
             return DifficultyCurve(
                 widthTiles = lerpInt(320, 720, d),
                 gapFrequency = lerp(0.12, 0.42, d),
-                hazardFrequency = lerp(0.0, 0.55, d),
+                hazardFrequency = HAZARD_FREQUENCY[mapIndex - 1],
                 maxGapTiles = lerpInt(2, 3, d),
                 verticalBandTiles = lerpInt(8, 26, d),
                 // Bounded so the off-window always comfortably fits a crossing. Pushed further, a
@@ -126,7 +126,8 @@ data class DifficultyCurve(
                 jetPeriodSeconds = lerp(2.4, 1.4, d),
                 jetFrequency = lerp(0.10, 0.34, d),
                 enemiesPerHundredTiles = lerp(4.0, 9.0, d),
-                damagingHazardsPerHundredTiles = lerp(0.0, 5.0, d),
+                damagingHazardsPerHundredTiles = lerp(0.0, 5.0, d).coerceAtMost(STANDARD_HAZARD_CAP) +
+                    if (mapIndex == MAPS) FINAL_MAP_HAZARD_BONUS else 0.0,
             )
         }
 
@@ -134,5 +135,15 @@ data class DifficultyCurve(
 
         private fun lerpInt(from: Int, to: Int, t: Double): Int =
             (from + (to - from) * t).toInt()
+
+        // Acid is only proposed inside a generated gap, so a linear probability was too weak to
+        // offset theme-to-theme relief. The two larger steps establish acid by the end of the
+        // opening band and make the late-game band unmistakably more hostile without changing the
+        // route topology or random-call sequence.
+        private val HAZARD_FREQUENCY = listOf(
+            0.00, 0.05, 0.30, 0.34, 0.37, 0.40, 0.95, 0.97, 0.99, 1.00,
+        )
+        private const val STANDARD_HAZARD_CAP = 4.0
+        private const val FINAL_MAP_HAZARD_BONUS = 3.0
     }
 }

@@ -65,3 +65,10 @@ val titleScreenSmokeTest = NodeJsExec.register(wasmJsMain, "titleScreenSmokeTest
 tasks.named("check") {
     dependsOn(titleScreenSmokeTest)
 }
+
+// The browser runner enforces a two-second per-test timeout. Running Firefox beside the JVM seed
+// cohorts can starve an otherwise millisecond-scale browser test, so keep the two test targets in
+// a deterministic order while retaining parallelism within the rest of the build.
+tasks.named("wasmJsBrowserTest") {
+    mustRunAfter(tasks.named("jvmTest"))
+}

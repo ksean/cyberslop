@@ -10,6 +10,7 @@ import io.github.ksean.cyberslop.physics.TICK_SECONDS
 import io.github.ksean.cyberslop.progression.DiscoveryEntry
 import io.github.ksean.cyberslop.sim.GameSimulation
 import io.github.ksean.cyberslop.sim.HitShape
+import io.github.ksean.cyberslop.sim.EnemyLeap
 import io.github.ksean.cyberslop.sim.LiveBoss
 import io.github.ksean.cyberslop.sim.LiveEnemy
 import io.github.ksean.cyberslop.sim.MuzzleFlash
@@ -123,6 +124,7 @@ object Scene {
         val muzzle = drawnMuzzle(sim, alpha)
         swing(builder, palette, sim, camera, muzzle)
         player(builder, palette, sim, camera, muzzle)
+        scrapGains(builder, sim, camera, alpha)
         if (debugMasks) masks(builder, sim.level, camera)
         if (discovery == null) {
             hud(builder, palette, hud, width, height)
@@ -131,6 +133,33 @@ object Scene {
         }
 
         return builder.build()
+    }
+
+    /** Floating world-space feedback for every positive active-gameplay Scrap award (PROD-086). */
+    private fun scrapGains(
+        builder: SceneBuilder,
+        sim: GameSimulation,
+        camera: Camera,
+        alpha: Double,
+    ) {
+        sim.scrapGains.forEach { gain ->
+            val secondsLeft = gain.previousSecondsLeft +
+                (gain.secondsLeft - gain.previousSecondsLeft) * alpha.coerceIn(0.0, 1.0)
+            val opacity = (secondsLeft / GameSimulation.SCRAP_GAIN_SECONDS).coerceIn(0.0, 1.0)
+            val progress = 1.0 - opacity
+            builder.text(
+                TextItem(
+                    text = "+${gain.amount}",
+                    x = (gain.origin.x - camera.x) * ZOOM,
+                    y = (gain.origin.y - camera.y) * ZOOM - GameSimulation.SCRAP_GAIN_RISE_PX * progress,
+                    sizePx = SCRAP_GAIN_SIZE,
+                    style = SCRAP_GAIN_GOLD,
+                    align = TextAlign.Centre,
+                    bold = true,
+                    opacity = opacity,
+                ),
+            )
+        }
     }
 
     // ---- world ----------------------------------------------------------------------------
@@ -507,7 +536,7 @@ object Scene {
             when (look.form) {
                 EnemyForm.Biped -> biped(builder, palette, look, sim, enemy, x, ground)
                 EnemyForm.Hover -> hover(builder, palette, look, enemy, x, ground, timeSeconds)
-                EnemyForm.Fixed -> fixed(builder, palette, look, enemy, engagement(enemy, look, player), x, ground)
+                EnemyForm.Crawler -> crawler(builder, palette, look, enemy, engagement(enemy, look, player), x, ground)
             }
             // The boss's bar, for anyone who has been hurt (PROD-077); full health shows none.
             if (enemy.health < enemy.maxHealth) {
@@ -554,8 +583,10 @@ object Scene {
         // full direction goes to the pose, not just its sign — a shooter firing upward has to look
         // like it, since its projectile leaves on that diagonal.
         return Motion(
-            speedX = enemy.facing * look.strideRate * REFERENCE_SPEED,
-            onGround = true,
+            speedX = enemy.leap?.let { it.direction * EnemyLeap.VX }
+                ?: (enemy.facing * look.strideRate * REFERENCE_SPEED),
+            verticalSpeed = enemy.vy,
+            onGround = enemy.leap == null && enemy.vy == 0.0,
             facing = if (aim.x < 0.0) -1 else 1,
             stridePx = enemy.stridePx * look.strideRate,
             secondsSinceShot = enemy.lastShot?.let { it.totalSeconds - it.secondsLeft } ?: Double.MAX_VALUE,
@@ -658,8 +689,8 @@ object Scene {
         }
     }
 
-    /** A fixed base with a sweeping head. Nothing else in the game is bolted down. */
-    private fun fixed(
+    /** A cannon pod which unfolds onto four articulated legs once it notices the player. */
+    private fun crawler(
         builder: SceneBuilder,
         palette: Palette,
         look: EnemyLook,
@@ -669,19 +700,42 @@ object Scene {
         ground: Double,
     ) {
         val size = look.height * ZOOM
+        val folded = !enemy.engaged
+        val airborne = enemy.leap != null
+        val legHeight = size * when {
+            airborne -> CRAWLER_TUCK_HEIGHT
+            folded -> CRAWLER_FOLDED_HEIGHT
+            else -> CRAWLER_LEG_HEIGHT
+        }
         val baseHeight = size * BASE_HEIGHT
         val feet = ground
 
         val hurt = enemy.hurtSecondsLeft > 0.0
+        val legs = builder.batch(
+            Layer.ActorBehind,
+            hurtOr(hurt, Palettes.ENEMY_DARK),
+            Primitive.Segment,
+            strokeWidth(size * CRAWLER_LEG_WIDTH),
+        )
+        for (side in listOf(-1.0, 1.0)) {
+            val hipX = x + side * size * CRAWLER_HIP_SPREAD
+            val kneeX = x + side * size * if (folded || airborne) CRAWLER_TUCK_SPREAD else CRAWLER_KNEE_SPREAD
+            val footX = x + side * size * if (folded || airborne) CRAWLER_FOOT_FOLDED else CRAWLER_FOOT_SPREAD
+            val hipY = feet - legHeight
+            val kneeY = feet - legHeight * CRAWLER_KNEE_HEIGHT
+            val footY = if (airborne) feet - legHeight * CRAWLER_TUCK_FOOT else feet
+            legs.segment(hipX, hipY, kneeX, kneeY)
+            legs.segment(kneeX, kneeY, footX, footY)
+        }
+        val baseBottom = feet - legHeight
         builder.batch(Layer.Actors, hurtOr(hurt, Palettes.ENEMY_DARK), Primitive.Rect)
             .rect(
-                x - size * look.bulk * BASE_WIDTH, feet - baseHeight,
+                x - size * look.bulk * BASE_WIDTH, baseBottom - baseHeight,
                 size * look.bulk * BASE_WIDTH * 2.0, baseHeight,
             )
-        // Behind the head, so it reads as emerging from the housing rather than bolted onto it.
-        val head = feet - baseHeight - size * TURRET_HEAD / 2.0
-        // The head sweeps: the barrel follows whatever the emplacement is tracking, rather than
-        // pointing along a patrol direction a bolted-down thing never has.
+        // Behind the head, so it reads as emerging from the crawler housing.
+        val head = baseBottom - baseHeight - size * TURRET_HEAD / 2.0
+        // The head sweeps: the barrel follows whatever the mobile crawler is tracking.
         builder.batch(
             Layer.ActorBehind, hurtOr(hurt, Palettes.ENEMY_PLATE), Primitive.Segment,
             strokeWidth(size * BARREL_WIDTH),
@@ -878,7 +932,8 @@ object Scene {
     ) {
         listOf(sim.miniboss to false, sim.boss to true).forEach { (live, isMain) ->
             if (live.fight.defeated) return@forEach
-            val look = EnemyLooks.boss(sim.level.mapIndex, isMain)
+            val bossLook = BossLooks.of(live.spec.profile, sim.level.mapIndex, isMain)
+            val look = bossLook.body
             val x = (live.position.x - camera.x) * ZOOM
             val feet = (live.position.y - camera.y) * ZOOM
 
@@ -896,10 +951,12 @@ object Scene {
                 limbStyle = hurtOr(hurt, Palettes.ENEMY_DARK),
                 trimStyle = hurtOr(hurt, Palettes.ENEMY_PLATE),
                 armStyle = hurtOr(hurt, Palettes.ENEMY_PLATE),
+                armed = false,
             )
+            bossHardware(builder, palette, live, bossLook, pose, Vec2(x, feet), hurt)
             crown(builder, palette, look, x, feet - look.height * ZOOM, hurtOr(hurt, palette.glow[palette.glow.size - 1]))
             healthBar(builder, palette, x, feet - look.height * ZOOM - BAR_GAP, look.height * ZOOM, live.healthFraction)
-            bossStrike(builder, palette, live, pose, Vec2(x, feet), camera)
+            bossStrike(builder, palette, live, pose, Vec2(x, feet), look)
         }
     }
 
@@ -911,65 +968,243 @@ object Scene {
         val look = EnemyLooks.boss(sim.level.mapIndex, live === sim.boss)
         val attack = live.currentAttack
         val active = if (attack != null && live.striking) live.attackElapsed - attack.telegraphSeconds else null
+        val eventAge = if (attack != null && active != null) mostRecentEventAge(attack.eventOffsets, active) else null
         val forward = Vec2(live.facing.toDouble(), 0.0)
         return Motion(
             speedX = if (live.moving) live.facing * LiveBoss.SPEED else 0.0,
-            onGround = true,
+            verticalSpeed = live.vy,
+            onGround = live.leap == null && live.vy == 0.0,
             facing = live.facing,
             stridePx = live.stridePx,
-            secondsSinceShot = if (attack != null && attack.visual.ranged) active ?: Double.MAX_VALUE else Double.MAX_VALUE,
-            secondsSinceSwing = if (attack != null && !attack.visual.ranged) active ?: Double.MAX_VALUE else Double.MAX_VALUE,
+            secondsSinceShot = if (attack != null && attack.visual.ranged) eventAge ?: Double.MAX_VALUE else Double.MAX_VALUE,
+            secondsSinceSwing = if (attack != null && !attack.visual.ranged) eventAge ?: Double.MAX_VALUE else Double.MAX_VALUE,
             windingUp = live.telegraphing,
-            shotSeconds = attack?.activeSeconds ?: Actor.FIRE_SECONDS,
-            swingSeconds = attack?.activeSeconds ?: Actor.SWING_SECONDS,
+            shotSeconds = BOSS_EVENT_FLASH_SECONDS,
+            swingSeconds = BOSS_EVENT_SWING_SECONDS,
             swingDirection = attack?.let { strikeDirection(it.visual, forward) } ?: forward,
             weaponAim = forward,
             scale = look.height / Physics.Default.standingHeight,
         )
     }
 
+    private fun mostRecentEventAge(offsets: List<Double>, activeSeconds: Double): Double? = offsets
+        .filter { it <= activeSeconds }
+        .maxOrNull()
+        ?.let { activeSeconds - it }
+
     /** A slam comes down at the ground ahead; a lunge trails its swoosh behind; the rest go level. */
     private fun strikeDirection(visual: AttackVisual, forward: Vec2): Vec2 = when (visual) {
         AttackVisual.GroundSlam -> Vec2(forward.x * SLAM_FORWARD, SLAM_DOWN)
         AttackVisual.Lunge -> forward * -1.0
-        AttackVisual.LevelSweep, AttackVisual.MuzzleFan -> forward
+        AttackVisual.LevelSweep, AttackVisual.RapidSweep,
+        AttackVisual.MuzzleBolt, AttackVisual.MuzzleBurst, AttackVisual.MuzzleFan,
+        AttackVisual.LaserBeam -> forward
     }
 
-    /** The effect of an attack's active window, from the posed hand, over exactly that window. */
-    private fun bossStrike(builder: SceneBuilder, palette: Palette, live: LiveBoss, pose: Pose, feet: Vec2, camera: Camera) {
+    /** Every separately timed attack event gets its own swing or muzzle flash. */
+    private fun bossStrike(
+        builder: SceneBuilder,
+        palette: Palette,
+        live: LiveBoss,
+        pose: Pose,
+        feet: Vec2,
+        look: EnemyLook,
+    ) {
         val attack = live.currentAttack ?: return
         if (!live.striking) return
-        val secondsLeft = (attack.totalSeconds - live.attackElapsed).coerceAtLeast(0.0)
         val style = palette.hazardGlow
-        val direction = strikeDirection(attack.visual, Vec2(live.facing.toDouble(), 0.0))
-        if (attack.visual.ranged) {
-            val flash = MuzzleFlash(direction, secondsLeft, attack.activeSeconds)
-            val barrel = feet + barrelTip(pose) * ZOOM
-            muzzleFlash(builder, style, style, barrel, flash)
-            // Where it went (PROD-071): the Volley lands on the band around the x it was aimed at
-            // when the telegraph began, not along the boss's facing. The band is drawn on the
-            // floor in the enemy-shot colour, and the fan is tracers travelling from the barrel to
-            // it, further along the later in the window.
-            val aimed = Vec2((live.aimedX - camera.x) * ZOOM, feet.y)
-            val bandY = feet.y
-            val left = aimed.x - LiveBoss.VOLLEY_WIDTH * ZOOM
-            val right = aimed.x + LiveBoss.VOLLEY_WIDTH * ZOOM
-            builder.batch(Layer.Effects, palette.hazard, Primitive.Segment, strokeWidth(TRACER_WIDTH))
-                .segment(left, bandY, right, bandY)
-            val look = ShotLooks.enemy(palette)
-            val progress = 1.0 - flash.strength
-            for (n in 0 until FAN_DOTS) {
-                val landing = Vec2(left + (right - left) * n / (FAN_DOTS - 1), bandY)
-                val head = barrel + (landing - barrel) * progress
-                val tail = barrel + (landing - barrel) * (progress - FAN_TRACER).coerceAtLeast(0.0)
-                shotMarks(builder, look, head, tail, FAN_DOT_PX)
+        val active = live.attackElapsed - attack.telegraphSeconds
+        attack.eventOffsets.forEachIndexed { eventIndex, offset ->
+            val age = active - offset
+            if (age < 0.0) return@forEachIndexed
+            if (attack.visual.ranged) {
+                if (age > BOSS_EVENT_FLASH_SECONDS) return@forEachIndexed
+                val flash = MuzzleFlash(live.aimDirection, BOSS_EVENT_FLASH_SECONDS - age, BOSS_EVENT_FLASH_SECONDS)
+                val muzzle = bossMuzzle(feet, pose, look, live.aimDirection)
+                when (attack.visual) {
+                    AttackVisual.MuzzleFan -> BOSS_SCATTER_ANGLES.forEach { angle ->
+                        muzzleFlash(builder, style, style, muzzle, flash.copy(direction = TrigTable.rotate(live.aimDirection, angle)))
+                    }
+                    AttackVisual.LaserBeam -> muzzleFlash(builder, ShotLooks.ENEMY_CORE, style, muzzle, flash)
+                    else -> muzzleFlash(builder, style, style, muzzle, flash)
+                }
+            } else {
+                if (age > BOSS_EVENT_SWING_SECONDS) return@forEachIndexed
+                val direction = strikeDirection(attack.visual, Vec2(live.facing.toDouble(), 0.0))
+                val swing = SwingVisual(
+                    origin = Vec2.Zero,
+                    direction = direction,
+                    arcDegrees = BOSS_SWING_ARC,
+                    reachPx = attack.reachPx,
+                    secondsLeft = BOSS_EVENT_SWING_SECONDS - age,
+                    totalSeconds = BOSS_EVENT_SWING_SECONDS,
+                )
+                val hand = if (attack.visual == AttackVisual.RapidSweep && eventIndex % 2 == 1) pose.rearHand else pose.leadHand
+                swoosh(builder, style, feet + hand * ZOOM, swing)
             }
-        } else {
-            val swing = SwingVisual(
-                origin = Vec2.Zero, direction = direction, arcDegrees = BOSS_SWING_ARC,
-                reachPx = attack.reachPx, secondsLeft = secondsLeft, totalSeconds = attack.activeSeconds,
+        }
+    }
+
+    private fun bossMuzzle(feet: Vec2, pose: Pose, look: EnemyLook, aim: Vec2): Vec2 =
+        feet + pose.rearShoulder * ZOOM + aim.normalisedOr(Vec2.Right) * (look.height * BOSS_BARREL_REACH * ZOOM)
+
+    /**
+     * Draws every profile module as hardware, so a silhouette predicts the attacks before combat.
+     * The signature stays folded high on the back above 60 % health, then pivots into a forward
+     * mount; its shape never disappears while locked.
+     */
+    private fun bossHardware(
+        builder: SceneBuilder,
+        palette: Palette,
+        live: LiveBoss,
+        look: BossLook,
+        pose: Pose,
+        feet: Vec2,
+        hurt: Boolean,
+    ) {
+        val body = look.body
+        val size = body.height * ZOOM
+        val forward = Vec2(live.facing.toDouble(), 0.0)
+        val activeAim = live.currentAttack?.let { live.aimDirection } ?: forward
+        val hardwareStyle = when {
+            live.telegraphing -> palette.hazardGlow
+            hurt -> Palettes.HURT
+            else -> Palettes.ENEMY_PLATE
+        }
+        val glowStyle = when {
+            live.telegraphing -> palette.hazardGlow
+            hurt -> Palettes.HURT
+            else -> palette.glow[palette.glow.size - 1]
+        }
+
+        fun screen(local: Vec2): Vec2 = feet + local * ZOOM
+        look.hardware.forEach { hardware ->
+            val locked = hardware.folded && live.healthFraction > SIGNATURE_HEALTH
+            val origin = when (hardware.mount) {
+                BossMount.LeadArm -> screen(pose.leadHand)
+                BossMount.RearShoulder -> screen(pose.rearShoulder)
+                BossMount.HighBack -> screen(
+                    pose.neck + if (locked) {
+                        Vec2(-live.facing * body.height * SIGNATURE_BACK, -body.height * SIGNATURE_HIGH)
+                    } else {
+                        Vec2(live.facing * body.height * SIGNATURE_DEPLOY_FORWARD, -body.height * SIGNATURE_DEPLOY_HIGH)
+                    },
+                )
+            }
+            val direction = when {
+                locked -> Vec2(0.0, -1.0)
+                live.currentAttack?.module == hardware.module -> activeAim
+                else -> forward
+            }.normalisedOr(forward)
+            drawBossMarker(
+                builder = builder,
+                marker = hardware.marker,
+                origin = origin,
+                direction = direction,
+                size = size,
+                solidStyle = hardwareStyle,
+                glowStyle = glowStyle,
+                alternateOrigin = screen(pose.rearHand),
             )
-            swoosh(builder, style, feet + pose.leadHand * ZOOM, swing)
+
+            if (hardware.module == io.github.ksean.cyberslop.entity.BossModule.Laser &&
+                live.currentAttack?.module == hardware.module && live.telegraphing
+            ) {
+                val attack = live.currentAttack ?: return@forEach
+                val charge = (live.attackElapsed / attack.telegraphSeconds).coerceIn(0.0, 1.0)
+                val lens = origin + direction * (size * LASER_REACH)
+                builder.batch(Layer.Effects, palette.hazardGlow, Primitive.Dot)
+                    .dot(lens.x, lens.y, size * LASER_LENS * (LASER_CHARGE_BASE + charge * LASER_CHARGE_RANGE))
+            }
+        }
+    }
+
+    /** Each marker has different colour-stripped geometry; styles only communicate state. */
+    private fun drawBossMarker(
+        builder: SceneBuilder,
+        marker: BossMarker,
+        origin: Vec2,
+        direction: Vec2,
+        size: Double,
+        solidStyle: String,
+        glowStyle: String,
+        alternateOrigin: Vec2,
+    ) {
+        val normal = Vec2(-direction.y, direction.x)
+        val thin = builder.batch(Layer.ActorTrim, solidStyle, Primitive.Segment, strokeWidth(size * HARDWARE_THIN))
+        val thick = builder.batch(Layer.ActorFront, solidStyle, Primitive.Segment, strokeWidth(size * HARDWARE_THICK))
+        val plates = builder.batch(Layer.ActorTrim, solidStyle, Primitive.Rect)
+        val solidDots = builder.batch(Layer.ActorTrim, solidStyle, Primitive.Dot)
+        val glowDots = builder.batch(Layer.ActorGlow, glowStyle, Primitive.Dot)
+        fun point(along: Double, across: Double = 0.0): Vec2 = origin + direction * (size * along) + normal * (size * across)
+
+        when (marker) {
+            BossMarker.WeightedForearm -> {
+                val tip = point(WEIGHT_REACH)
+                thick.segment(origin.x, origin.y, tip.x, tip.y)
+                solidDots.dot(tip.x, tip.y, size * WEIGHT_RADIUS)
+            }
+            BossMarker.LongBlade -> {
+                val guardA = point(BLADE_GUARD_ALONG, -BLADE_GUARD)
+                val guardB = point(BLADE_GUARD_ALONG, BLADE_GUARD)
+                val tip = point(BLADE_REACH)
+                thin.segment(origin.x, origin.y, tip.x, tip.y)
+                thick.segment(guardA.x, guardA.y, guardB.x, guardB.y)
+            }
+            BossMarker.PairedBlades -> {
+                val first = point(PAIRED_REACH)
+                thin.segment(origin.x, origin.y, first.x, first.y)
+                val second = alternateOrigin + direction * (size * PAIRED_REACH)
+                thin.segment(alternateOrigin.x, alternateOrigin.y, second.x, second.y)
+            }
+            BossMarker.RamPlate -> {
+                val rootA = point(RAM_ROOT, -RAM_HALF_HEIGHT)
+                val rootB = point(RAM_ROOT, RAM_HALF_HEIGHT)
+                val nose = point(RAM_REACH)
+                thick.segment(rootA.x, rootA.y, nose.x, nose.y)
+                thick.segment(rootB.x, rootB.y, nose.x, nose.y)
+                thick.segment(rootA.x, rootA.y, rootB.x, rootB.y)
+            }
+            BossMarker.NarrowBarrel -> {
+                val tip = point(BARREL_MARKER_REACH)
+                thin.segment(origin.x, origin.y, tip.x, tip.y)
+                glowDots.dot(tip.x, tip.y, size * BARREL_BORE)
+            }
+            BossMarker.BurstMagazine -> {
+                val tip = point(BARREL_MARKER_REACH)
+                thin.segment(origin.x, origin.y, tip.x, tip.y)
+                val magazine = point(MAGAZINE_ALONG, MAGAZINE_DROP)
+                plates.rect(
+                    magazine.x - size * MAGAZINE_WIDTH / 2.0,
+                    magazine.y - size * MAGAZINE_HEIGHT / 2.0,
+                    size * MAGAZINE_WIDTH,
+                    size * MAGAZINE_HEIGHT,
+                )
+                glowDots.dot(tip.x, tip.y, size * BARREL_BORE)
+            }
+            BossMarker.ScatterPorts -> {
+                val muzzle = point(SCATTER_REACH)
+                val a = muzzle - normal * (size * SCATTER_HALF_WIDTH)
+                val b = muzzle + normal * (size * SCATTER_HALF_WIDTH)
+                thick.segment(origin.x, origin.y, muzzle.x, muzzle.y)
+                thick.segment(a.x, a.y, b.x, b.y)
+                repeat(SCATTER_PORTS) { index ->
+                    val across = -SCATTER_HALF_WIDTH + SCATTER_HALF_WIDTH * 2.0 * index / (SCATTER_PORTS - 1)
+                    val port = point(SCATTER_REACH, across)
+                    glowDots.dot(port.x, port.y, size * SCATTER_PORT_RADIUS)
+                }
+            }
+            BossMarker.LaserLens -> {
+                val lens = point(LASER_REACH)
+                val railA = origin - normal * (size * LASER_RAIL_GAP)
+                val railB = origin + normal * (size * LASER_RAIL_GAP)
+                val tipA = lens - normal * (size * LASER_RAIL_GAP)
+                val tipB = lens + normal * (size * LASER_RAIL_GAP)
+                thin.segment(railA.x, railA.y, tipA.x, tipA.y)
+                thin.segment(railB.x, railB.y, tipB.x, tipB.y)
+                solidDots.dot(lens.x, lens.y, size * LASER_LENS)
+                glowDots.dot(lens.x, lens.y, size * LASER_CORE)
+            }
         }
     }
 
@@ -1026,6 +1261,22 @@ object Scene {
         sim.projectiles.forEach { shot ->
             val head = Vec2((shot.position.x - camera.x) * ZOOM, (shot.position.y - camera.y) * ZOOM)
             shotMarks(builder, ShotLooks.of(shot, palette), head, head - shot.velocity * (TRACER_SECONDS * ZOOM), shot.radius * ZOOM)
+        }
+        sim.bossBeams.forEach { beam ->
+            val start = Vec2((beam.start.x - camera.x) * ZOOM, (beam.start.y - camera.y) * ZOOM)
+            val end = Vec2((beam.end.x - camera.x) * ZOOM, (beam.end.y - camera.y) * ZOOM)
+            builder.batch(
+                Layer.ShotGlow,
+                palette.hazardGlow,
+                Primitive.Segment,
+                strokeWidth(BOSS_BEAM_BLOOM_WIDTH * beam.strength),
+            ).segment(start.x, start.y, end.x, end.y)
+            builder.batch(
+                Layer.ShotCore,
+                ShotLooks.ENEMY_CORE,
+                Primitive.Segment,
+                strokeWidth(BOSS_BEAM_CORE_WIDTH * beam.strength),
+            ).segment(start.x, start.y, end.x, end.y)
         }
         // A shot spent inside the tick it was fired was never in the list above; its last line of
         // flight is kept for the flash window so a point-blank hit is still seen to go somewhere.
@@ -1628,6 +1879,17 @@ object Scene {
     private const val TURRET_HEAD = 0.52
     private const val BARREL = 0.7
     private const val BARREL_WIDTH = 0.14
+    private const val CRAWLER_FOLDED_HEIGHT = 0.08
+    private const val CRAWLER_LEG_HEIGHT = 0.30
+    private const val CRAWLER_TUCK_HEIGHT = 0.18
+    private const val CRAWLER_LEG_WIDTH = 0.08
+    private const val CRAWLER_HIP_SPREAD = 0.24
+    private const val CRAWLER_KNEE_SPREAD = 0.43
+    private const val CRAWLER_TUCK_SPREAD = 0.16
+    private const val CRAWLER_FOOT_SPREAD = 0.55
+    private const val CRAWLER_FOOT_FOLDED = 0.22
+    private const val CRAWLER_KNEE_HEIGHT = 0.48
+    private const val CRAWLER_TUCK_FOOT = 0.25
     private const val CROWN_PITCH = 0.11
     private const val CROWN_HEIGHT = 0.16
     private const val CROWN_WIDTH = 0.05
@@ -1648,6 +1910,8 @@ object Scene {
     private const val IMPACT_PX = 5.0
     private const val BEAM_CORE_WIDTH = 2.0
     private const val BEAM_BLOOM_WIDTH = 8.0
+    private const val BOSS_BEAM_CORE_WIDTH = 5.0
+    private const val BOSS_BEAM_BLOOM_WIDTH = 14.0
     private const val CHAIN_WIDTH = 2.0
     private const val CHAIN_SPARK_PX = 4.0
     private const val SWING_SEGMENTS = 10
@@ -1677,14 +1941,45 @@ object Scene {
     private const val FLAME_WIDTH = 3.0
     private const val FLAME_HEIGHT = 0.8
     private const val FLAME_CORE = 0.14
-    private const val FAN_DOTS = 5
-    private const val FAN_DEGREES = 40.0
-    private const val FAN_DOT_PX = 3.0
-    /** How much of the barrel-to-band flight a Volley tracer shows. */
-    private const val FAN_TRACER = 0.15
+    private val BOSS_SCATTER_ANGLES = doubleArrayOf(-15.0, -7.5, 0.0, 7.5, 15.0)
+    private const val BOSS_EVENT_FLASH_SECONDS = 0.10
+    private const val BOSS_EVENT_SWING_SECONDS = 0.16
     private const val BOSS_SWING_ARC = 90.0
     private const val SLAM_FORWARD = 0.5
     private const val SLAM_DOWN = 0.87
+    private const val BOSS_BARREL_REACH = 0.34
+    private const val SIGNATURE_HEALTH = 0.60
+    private const val SIGNATURE_BACK = 0.14
+    private const val SIGNATURE_HIGH = 0.10
+    private const val SIGNATURE_DEPLOY_FORWARD = 0.08
+    private const val SIGNATURE_DEPLOY_HIGH = 0.16
+    private const val HARDWARE_THIN = 0.035
+    private const val HARDWARE_THICK = 0.085
+    private const val WEIGHT_REACH = 0.18
+    private const val WEIGHT_RADIUS = 0.09
+    private const val BLADE_GUARD_ALONG = 0.04
+    private const val BLADE_GUARD = 0.07
+    private const val BLADE_REACH = 0.45
+    private const val PAIRED_REACH = 0.27
+    private const val RAM_ROOT = 0.02
+    private const val RAM_HALF_HEIGHT = 0.13
+    private const val RAM_REACH = 0.30
+    private const val BARREL_MARKER_REACH = 0.35
+    private const val BARREL_BORE = 0.025
+    private const val MAGAZINE_ALONG = 0.15
+    private const val MAGAZINE_DROP = 0.09
+    private const val MAGAZINE_WIDTH = 0.09
+    private const val MAGAZINE_HEIGHT = 0.18
+    private const val SCATTER_REACH = 0.22
+    private const val SCATTER_HALF_WIDTH = 0.12
+    private const val SCATTER_PORTS = 5
+    private const val SCATTER_PORT_RADIUS = 0.022
+    private const val LASER_REACH = 0.24
+    private const val LASER_RAIL_GAP = 0.07
+    private const val LASER_LENS = 0.09
+    private const val LASER_CORE = 0.045
+    private const val LASER_CHARGE_BASE = 0.45
+    private const val LASER_CHARGE_RANGE = 0.75
     private const val FLASH_SPIKE = 0.45
     private const val SPARK_PX = 2.5
     private val SWOOSH_RINGS = doubleArrayOf(1.0, 0.82, 0.64)
@@ -1700,6 +1995,9 @@ object Scene {
     const val PLAYER_LIMB = "#2a3a4a"
     const val PLAYER_ARM = "#38566d"
     const val PLAYER_EYE = "#67e8f9"
+
+    const val SCRAP_GAIN_GOLD = "#ffd45a"
+    private const val SCRAP_GAIN_SIZE = 18.0
 
     /** The development overlay's colour. Never part of what a player sees. */
     private const val ARC_MASK = "#1e3a5f"

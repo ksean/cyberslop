@@ -1,6 +1,8 @@
 package io.github.ksean.cyberslop.render
 
 import io.github.ksean.cyberslop.entity.EnemyArchetype
+import io.github.ksean.cyberslop.entity.BossModule
+import io.github.ksean.cyberslop.entity.BossProfile
 import io.github.ksean.cyberslop.gen.DifficultyCurve
 
 /** What kind of body an enemy has. This, not colour, is what tells two archetypes apart. */
@@ -11,8 +13,55 @@ enum class EnemyForm {
     /** No legs; thruster plumes and a hover bob. */
     Hover,
 
-    /** A fixed base that never moves; only the head sweeps. */
-    Fixed,
+    /** A cannon pod on articulated legs, folded before engagement and mobile afterwards. */
+    Crawler,
+}
+
+/** A colour-independent piece of hardware which advertises one boss attack module. */
+enum class BossMarker {
+    WeightedForearm,
+    LongBlade,
+    PairedBlades,
+    RamPlate,
+    NarrowBarrel,
+    BurstMagazine,
+    ScatterPorts,
+    LaserLens,
+}
+
+/** The mount is part of the silhouette: primaries and a folded signature cannot look identical. */
+enum class BossMount { LeadArm, RearShoulder, HighBack }
+
+data class BossHardware(
+    val module: BossModule,
+    val marker: BossMarker,
+    val mount: BossMount,
+    val folded: Boolean,
+)
+
+data class BossLook(val body: EnemyLook, val hardware: List<BossHardware>)
+
+/** Composes the body shared by a boss rank with every module assigned to that encounter. */
+object BossLooks {
+    fun of(profile: BossProfile, mapIndex: Int, isMain: Boolean): BossLook = BossLook(
+        body = EnemyLooks.boss(mapIndex, isMain),
+        hardware = buildList {
+            add(BossHardware(profile.primaryMelee, markerOf(profile.primaryMelee), BossMount.LeadArm, folded = false))
+            add(BossHardware(profile.primaryRanged, markerOf(profile.primaryRanged), BossMount.RearShoulder, folded = false))
+            profile.signature?.let { add(BossHardware(it, markerOf(it), BossMount.HighBack, folded = true)) }
+        },
+    )
+
+    fun markerOf(module: BossModule): BossMarker = when (module) {
+        BossModule.Slam -> BossMarker.WeightedForearm
+        BossModule.Sweep -> BossMarker.LongBlade
+        BossModule.Flurry -> BossMarker.PairedBlades
+        BossModule.Rush -> BossMarker.RamPlate
+        BossModule.Bolt -> BossMarker.NarrowBarrel
+        BossModule.Burst -> BossMarker.BurstMagazine
+        BossModule.Scatter -> BossMarker.ScatterPorts
+        BossModule.Laser -> BossMarker.LaserLens
+    }
 }
 
 /**
@@ -124,8 +173,8 @@ object EnemyLooks {
         EnemyArchetype.Flyer to Shape(EnemyForm.Hover, 0.80, 1.20, 0.0, armed = false),
         // Upright and deliberate, with one long weapon arm.
         EnemyArchetype.Shooter to Shape(EnemyForm.Biped, 0.88, 1.00, 1.0, armed = true),
-        // A fixed emplacement with a sweeping head. Nothing else is bolted down.
-        EnemyArchetype.Turret to Shape(EnemyForm.Fixed, 1.02, 1.35, 0.0, armed = true),
+        // A wide cannon pod on short articulated legs; it folds until the player is noticed.
+        EnemyArchetype.Turret to Shape(EnemyForm.Crawler, 1.02, 1.35, 0.45, armed = true),
         // The broadest thing on the map, with a small sunken head and a slow heavy gait.
         EnemyArchetype.Brute to Shape(EnemyForm.Biped, 1.28, 0.70, 0.55, armed = false),
     )

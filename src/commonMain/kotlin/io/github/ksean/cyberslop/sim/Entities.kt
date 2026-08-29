@@ -6,13 +6,26 @@ import io.github.ksean.cyberslop.core.Rng
 import io.github.ksean.cyberslop.core.Vec2
 import io.github.ksean.cyberslop.entity.AttackVisual
 import io.github.ksean.cyberslop.entity.BossAttack
+import io.github.ksean.cyberslop.entity.BossModule
 import io.github.ksean.cyberslop.entity.BossFight
 import io.github.ksean.cyberslop.entity.BossSpec
 import io.github.ksean.cyberslop.entity.Dodge
 import io.github.ksean.cyberslop.entity.EnemyArchetype
+import io.github.ksean.cyberslop.physics.Physics
 import io.github.ksean.cyberslop.world.Arena
+import io.github.ksean.cyberslop.world.Hazards
+import io.github.ksean.cyberslop.world.Level
 import io.github.ksean.cyberslop.world.TILE_SIZE
 import io.github.ksean.cyberslop.world.TileMap
+
+/** A presentation-only Scrap award, fixed at the world point where it appeared. */
+data class ScrapGain(
+    val amount: Int,
+    val origin: Vec2,
+    val previousSecondsLeft: Double,
+    val secondsLeft: Double,
+    internal val bornTick: Int,
+)
 
 /** Damage that keeps arriving after the hit that caused it. */
 class OverTime(var perSecond: Double = 0.0, var secondsLeft: Double = 0.0) {
@@ -47,6 +60,10 @@ class LiveEnemy(
 
     /** Vertical speed, for walkers under gravity. Flyers never fall. */
     var vy: Double = 0.0
+
+    /** A previewed pursuit leap; direction stays fixed until the next safe landing. */
+    var leap: EnemyLeap? = null
+    var landingCooldownLeft: Double = 0.0
 
     /**
      * Distance walked, which is what drives the gait (`specs/presentation.md`).
@@ -108,6 +125,15 @@ class LiveEnemy(
 /** What a boss attack is aimed at and tested against: where the player is and what they are doing. */
 data class BossTarget(val centre: Vec2, val onGround: Boolean, val crouched: Boolean)
 
+/** One separately timed event inside a telegraphed boss attack. */
+data class BossAttackEvent(
+    val attack: BossAttack,
+    val eventIndex: Int,
+    val origin: Vec2,
+    val direction: Vec2,
+    val aimedAt: Vec2,
+)
+
 /**
  * A boss that actually fights.
  *
@@ -122,6 +148,8 @@ class LiveBoss(
     private val tiles: TileMap,
     /** The attack-choice stream (PROD-072): the boss's own, so it never disturbs loot or crit rolls. */
     internal val rng: Rng = Rng(0uL),
+    /** Present in live games so leap previews include barrels and jets; tile-only unit fixtures omit it. */
+    private val level: Level? = null,
 ) {
     val fight = BossFight(spec)
 
@@ -156,11 +184,25 @@ class LiveBoss(
     var attackElapsed: Double = 0.0
         private set
 
-    /** Which way the boss faces, and where a Volley was aimed when its telegraph began. */
+    /** Which way the boss faces, and where its ranged attack was aimed when the telegraph began. */
     var facing: Int = -1
         private set
     var aimedX: Double = position.x
         private set
+    var aimedAt: Vec2 = centre
+        private set
+    var aimDirection: Vec2 = Vec2(-1.0, 0.0)
+        private set
+
+    /** Locks the point and direction used by every event in one attack. */
+    internal fun lockAim(point: Vec2) {
+        aimedX = point.x
+        aimedAt = point
+        aimDirection = (point - centre).normalisedOr(Vec2(facing.toDouble(), 0.0))
+    }
+
+    private val emittedEvents = mutableListOf<BossAttackEvent>()
+    val events: List<BossAttackEvent> get() = emittedEvents
 
     /** Distance walked, for the gait (presentational, like an enemy's), and whether it stepped this tick. */
     var stridePx: Double = 0.0
@@ -169,6 +211,17 @@ class LiveBoss(
     /** Seconds of hurt flash left (PROD-076): presentation only, outside the digest. */
     var hurtSecondsLeft: Double = 0.0
     var moving: Boolean = false
+        private set
+
+    var vy: Double = 0.0
+        private set
+    var leap: EnemyLeap? = null
+        private set
+    var landingCooldownLeft: Double = 0.0
+        private set
+
+    /** Simulation time used by fire-jet previews; advances even before engagement. */
+    var elapsedSeconds: Double = 0.0
         private set
 
     /** Round-robin positions, one per kind, so choosing by distance starves no attack. */
@@ -187,8 +240,17 @@ class LiveBoss(
 
     /** Advances the fight and returns the damage the player takes this tick. */
     fun tick(delta: Double, target: BossTarget): Double {
+        emittedEvents.clear()
         moving = false
+        elapsedSeconds += delta
         if (!fight.engaged || fight.defeated) return 0.0
+
+        landingCooldownLeft = (landingCooldownLeft - delta).coerceAtLeast(0.0)
+        if (leap != null) {
+            advanceLeap(delta)
+            return 0.0
+        }
+        if (landingCooldownLeft > 0.0) return 0.0
 
         val attack = currentAttack
         // An attack holds its aim: the boss turns only between attacks, so a player crossing it
@@ -196,11 +258,12 @@ class LiveBoss(
         if (attack == null) facing = if (target.centre.x < position.x) -1 else 1
         if (attack == null) {
             approach(delta, target.centre)
+            if (leap != null) return 0.0
             restSecondsLeft -= delta
             if (restSecondsLeft <= 0.0) {
                 currentAttack = chooseAttack((target.centre - position).length)
                 attackElapsed = 0.0
-                aimedX = target.centre.x
+                lockAim(target.centre)
             }
             return 0.0
         }
@@ -209,19 +272,21 @@ class LiveBoss(
         attackElapsed += delta
         if (attackElapsed > attack.totalSeconds) {
             currentAttack = null
-            restSecondsLeft = REST_BETWEEN
+            restSecondsLeft = if (healthFraction <= CLOSING_HEALTH) CLOSING_REST else REST_BETWEEN
             return 0.0
         }
 
-        // Only the newly-elapsed slice can hurt, so a long frame cannot apply an attack twice.
-        val wasDangerous = attack.damageAt(before) > 0.0
-        val isDangerous = attack.damageAt(attackElapsed) > 0.0
-        // A Rush is a lunge: through its active window the boss carries forward under the ledge
-        // rule. The hit resolves on the window's first tick, before the lunge moves it.
-        if (isDangerous && attack.visual == AttackVisual.Lunge) step(facing * LUNGE_SPEED * delta)
-        if (!isDangerous || wasDangerous) return 0.0
+        // A Rush carries through its whole active window; its one hit is still the first event.
+        if (attackElapsed >= attack.telegraphSeconds && attack.visual == AttackVisual.Lunge) {
+            step(facing * LUNGE_SPEED * delta)
+        }
 
-        return if (hits(target, attack)) attack.damage else 0.0
+        var damage = 0.0
+        attack.eventsBetween(before, attackElapsed).forEach { eventIndex ->
+            emittedEvents += BossAttackEvent(attack, eventIndex, centre, aimDirection, aimedAt)
+            if (!attack.visual.ranged && hits(target, attack)) damage += attack.damage
+        }
+        return damage
     }
 
     /**
@@ -241,16 +306,16 @@ class LiveBoss(
     }
 
     /**
-     * The hit condition, which the attack's listed dodge is exactly what escapes: Slam and Rush
-     * strike the ground and miss an airborne player; Sweep is level and passes over a crouched
-     * one; Volley is aimed where the player stood when the telegraph began.
+     * The direct-melee hit condition: Slam and Rush strike the ground and miss an airborne player;
+     * Sweep is level and passes over a crouched one. MoveAside attacks are ranged events whose
+     * projectile or beam geometry is resolved by [GameSimulation].
      */
     private fun hits(target: BossTarget, attack: BossAttack): Boolean {
         if ((target.centre - position).lengthSquared > attack.reachPx * attack.reachPx) return false
         return when (attack.dodge) {
             Dodge.Jump -> target.onGround
             Dodge.Crouch -> !target.crouched
-            Dodge.MoveAside -> kotlin.math.abs(target.centre.x - aimedX) <= VOLLEY_WIDTH
+            Dodge.MoveAside -> false
         }
     }
 
@@ -261,23 +326,115 @@ class LiveBoss(
     private fun approach(delta: Double, playerCentre: Vec2) {
         val toPlayer = playerCentre.x - position.x
         if (kotlin.math.abs(toPlayer) < CLOSE_ENOUGH) return
-        step((if (toPlayer > 0) 1.0 else -1.0) * SPEED * delta)
+        val direction = if (toPlayer > 0) 1 else -1
+        if (needsLeap(direction) && beginLeap(direction)) return
+        if (!step(direction * SPEED * delta)) beginLeap(direction)
     }
 
     /** One horizontal step under the ledge rule: no step off an edge, onto a lethal tile or into a wall. */
-    private fun step(step: Double) {
+    private fun step(step: Double): Boolean {
         val nextX = position.x + step
-        val feetRow = TileMap.toTile(position.y)
-        val leading = TileMap.toTile(if (step > 0) nextX + halfWidth else nextX - halfWidth)
-        val trailing = TileMap.toTile(if (step > 0) nextX - halfWidth else nextX + halfWidth)
-        val supported = tiles.blocksMovement(leading, feetRow) && tiles.blocksMovement(trailing, feetRow) &&
-            !tiles.isLethal(leading, feetRow) && !tiles.isLethal(trailing, feetRow)
-        val bodyRows = TileMap.toTile(position.y - height + 1.0)..TileMap.toTile(position.y - 1.0)
-        val blocked = bodyRows.any { tiles.blocksMovement(leading, it) }
-        if (!supported || blocked) return
+        if (!canStand(nextX)) return false
         position = Vec2(nextX, position.y)
         stridePx += kotlin.math.abs(step)
         moving = true
+        return true
+    }
+
+    private fun needsLeap(direction: Int): Boolean {
+        val pieces = (EnemyLeap.LOOK_AHEAD_PX / (TILE_SIZE / 2.0)).toInt()
+        repeat(pieces) { index ->
+            if (!canStand(position.x + direction * (index + 1) * (TILE_SIZE / 2.0))) return true
+        }
+        return false
+    }
+
+    private fun canStand(centreX: Double): Boolean {
+        val feetRow = TileMap.toTile(position.y)
+        val left = TileMap.toTile(centreX - halfWidth)
+        val right = TileMap.toTile(centreX + halfWidth - EDGE)
+        if (!tiles.blocksMovement(left, feetRow) || !tiles.blocksMovement(right, feetRow)) return false
+        if (tiles.isLethal(left, feetRow) || tiles.isLethal(right, feetRow)) return false
+        val topLeft = Vec2(centreX - halfWidth, position.y - height)
+        if (bodyBlocked(topLeft)) return false
+        val liveLevel = level ?: return true
+        if (Hazards.overlapped(liveLevel, topLeft.x, topLeft.y, BODY_WIDTH, BODY_HEIGHT).isNotEmpty()) return false
+        return !activeJetOverlap(topLeft)
+    }
+
+    private fun beginLeap(direction: Int): Boolean {
+        if (leap != null || currentAttack != null) return false
+        val topLeft = Vec2(position.x - halfWidth, position.y - height)
+        val plan = EnemyLeap.plan(
+            tiles = tiles,
+            level = level,
+            topLeft = topLeft,
+            width = BODY_WIDTH,
+            height = BODY_HEIGHT,
+            feetOffset = BODY_HEIGHT,
+            direction = direction,
+            timeSeconds = elapsedSeconds,
+        ) ?: return false
+        leap = plan
+        vy = EnemyLeap.VY
+        facing = direction
+        return true
+    }
+
+    private fun advanceLeap(delta: Double) {
+        val active = leap ?: return
+        vy = (vy + Physics.Default.gravity * delta).coerceAtMost(Physics.Default.terminalVelocity)
+        val travel = Vec2(active.direction * EnemyLeap.VX * delta, vy * delta)
+        val pieces = maxOf(
+            1,
+            kotlin.math.ceil(maxOf(kotlin.math.abs(travel.x), kotlin.math.abs(travel.y)) / (TILE_SIZE / 2.0)).toInt(),
+        )
+        var topLeft = Vec2(position.x - halfWidth, position.y - height)
+        repeat(pieces) {
+            val next = topLeft + travel * (1.0 / pieces)
+            if (bodyBlocked(next)) {
+                if (vy > 0.0 && land(next)) return
+                leap = null
+                vy = 0.0
+                return
+            }
+            topLeft = next
+            position = Vec2(topLeft.x + halfWidth, topLeft.y + height)
+            stridePx += kotlin.math.abs(travel.x / pieces)
+            moving = true
+        }
+    }
+
+    private fun land(topLeft: Vec2): Boolean {
+        val row = TileMap.toTile(topLeft.y + height)
+        val left = TileMap.toTile(topLeft.x)
+        val right = TileMap.toTile(topLeft.x + BODY_WIDTH - EDGE)
+        if (!tiles.blocksMovement(left, row) || !tiles.blocksMovement(right, row)) return false
+        if (tiles.isLethal(left, row) || tiles.isLethal(right, row)) return false
+        position = Vec2(topLeft.x + halfWidth, TileMap.toWorld(row))
+        leap = null
+        vy = 0.0
+        landingCooldownLeft = EnemyLeap.LANDING_COOLDOWN
+        return true
+    }
+
+    private fun bodyBlocked(topLeft: Vec2): Boolean {
+        val left = TileMap.toTile(topLeft.x)
+        val right = TileMap.toTile(topLeft.x + BODY_WIDTH - EDGE)
+        val top = TileMap.toTile(topLeft.y)
+        val bottom = TileMap.toTile(topLeft.y + BODY_HEIGHT - EDGE)
+        return (left..right).any { column -> (top..bottom).any { row -> tiles.blocksMovement(column, row) } }
+    }
+
+    private fun activeJetOverlap(topLeft: Vec2): Boolean {
+        val liveLevel = level ?: return false
+        val left = TileMap.toTile(topLeft.x)
+        val right = TileMap.toTile(topLeft.x + BODY_WIDTH - EDGE)
+        val top = TileMap.toTile(topLeft.y)
+        val bottom = TileMap.toTile(topLeft.y + BODY_HEIGHT - EDGE)
+        return liveLevel.jets.any { jet ->
+            jet.column in left..right && (top..bottom).any(jet::coversRow) && jet.isOnAt(elapsedSeconds)
+        }
     }
 
     companion object {
@@ -285,16 +442,16 @@ class LiveBoss(
         private const val BODY_WIDTH = 44.0
         private const val OPENING_REST = 0.8
         private const val REST_BETWEEN = 0.9
+        private const val CLOSING_REST = 0.65
+        private const val CLOSING_HEALTH = 0.25
         const val SPEED = 55.0
         /** How fast a Rush carries the boss: 0.4 s of it covers about its 128 px reach. */
         const val LUNGE_SPEED = 300.0
         private const val CLOSE_ENOUGH = 8.0
-        /** Half the width of the band a Volley covers around where it was aimed. */
-        const val VOLLEY_WIDTH = 24.0
-
+        private const val EDGE = 0.001
         /** Inside the Slam and Sweep reach a ranged opener is the exception. */
         const val MELEE_REACH = 80.0
-        /** At the Volley's reach and beyond a melee opener is. */
+        /** At the ranged modules' preferred reach and beyond, a melee opener is the exception. */
         const val RANGED_PREFERRED_PX = 128.0
         const val RANGED_WEIGHT_NEAR = 0.2
         const val RANGED_WEIGHT_FAR = 0.8
@@ -392,6 +549,9 @@ class LiveProjectile(
     var secondsLeft: Double,
     val passesTerrain: Boolean,
     val fromPlayer: Boolean,
+    /** Boss shots may hurt on boss ground; ordinary enemy shots may not. */
+    val bossOwned: Boolean = false,
+    val bossModule: BossModule? = null,
     val homingTurn: Double = 0.0,
     val homingRadius: Double = 0.0,
     val radius: Double = 6.0,
@@ -401,4 +561,16 @@ class LiveProjectile(
     var bouncesLeft: Int = 0,
 ) {
     val spent: Boolean get() = secondsLeft <= 0.0 || pierceLeft < 0
+}
+
+/** A finite locked boss beam, kept live for its visible active window and allowed to hit once. */
+class LiveBossBeam(
+    val start: Vec2,
+    val end: Vec2,
+    val damage: Double,
+    var secondsLeft: Double,
+    val totalSeconds: Double,
+    var hitPlayer: Boolean = false,
+) {
+    val strength: Double get() = (secondsLeft / totalSeconds).coerceIn(0.0, 1.0)
 }

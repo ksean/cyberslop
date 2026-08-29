@@ -7,6 +7,7 @@ import io.github.ksean.cyberslop.physics.InputFrame
 import io.github.ksean.cyberslop.run.RunState
 import io.github.ksean.cyberslop.world.Arena
 import io.github.ksean.cyberslop.world.Barrel
+import io.github.ksean.cyberslop.world.FireJet
 import io.github.ksean.cyberslop.world.Level
 import io.github.ksean.cyberslop.world.Mask
 import io.github.ksean.cyberslop.world.ThemeId
@@ -35,6 +36,7 @@ object TestLevels {
         /** Spike strips written into the standing row. */
         spikeColumns: IntRange = IntRange.EMPTY,
         barrels: List<Barrel> = emptyList(),
+        jets: List<FireJet> = emptyList(),
         bossArena: Arena = Arena(100, 114, FLOOR_ROW + 1),
         mapIndex: Int = 1,
     ): Level {
@@ -46,18 +48,22 @@ object TestLevels {
         wallColumn?.let { x -> for (y in FLOOR_ROW - 2..FLOOR_ROW) tiles[x, y] = TileKind.Solid }
         for (x in spikeColumns) tiles[x, FLOOR_ROW] = TileKind.Spikes
 
+        val floorMask = Mask(WIDTH, HEIGHT)
+        for (x in 0 until WIDTH) for (y in 1 until HEIGHT) {
+            if (tiles.blocksMovement(x, y) && !tiles.blocksMovement(x, y - 1)) floorMask[x, y] = true
+        }
         val arc = Mask(WIDTH, HEIGHT).also { it.markRect(0, FLOOR_ROW - 1, WIDTH - 1, FLOOR_ROW) }
         return Level(
             mapIndex = mapIndex,
             theme = ThemeId.RuinedCitySprawl,
             tiles = tiles,
-            floorMask = Mask(WIDTH, HEIGHT),
+            floorMask = floorMask,
             arcMask = arc,
             spawnColumn = SPAWN_COLUMN,
             spawnRow = FLOOR_ROW + 1,
             miniboss = Arena(80, 92, FLOOR_ROW + 1),
             boss = bossArena,
-            jets = emptyList(),
+            jets = jets,
             gateColumn = 115,
             barrels = barrels,
         )

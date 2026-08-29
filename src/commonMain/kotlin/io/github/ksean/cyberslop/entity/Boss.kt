@@ -3,23 +3,61 @@ package io.github.ksean.cyberslop.entity
 /** How an attack is avoided. Every attack must be avoidable with the four movement keys. */
 enum class Dodge { Jump, Crouch, MoveAside }
 
+enum class BossAttackKind { Melee, Ranged }
+
 /**
  * How an attack's active window is drawn (`specs/enemies.md`, "Drawn as"). Every telegraph is the
  * same wind-up pose; this is what follows it.
  */
-enum class AttackVisual {
+enum class AttackVisual(val ranged: Boolean) {
     /** A downward swing and a ground swoosh. */
-    GroundSlam,
+    GroundSlam(false),
     /** A level swing and swoosh. */
-    LevelSweep,
+    LevelSweep(false),
+    /** Several separately timed level swings. */
+    RapidSweep(false),
+    /** One narrow muzzle flash. */
+    MuzzleBolt(true),
+    /** Several flashes along one locked line. */
+    MuzzleBurst(true),
     /** A muzzle flash and a fan of projectile dots. */
-    MuzzleFan,
+    MuzzleFan(true),
+    /** A charging lens followed by a core-and-bloom beam. */
+    LaserBeam(true),
     /** A lunge with a trailing swoosh. */
-    Lunge,
-    ;
+    Lunge(false),
+}
 
-    /** Whether the window is a shot rather than a swing. */
-    val ranged: Boolean get() = this == MuzzleFan
+/** The typed module which drives mechanics and the boss's visible hardware. */
+enum class BossModule(
+    val kind: BossAttackKind,
+    val visual: AttackVisual,
+    val dodge: Dodge,
+    val displayName: String,
+) {
+    Slam(BossAttackKind.Melee, AttackVisual.GroundSlam, Dodge.Jump, "Slam"),
+    Sweep(BossAttackKind.Melee, AttackVisual.LevelSweep, Dodge.Crouch, "Sweep"),
+    Flurry(BossAttackKind.Melee, AttackVisual.RapidSweep, Dodge.Crouch, "Flurry"),
+    Rush(BossAttackKind.Melee, AttackVisual.Lunge, Dodge.Jump, "Rush"),
+    Bolt(BossAttackKind.Ranged, AttackVisual.MuzzleBolt, Dodge.MoveAside, "Bolt"),
+    Burst(BossAttackKind.Ranged, AttackVisual.MuzzleBurst, Dodge.MoveAside, "Burst"),
+    Scatter(BossAttackKind.Ranged, AttackVisual.MuzzleFan, Dodge.MoveAside, "Scatter"),
+    Laser(BossAttackKind.Ranged, AttackVisual.LaserBeam, Dodge.MoveAside, "Laser"),
+}
+
+data class BossProfile(
+    val primaryMelee: BossModule,
+    val primaryRanged: BossModule,
+    val signature: BossModule? = null,
+) {
+    init {
+        require(primaryMelee.kind == BossAttackKind.Melee)
+        require(primaryRanged.kind == BossAttackKind.Ranged)
+        require(signature == null || signature !in primaryPair)
+    }
+
+    val primaryPair: List<BossModule> get() = listOf(primaryMelee, primaryRanged)
+    val modules: List<BossModule> get() = primaryPair + listOfNotNull(signature)
 }
 
 /**
@@ -30,6 +68,7 @@ enum class AttackVisual {
  * attack that struck instantly.
  */
 data class BossAttack(
+    val module: BossModule,
     val name: String,
     val telegraphSeconds: Double,
     val activeSeconds: Double,
@@ -38,11 +77,14 @@ data class BossAttack(
     /** How far from the boss's feet the attack can reach a player who is not dodging it. */
     val reachPx: Double,
     val visual: AttackVisual,
+    /** Seconds into the active window at which separate damage/projectile events occur. */
+    val eventOffsets: List<Double> = listOf(0.0),
 ) {
     init {
         require(telegraphSeconds >= MIN_TELEGRAPH_SECONDS) {
             "$name telegraphs for only $telegraphSeconds s"
         }
+        require(eventOffsets.isNotEmpty() && eventOffsets.all { it in 0.0..activeSeconds })
     }
 
     fun damageAt(elapsedSeconds: Double): Double = when {
@@ -52,6 +94,13 @@ data class BossAttack(
     }
 
     val totalSeconds: Double get() = telegraphSeconds + activeSeconds
+    val kind: BossAttackKind get() = module.kind
+
+    /** Event indices crossed by one newly elapsed slice. */
+    fun eventsBetween(before: Double, after: Double): List<Int> = eventOffsets.indices.filter { index ->
+        val at = telegraphSeconds + eventOffsets[index]
+        before < at && after >= at
+    }
 
     companion object {
         /** The fairness floor. It never scales with difficulty. */
@@ -67,6 +116,7 @@ data class BossSpec(
     val maxHealth: Double,
     val contactDamage: Double,
     val phases: List<BossPhase>,
+    val profile: BossProfile,
 ) {
     fun phaseAt(healthFraction: Double): BossPhase =
         phases.last { healthFraction <= it.fromHealthFraction }

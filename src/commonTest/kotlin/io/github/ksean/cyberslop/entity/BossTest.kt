@@ -75,7 +75,7 @@ class BossTest {
     }
 
     @Test
-    fun `the boss gains attacks as its health falls`() {
+    fun `the boss reveals its signature at sixty percent and keeps it in the closing phase`() {
         val spec = Bosses.boss(5)
         val fight = BossFight(spec)
         fight.engage()
@@ -87,7 +87,7 @@ class BossTest {
         val closing = fight.currentPhase().attacks.size
 
         assertTrue(middle > opening, "phase two added nothing")
-        assertTrue(closing > middle, "phase three added nothing")
+        assertEquals(middle, closing, "the closing cadence changed the loadout instead of its rest")
     }
 
     @Test

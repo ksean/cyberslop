@@ -4,6 +4,8 @@ import io.github.ksean.cyberslop.core.Vec2
 import io.github.ksean.cyberslop.entity.EnemyArchetype
 import io.github.ksean.cyberslop.gen.Populator
 import io.github.ksean.cyberslop.world.Arena
+import io.github.ksean.cyberslop.world.Barrel
+import io.github.ksean.cyberslop.world.FireJet
 import io.github.ksean.cyberslop.physics.InputFrame
 import io.github.ksean.cyberslop.physics.Physics
 import io.github.ksean.cyberslop.world.TileMap
@@ -78,53 +80,125 @@ class EnemyMovementTest {
     }
 
     @Test
-    fun `a turret never moves`() {
+    fun `a turret stays folded until engagement then crawls after the player`() {
         val sim = TestLevels.simulation()
-        val turret = TestLevels.enemyAt(sim, EnemyArchetype.Turret, column = TestLevels.SPAWN_COLUMN + 8)
+        val turret = TestLevels.enemyAt(sim, EnemyArchetype.Turret, column = TestLevels.SPAWN_COLUMN + 23)
         val start = turret.position
 
         repeat(120) { sim.tick(InputFrame()) }
+        assertEquals(start, turret.position, "an unengaged turret left its folded emplacement")
 
-        assertEquals(start, turret.position)
+        turret.engaged = true
+        repeat(120) { sim.tick(InputFrame()) }
+
+        assertTrue(turret.position.x < start.x, "an engaged turret did not unfold and pursue")
     }
 
     @Test
-    fun `a walker stops at a ledge instead of stepping off`() {
+    fun `an engaged walker leaps a pit and keeps pursuing`() {
         val gap = 8..11
         val sim = TestLevels.simulation(TestLevels.flat(gapColumns = gap))
         val swarm = TestLevels.enemyAt(sim, EnemyArchetype.Swarm, column = 14)
+        var airborne = false
 
         repeat(600) {
             sim.tick(InputFrame())
-            val feetColumn = TileMap.toTile(swarm.position.x + GameSimulation.ENEMY_HALF)
-            assertFalse(feetColumn in gap, "a walker stood over the gap at column $feetColumn")
+            airborne = airborne || swarm.vy != 0.0
         }
         assertTrue(swarm.engaged)
-        assertTrue(swarm.position.x <= TileMap.toWorld(13), "it never reached the ledge: ${swarm.position.x}")
+        assertTrue(airborne, "the walker crossed without beginning a leap")
+        assertTrue(swarm.position.x < TileMap.toWorld(gap.first), "it did not cross the pit: ${swarm.position.x}")
+        assertTrue(swarm.alive, "the walker crossed the pit by falling into it")
     }
 
     @Test
-    fun `a walker stops before acid`() {
+    fun `an engaged walker leaps acid without touching it`() {
         val acid = 8..11
         val sim = TestLevels.simulation(TestLevels.flat(acidColumns = acid))
         val brute = TestLevels.enemyAt(sim, EnemyArchetype.Brute, column = 14)
 
         repeat(900) {
             sim.tick(InputFrame())
-            val feetColumn = TileMap.toTile(brute.position.x + GameSimulation.ENEMY_HALF)
-            assertFalse(feetColumn in acid, "a walker stood over acid at column $feetColumn")
         }
-        assertTrue(brute.alive, "a walker that stopped at acid died")
+        assertTrue(brute.position.x < TileMap.toWorld(acid.first), "the brute did not cross acid")
+        assertTrue(brute.alive, "the brute touched acid instead of clearing it")
     }
 
     @Test
-    fun `a walker facing a wall does not walk into it`() {
+    fun `ground enemies leap spikes and barrels with a locked direction and do not attack in air`() {
+        val hazards = listOf(
+            TestLevels.flat(spikeColumns = 20..22),
+            TestLevels.flat(barrels = listOf(Barrel(21, TestLevels.FLOOR_ROW))),
+        )
+        hazards.forEach { level ->
+            listOf(
+                EnemyArchetype.Swarm,
+                EnemyArchetype.Brute,
+                EnemyArchetype.Shooter,
+                EnemyArchetype.Turret,
+            ).forEach { archetype ->
+                val sim = TestLevels.simulation(level)
+                val enemy = TestLevels.enemyAt(sim, archetype, column = 30)
+                enemy.engaged = true
+                var started = false
+                var direction = 0
+                repeat(900) {
+                    sim.tick(InputFrame())
+                    enemy.leap?.let { leap ->
+                        if (!started) { started = true; direction = leap.direction }
+                        assertEquals(direction, leap.direction, "$archetype changed direction in flight")
+                        assertEquals(0.0, enemy.windUpLeft, "$archetype began an attack in flight")
+                    }
+                }
+                assertTrue(started, "$archetype never leapt over ${level.barrels.ifEmpty { listOf("spikes") }}")
+                assertTrue(enemy.position.x < TileMap.toWorld(20), "$archetype did not clear the hazard")
+                assertTrue(enemy.alive, "$archetype touched the hazard")
+            }
+        }
+    }
+
+    @Test
+    fun `a walker refuses a leap when no landing fits its preview`() {
+        val gap = 4..13
+        val sim = TestLevels.simulation(TestLevels.flat(gapColumns = gap))
+        val swarm = TestLevels.enemyAt(sim, EnemyArchetype.Swarm, column = 14)
+
+        repeat(300) { sim.tick(InputFrame()) }
+
+        assertTrue(swarm.alive)
+        assertTrue(swarm.position.x >= TileMap.toWorld(14) - TOLERANCE, "it launched into an over-wide pit")
+        assertEquals(null, swarm.leap)
+    }
+
+    @Test
+    fun `a walker waits for an active fire jet then crosses during its off window`() {
+        val jet = FireJet(
+            column = 10,
+            topRow = TestLevels.FLOOR_ROW - 5,
+            bottomRow = TestLevels.FLOOR_ROW,
+            periodSeconds = 2.0,
+            onSeconds = 1.0,
+            phaseSeconds = 0.0,
+        )
+        val sim = TestLevels.simulation(TestLevels.flat(jets = listOf(jet)))
+        val swarm = TestLevels.enemyAt(sim, EnemyArchetype.Swarm, column = 14)
+
+        repeat(30) { sim.tick(InputFrame()) }
+        assertEquals(null, swarm.leap, "the walker entered a jet that was still active")
+
+        repeat(300) { sim.tick(InputFrame()) }
+        assertTrue(swarm.position.x < TileMap.toWorld(jet.column), "the walker never used the safe window")
+        assertTrue(swarm.alive)
+    }
+
+    @Test
+    fun `an engaged walker leaps a low obstacle`() {
         val sim = TestLevels.simulation(TestLevels.flat(wallColumn = 10))
         val swarm = TestLevels.enemyAt(sim, EnemyArchetype.Swarm, column = 14)
 
         repeat(600) { sim.tick(InputFrame()) }
 
-        assertTrue(swarm.position.x >= TileMap.toWorld(11) - TOLERANCE, "it walked into the wall: ${swarm.position.x}")
+        assertTrue(swarm.position.x < TileMap.toWorld(10), "it did not clear the obstacle: ${swarm.position.x}")
     }
 
     @Test
@@ -201,7 +275,7 @@ class EnemyMovementTest {
     }
 
     @Test
-    fun `a flyer pursues but never enters a committed column`() {
+    fun `a flyer pursues across committed columns`() {
         val gap = 8..11
         val sim = TestLevels.simulation(TestLevels.flat(gapColumns = gap))
         val flyer = TestLevels.enemyAt(sim, EnemyArchetype.Flyer, column = 16, row = TestLevels.FLOOR_ROW - 4)
@@ -209,11 +283,8 @@ class EnemyMovementTest {
 
         repeat(600) {
             sim.tick(InputFrame())
-            // The whole body, not its centre: a 14 px pod could otherwise hang half a tile over the gap.
-            val leading = TileMap.toTile(flyer.position.x)
-            val trailing = TileMap.toTile(flyer.position.x + 2 * GameSimulation.ENEMY_HALF - 0.001)
-            assertFalse(leading in gap || trailing in gap, "a flyer's body entered a committed column: $leading..$trailing")
         }
+        assertTrue(flyer.position.x < TileMap.toWorld(gap.first), "the flyer stopped at the committed span")
         assertTrue(flyer.position.x < start - TileMap.toWorld(2), "the flyer did not pursue")
     }
 

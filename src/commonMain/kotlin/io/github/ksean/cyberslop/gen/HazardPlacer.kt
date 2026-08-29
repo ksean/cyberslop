@@ -78,6 +78,62 @@ object HazardPlacer {
         return barrels.filter { barrel -> barrel.cells.none { it in touched } }
     }
 
+    /**
+     * Keeps the candidates, in deterministic placement order, only while both shipped enemy boxes
+     * retain a pursuit leap. This is separate from [confirm]: the witness protects the player;
+     * this pass protects the enemies' chase envelope.
+     */
+    fun confirmPursuit(level: Level, barrels: List<Barrel>): List<Barrel> {
+        val kept = mutableListOf<Barrel>()
+        kept.addAll(barrels)
+        while (true) {
+            val violations = EnemyPursuitEnvelope.audit(level.withBarrels(kept))
+            if (violations.isEmpty()) return kept
+            // Select against one immutable snapshot. The same obstacle can produce one violation
+            // per body and direction; mutating between those reports made the later duplicate
+            // remove the next, unrelated hazard.
+            val strips = Hazards.spikeStrips(level)
+            val barrelSnapshot = kept.toList()
+            val stripsToRemove = mutableSetOf<List<Cell>>()
+            val barrelsToRemove = mutableSetOf<Barrel>()
+            violations.forEach { violation ->
+                val direction = violation.direction
+                fun ahead(column: Int): Int {
+                    val distance = (column - violation.takeoffColumn) * direction
+                    return if (distance >= 0) distance else Int.MAX_VALUE
+                }
+
+                val strip = strips.minByOrNull { candidate ->
+                    candidate.minOf { ahead(it.column) }
+                }?.takeIf { candidate -> candidate.any { ahead(it.column) != Int.MAX_VALUE } }
+                val barrel = barrelSnapshot.minByOrNull { ahead(it.column) }
+                    ?.takeIf { ahead(it.column) != Int.MAX_VALUE }
+
+                val stripDistance = strip?.minOf { ahead(it.column) } ?: Int.MAX_VALUE
+                val barrelDistance = barrel?.let { ahead(it.column) } ?: Int.MAX_VALUE
+                when {
+                    stripDistance <= barrelDistance && strip != null -> {
+                        stripsToRemove += strip
+                    }
+                    barrel != null -> barrelsToRemove += barrel
+                }
+            }
+            if (stripsToRemove.isNotEmpty() || barrelsToRemove.isNotEmpty()) {
+                stripsToRemove.flatten().forEach { level.tiles[it.column, it.row] = TileKind.Empty }
+                kept.removeAll(barrelsToRemove)
+            } else {
+                // The terrain-only audit ran immediately before placement, so this is defensive:
+                // a hazard behind an unusually wide box can still be the overlap being reported.
+                val strip = Hazards.spikeStrips(level).firstOrNull()
+                when {
+                    strip != null -> strip.forEach { level.tiles[it.column, it.row] = TileKind.Empty }
+                    kept.isNotEmpty() -> kept.removeAt(0)
+                    else -> return kept
+                }
+            }
+        }
+    }
+
     /** Every cell a footprint may occupy, before asking whether one can stand there. */
     private fun eligibleCells(level: Level, footholds: Set<Foothold>): Set<Cell> {
         val width = level.widthTiles

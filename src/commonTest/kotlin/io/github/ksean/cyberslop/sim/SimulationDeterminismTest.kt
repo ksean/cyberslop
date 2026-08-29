@@ -1,6 +1,8 @@
 package io.github.ksean.cyberslop.sim
 
 import io.github.ksean.cyberslop.core.Vec2
+import io.github.ksean.cyberslop.entity.BossModule
+import io.github.ksean.cyberslop.entity.BossRoster
 import io.github.ksean.cyberslop.gen.LevelGenerator
 import io.github.ksean.cyberslop.physics.InputFrame
 import io.github.ksean.cyberslop.run.RunState
@@ -53,6 +55,11 @@ class SimulationDeterminismTest {
         mutated("boss melee index") { it.boss.meleeIndex++ }
         mutated("boss ranged index") { it.boss.rangedIndex++ }
         mutated("boss choice rng") { it.boss.rng.nextULong() }
+        mutated("enemy leap") { it.enemies.first().leap = EnemyLeap(1, 64.0, 4..5) }
+        mutated("boss locked aim") { it.boss.lockAim(Vec2(123.0, 45.0)) }
+        mutated("boss beam") {
+            it.bossBeams += LiveBossBeam(Vec2.Zero, Vec2.Right, 3.0, 0.2, 0.3)
+        }
         mutated("lifesteal budget") { it.lifestealBudget -= 1.0 }
         mutated("pending burst") { it.pendingBurst = PendingBurst(2, 0.05, Vec2.Right, it.autoFire.weapon) }
         // Round-1 finding: a payload is every field spawning or landing reads, not a marker that one exists.
@@ -80,6 +87,25 @@ class SimulationDeterminismTest {
         mutated("projectile bounces") {
             it.projectiles.add(LiveProjectile(Vec2.Zero, Vec2.Right, 1.0, 0, 1.0, passesTerrain = false, fromPlayer = true, bouncesLeft = 1))
         }
+        payloadDiffers(
+            "boss projectile module",
+            { it.projectiles += LiveProjectile(Vec2.Zero, Vec2.Right, 1.0, 0, 1.0, false, false, true, BossModule.Bolt) },
+            { it.projectiles += LiveProjectile(Vec2.Zero, Vec2.Right, 1.0, 0, 1.0, false, false, true, BossModule.Scatter) },
+        )
+    }
+
+    @Test
+    fun `the assigned boss roster is part of the future-state digest`() {
+        val first = BossRoster.forRun(1uL)
+        val second = (2uL..2_000uL).map(BossRoster::forRun).first {
+            it.miniboss(1) != first.miniboss(1) || it.boss(1) != first.boss(1)
+        }
+        val run = RunState.begin(SEED)
+
+        val a = GameSimulation(TestLevels.flat(), run, SEED, bossRoster = first)
+        val b = GameSimulation(TestLevels.flat(), run, SEED, bossRoster = second)
+
+        assertNotEquals(a.digest(), b.digest())
     }
 
     /** A hit indicator is presentation only (PROD-071): it never touches the digest. */
@@ -119,7 +145,7 @@ class SimulationDeterminismTest {
         val SEED = 0xD1CE5uL
         const val TICKS = 720
         const val RUN_TICKS = 300
-        const val GOLDEN = 7529129653326272212uL
+        const val GOLDEN = 10020045215349456527uL
 
         /** Generated once: nothing the tape does writes to the tiles, and generation is the slow part. */
         val level by lazy { LevelGenerator.generate(SEED, 1).level }

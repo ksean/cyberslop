@@ -186,6 +186,8 @@ data class TextItem(
     val style: String,
     val align: TextAlign = TextAlign.Left,
     val bold: Boolean = false,
+    /** One is opaque and zero transparent; decided in common code and restored by the sink. */
+    val opacity: Double = 1.0,
     /**
      * The typeface stack.
      *
@@ -195,6 +197,10 @@ data class TextItem(
      */
     val font: String = UI_FONT,
 ) {
+    init {
+        require(opacity in 0.0..1.0) { "text opacity must be between zero and one: $opacity" }
+    }
+
     companion object {
         /** No web font: presentation adds no runtime asset (ENG-063). */
         const val UI_FONT = "system-ui, -apple-system, 'Segoe UI', sans-serif"

@@ -88,11 +88,12 @@ player **occupies** a committed column while any column their AABB overlaps is c
 
 1. **Placement.** No enemy spawn or patrol sits on or within three columns of a committed column;
    no ranged or turret spawn has unobstructed line of fire into a committed span of `ArcMask`.
-2. **Runtime.** No enemy swing or projectile deals damage while the player occupies a committed
-   column, nor until the player has been grounded and clear of every committed column for
-   `LANDING_GRACE = 0.25 s`, so the first grounded tick after a crossing is never a hit with no
-   reaction window. A Flyer never enters a committed column (enemies.md); walkers cannot, because
-   it has no floor.
+2. **Runtime.** An engaged Flyer may fly through a committed column and a ground enemy may cross it
+   only on a leap whose fixed-step preview found a safe landing (enemies.md, PROD-088). Movement is
+   not the safety boundary: no rank-and-file or boss swing, projectile, beam or contact drain deals
+   damage while the player occupies a committed column, nor until the player has been grounded and
+   clear of every committed column for `LANDING_GRACE = 0.25 s`. A player therefore keeps the same
+   protected crossing and first grounded reaction window while pursuers remain able to follow.
 3. **Survivability.** Enemy damage along the corridor is *survivable*, not *avoidable*: the bot
    playthrough walks the witness with guaranteed-only loot, with the population engaged, and
    asserts survival over the seed cohort.
@@ -109,6 +110,7 @@ player **occupies** a committed column while any column their AABB overlaps is c
 - **P-11** Every `CROUCH` node reaches a `STAND` node.
 - **P-12** No enemy spawn or patrol touches a committed span; no ranged or turret spawn has line of
   fire into one; the runtime fairness rule holds, including across the boundary: a strike or a
-  projectile arriving on the first grounded tick after a crossing, or while any overlapped column
-  is committed, deals nothing (P-34).
+  projectile/beam arriving on the first grounded tick after a crossing, or while any overlapped
+  column is committed, deals nothing (P-34). Enemy traversal of those spans is verified separately
+  by P-61 rather than forbidden.
 - **P-22** Runtime generation + verification p99 < 400 ms on the widest map (generation.md).

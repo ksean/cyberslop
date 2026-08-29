@@ -129,14 +129,20 @@ class CanvasRenderer(
         }
 
         override fun drawText(item: TextItem) {
-            context.fillStyle = styleOf(item.style)
-            context.font = "${if (item.bold) "bold " else ""}${item.sizePx}px ${item.font}"
-            context.textAlign = when (item.align) {
-                TextAlign.Left -> CanvasTextAlign.LEFT
-                TextAlign.Centre -> CanvasTextAlign.CENTER
-                TextAlign.Right -> CanvasTextAlign.RIGHT
+            val previousAlpha = context.globalAlpha
+            context.globalAlpha = item.opacity
+            try {
+                context.fillStyle = styleOf(item.style)
+                context.font = "${if (item.bold) "bold " else ""}${item.sizePx}px ${item.font}"
+                context.textAlign = when (item.align) {
+                    TextAlign.Left -> CanvasTextAlign.LEFT
+                    TextAlign.Centre -> CanvasTextAlign.CENTER
+                    TextAlign.Right -> CanvasTextAlign.RIGHT
+                }
+                context.fillText(item.text, item.x, item.y)
+            } finally {
+                context.globalAlpha = previousAlpha
             }
-            context.fillText(item.text, item.x, item.y)
         }
     }
 

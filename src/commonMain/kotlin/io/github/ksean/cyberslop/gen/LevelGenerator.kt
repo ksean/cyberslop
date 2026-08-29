@@ -52,13 +52,16 @@ object LevelGenerator {
      */
     private class Budget(envelope: io.github.ksean.cyberslop.physics.MovementEnvelope) {
         val brakeMargin = envelope.brakeMarginTiles
-        val landing = envelope.landingTiles(0)
+        val maxDrop = envelope.stepUpMaxTiles + 1
+        val landing = maxOf(
+            envelope.landingTiles(0),
+            EnemyPursuitEnvelope.requiredLandingTiles(maxDrop),
+        )
         val ductLength = envelope.brakeMarginTiles * 2 + 2
         val ductVariation = envelope.brakeMarginTiles
         val jetApproach = envelope.brakeMarginTiles
         val jetSafe = envelope.brakeMarginTiles + 2
         val jetCrossing = envelope.brakeMarginTiles * 2
-        val maxDrop = envelope.stepUpMaxTiles + 1
         val flatVariation = envelope.landingTiles(0) / 2
         /** How far into an arena the player walks before it counts as entered. */
         val arenaEntry = envelope.brakeMarginTiles
@@ -120,14 +123,21 @@ object LevelGenerator {
                 ),
             )
 
+            val terrainPursuitViolations = EnemyPursuitEnvelope.audit(withPickups.level)
+            if (terrainPursuitViolations.isNotEmpty()) {
+                failures += "attempt $attempt: enemy pursuit terrain ${terrainPursuitViolations.first()}"
+                continue
+            }
+
             // Damaging hazards last, off the footholds and the pickups, then the confirming replay
             // removes anything the tape still touches (`specs/hazards.md`).
             val barrels = HazardPlacer.place(
                 withPickups.level, replay.footholds,
                 Rng.derive(attemptSeed, mapIndex, "hazard"), curve,
             )
+            val confirmedBarrels = HazardPlacer.confirm(withPickups.level, barrels, withPickups.witness)
             val withHazards = withPickups.withBarrels(
-                HazardPlacer.confirm(withPickups.level, barrels, withPickups.witness),
+                HazardPlacer.confirmPursuit(withPickups.level, confirmedBarrels),
             )
 
             return GeneratedLevel(
@@ -367,7 +377,7 @@ object LevelGenerator {
         var floorRow = startRow
 
         while (cursor < limit - profile.restPlatformTiles - budget.landing) {
-            val rest = profile.restPlatformTiles
+            val rest = maxOf(profile.restPlatformTiles, budget.landing)
             carveFloor(cursor, rest, floorRow)
             cursor += rest
             if (!walker.walkRightTo(TileMap.toWorld(cursor - budget.brakeMargin), floorRow)) {

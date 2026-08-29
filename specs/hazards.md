@@ -34,6 +34,12 @@ animation phase.
 - Damaging overlap is tested against the player's AABB each tick and drains `rate × contactDamage
   × dt`; overlapping two damaging hazards drains both. It can kill a player who stands in it, and
   it never displaces the player (ENG-051).
+- Enemy traversal does not change those effects. An engaged ground enemy treats an acid/void span,
+  a spike strip and a barrel footprint as something its verified leap must clear; a Flyer crosses
+  in flight. Spikes and barrels do not acquire a second enemy-damage model. An active fire jet is a
+  closed corridor to a ground pursuer until its normal off-window; enemy waiting or jumping never
+  changes the jet's phase. Safe launch, swept clearance and landing are specified and verified by
+  enemies.md P-61.
 
 ## Generation constraints
 
@@ -66,6 +72,8 @@ animation phase.
   a seed cohort; a spike and a barrel fault-injected onto the replayed route are removed by the
   confirming pass, deterministically, and nothing else is; the per-map count rises with map index
   in cohort mean and is zero on map 1.
+- **P-61** Enemy hazard traversal is verified in enemies.md; the same spike, barrel, acid, void and
+  fire-jet geometry remains unchanged for the player and for witness replay.
 - Hazard contact: safe ground reports no lethal contact; falling into acid does; a single fast tick
   through a hazard is still caught; acid does not block movement; jet-bearing themes generate jets
   on every map that allows them.

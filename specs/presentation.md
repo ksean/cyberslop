@@ -40,8 +40,7 @@ The camera view is measured in world units; `ZOOM = 3.5` makes a tile 56 screen 
 follow (25 % of the view) with look-ahead (12 %) in the facing direction; hard clamp to the level
 bounds; on resize keep world-units-per-pixel fixed. The camera never frames an arena: a boss that
 fights is engaged and pursuing, so it is within the awareness radius of the player the camera
-follows, and an attack that could reach the player from off-screen (Volley) is capped at eight
-tiles.
+follows, and every boss projectile or beam is capped at eight tiles.
 
 ## Palettes and the world
 
@@ -93,8 +92,10 @@ accumulated in the simulation — not wall time — so feet plant by constructio
 The same rig, clips and actions pose enemies and bosses: an enemy's `Motion` carries its own
 wind-up, swing and shot windows, so a Brute winding up reads as a Brute winding up (PROD-063), and
 a boss walking toward the player runs its gait rather than sliding. A boss attack's telegraph is
-its `WindUp`; its active window is a `Swing` with a swoosh (Slam, Sweep, Rush) or a `Fire` with a
-muzzle flash and a fan of projectile dots (Volley). The telegraph colour change stays.
+its `WindUp`; each active melee event is a `Swing` with its own swoosh, each projectile emission a
+`Fire` with its own muzzle flash, and a Laser emission a charged lens plus its beam. Flurry and
+Burst therefore visibly resolve three times rather than representing three hits with one pose. The
+telegraph colour change stays through every profile.
 
 **Crouch is a pose (PROD-067).** `Crouch` and `CrouchWalk` keep the standing figure's limb lengths
 and bend the joints: hips dropped to about half the standing hip height, knees bent forward of the
@@ -125,11 +126,13 @@ highest point stays within the physics' crouch height; nothing is scaled.
   The player's colours are fixed across themes so that PROD-051's disjointness with the item
   colours is a property of two constant sets rather than of ten palettes. A player's shot with no
   build recorded (there is none in play; the branch exists) takes the ranged look. The bloom is
-  `TRACER_BLOOM_WIDTH = 5` px under a `TRACER_WIDTH = 2` px core. The Volley's fan and every
-  impact kept for the flash window take the same four-mark look as the live shot in the
-  shooter's colours — an impact carries whether a psychic build fired it (`HitShape.Impact.psychic`)
-  and is drawn at `IMPACT_PX = 5` px, both radii and widths thinning with the window, since the
-  live shot's radius is not kept. The marks are on three layers under `Effects` — `ShotGlow`
+  `TRACER_BLOOM_WIDTH = 5` px under a `TRACER_WIDTH = 2` px core. Every impact kept for the flash
+  window takes the same four-mark look as the live shot in the shooter's colours — an impact
+  carries whether a psychic build fired it (`HitShape.Impact.psychic`) and is drawn at
+  `IMPACT_PX = 5` px, both radii and widths thinning with the window, since the live shot's radius
+  is not kept. Boss Bolt, Burst and Scatter rounds are ordinary live enemy-look projectiles; a
+  Laser uses the same glow/core pairing on its locked segment. The marks are on three layers under
+  `Effects` — `ShotGlow`
   (bloom and glow dot), `ShotBody`, `ShotCore` (core line and dot) — so glow is under body under
   core whatever opened first; a frame holding live shots of all three looks opens at most
   **fifteen** batches for them, a constant no number of shots moves (the fading impacts add only
@@ -149,9 +152,7 @@ highest point stays within the physics' crouch height; nothing is scaled.
   not the strike hit, because the strike point is what the player aimed. A projectile spent inside
   the tick it was fired — a point-blank hit, or terrain at the muzzle — is never in the live list
   when a frame is drawn, so its last line of flight is kept as an **impact** for the flash window
-  and drawn as the same tracer. A boss **Volley** shows the band it lands on: a segment on the
-  floor across `aimedX ± VOLLEY_WIDTH` in the enemy-shot colour, and a fan of tracers travelling
-  from the barrel to that band through the active window — not a fan along the boss's facing.
+  and drawn as the same tracer.
 - A weapon with no barrel — every psychic weapon (orbs, blasts and chains) and every
   cursor-anchored one (the Kessler dish) — draws an **activation pulse** instead: a ring around
   the held weapon that grows as it fades over the flash window.
@@ -167,20 +168,45 @@ Five silhouettes that differ in shape:
 | Swarm | small, hunched, spindly, oversized head | fast twitchy gait |
 | Shooter | upright, one long weapon arm | measured walk; arm tracks the player inside firing range |
 | Flyer | legless pod, twin thruster plumes | hovers, bobs, thrust trails its travel |
-| Turret | wide fixed base, no legs, sweeping head | base never moves; barrel tracks the player |
+| Turret | wide cannon pod on short folded articulated legs | waits folded; unfolds to crawl, tracks with its barrel and tucks its legs during a leap |
 | Brute | broadest, heavy shoulder plates, short thick limbs | slow heavy gait |
 
 `EnemyLook.of(archetype, mapIndex)` returns `bulk`, `plates`, `spikes` and a glow tone that move
 with the enemy's health. Plates and spikes are monotone across the whole grid; drawn size
 (`height × bulk`) and luminance are monotone within a map (PROD-042) — a whole-grid size ordering
-would force every archetype to the same height. Bosses reuse the rig at `MINIBOSS_SCALE = 2.6` and
-`BOSS_SCALE = 3.7` with a crown of plating and a health bar (PROD-043).
+would force every archetype to the same height. An airborne walker or boss selects `JumpRise` or
+`JumpFall` from its actual vertical velocity and does not advance a grounded gait while airborne.
+
+**Boss loadouts (PROD-089).** Bosses reuse the rig at `MINIBOSS_SCALE = 2.6` and
+`BOSS_SCALE = 3.7` with a health bar and the existing two-plate/four-plate crown distinction
+(PROD-043), but no longer reuse one generic armed silhouette. `BossLook.of(profile, mapIndex,
+isMain)` composes the profile's modules onto the body. Every enabled module, including a main
+boss's not-yet-unlocked signature, contributes its marker from the first frame:
+
+| Module | Shape marker, readable without colour | Active motion/effect |
+|---|---|---|
+| Slam | one oversized weighted forearm | overhead arm and ground swoosh |
+| Sweep | one long lateral blade | level arm and level swoosh |
+| Flurry | paired short blades | alternating arms and three separate swooshes |
+| Rush | forward ram plate and piston shins | forward lean, tucked arms and trailing swoosh |
+| Bolt | one narrow barrel | one recoil and flash |
+| Burst | narrow barrel plus long magazine | three recoil/flash pulses |
+| Scatter | short, wide five-port muzzle | five simultaneous flashes and diverging tracers |
+| Laser | large circular lens between two emitter rails | charge glow, then bloom/core beam |
+
+Markers are silhouette geometry, not labels or palette swaps. The primary melee implement occupies
+the lead arm and the primary ranged hardware the opposite shoulder/arm. A main boss's locked
+signature is visibly folded high on its back and unfolds into its active mount at 60 % health; it
+is never mistaken for a primary copy. Thus even two main profiles that contain the same three
+modules but assign different primaries have different colour-stripped geometry. Menace plating and
+the map palette still scale as before, and neither may cover the implement tip, muzzle ports or
+laser lens that communicates the attack.
 
 **Hurt flash (PROD-076).** A hit — a swing, a projectile landing, a blast, a chain jump, splash;
 not a burn or bleed tick — sets `hurtSecondsLeft = HURT_FLASH_SECONDS = 0.12 s` on the enemy or
 boss, a presentation-only field decayed by the simulation like `lastSwing` and outside the digest.
 While it is positive the figure's body, limbs, head, plating and (for a boss) crown are drawn in `Palettes.HURT`
-(`#ff3b30`) instead of their own styles — every form (biped, hover, fixed) — and the eye glow is
+(`#ff3b30`) instead of their own styles — every form (biped, hover, crawler) — and the eye glow is
 unchanged. A boss's telegraph colour wins over the flash: a telegraphing boss stays in the
 telegraph colour however hard it is hit, because the tell is a fairness signal. The flash is a
 style swap, so a frame holding both hurt and unhurt figures opens at most one extra batch per
@@ -270,6 +296,25 @@ derives the bound from the ladder and counts against it rather than believing ar
 prose (P-31 states it). Whether an icon is *recognisable*, or looks
 aged, is a human judgement made against the icon sheet, not a test.
 
+## Scrap-gain feedback (PROD-086)
+
+All four positive in-run Scrap paths — the 2-Scrap enemy kill, the main boss's 40 Scrap, a weapon
+replacement plus its cleared powerups, and a scrapped or displaced powerup — go through one
+`gainScrap(amount)` boundary. Positive calls in one simulation tick are summed into one
+`ScrapGain(amount, origin, secondsLeft)` after pickup and reward resolution. Its origin is the
+horizontal centre of the player's box, 6 world px above the visible head at the end of that tick.
+The origin is then fixed in world space rather than following the player; a later gain creates a
+separate label. Zero/negative changes, run-end banking, migration and shop spending create none.
+
+For `SCRAP_GAIN_SECONDS = 0.90 s`, `Scene` draws exactly `+$amount` centred at that world anchor in
+bold 18 px type and fixed gold `#ffd45a`. With `p = age / SCRAP_GAIN_SECONDS`, its screen y is
+`originY − 20 px × p` and its opacity is `1 − p`: it rises linearly by 20 screen px and is fully
+absent at expiry. Position and opacity use the same interpolated presentation time as the player,
+so a frame between ticks does not stair-step. Opacity is a numeric `TextItem` property decided in
+`commonMain`; the browser renderer only applies it and restores full opacity. The label is
+presentational, is not saved, does not change `run.scrap`, and is excluded from the simulation
+digest. A discovery-card pause freezes it because no simulation tick consumes its lifetime.
+
 ## HUD and screens
 
 The HUD shows health, the equipped weapon's icon and name, each held powerup's icon and stack
@@ -298,12 +343,14 @@ Window focus loss and a hidden page clear held keys and pause; canvas focus loss
   `Swing`, after a shot `Fire`, each leaving the legs untouched; a shot draws its flash at the
   posed barrel; the crouch pose's limb segment lengths equal the standing pose's, its knees sit
   forward of the hip–ankle line, and its highest point is within the crouch height; the swoosh's
-  outer arc radius equals the swing's reach.
+  outer arc radius equals the swing's reach. Each scheduled Flurry swing and Burst round selects a
+  distinct action pulse on its own event tick rather than one visual for the whole active window.
 - **P-43** Shots show where they went: a live projectile draws a dot at its position **at its hit
   radius** and a segment from it back along its velocity of `speed × TRACER_SECONDS`, player and
   enemy shots in their own styles; a projectile spent on the tick it was fired still leaves that
-  tracer; an active boss Volley draws the floor band `aimedX ± VOLLEY_WIDTH` and tracers toward it
-  in the enemy-shot style; a Kessler strike leaves a beam whose foot is the strike centre and a
+  tracer; boss Bolt, Burst and Scatter events produce respectively one, three straight and five
+  diverging live projectiles with matching flash counts in the enemy-shot style, while an active
+  Laser draws its locked 10 px bloom/core segment; a Kessler strike leaves a beam whose foot is the strike centre and a
   ring whose radius is the scaled strike radius; a chain leaves a segment per jump whose endpoints
   are the struck targets in strike order and none when nothing was struck; a blast, a pull and an
   orbit each leave a ring of the radius they resolved at — the pattern's own declared radius, scaled
@@ -313,7 +360,7 @@ Window focus loss and a hidden page clear held keys and pause; canvas focus loss
 - **P-47** Hurt flash and health bars: an enemy hit this tick is drawn in `Palettes.HURT` on
   every figure batch (body, limbs, head) and its eye glow is not; a burn tick does not flash it;
   it returns to its own styles after `HURT_FLASH_SECONDS`; a hit boss flashes, crown included,
-  unless it is telegraphing, in which case the telegraph colour is drawn; the hover and fixed forms flash
+  unless it is telegraphing, in which case the telegraph colour is drawn; the hover and crawler forms flash
   too; a full-health enemy draws no bar, an enemy at 40 % draws a back rect of `ENEMY_SIZE ×
   ZOOM` and a fill of 40 % of it above its figure; a frame of 600 half-hurt, damaged enemies
   opens the same number of batches as one of 10 (the flash opens at most one red batch per
@@ -359,8 +406,8 @@ Window focus loss and a hidden page clear held keys and pause; canvas focus loss
 - **P-53** Shot looks: a live player's projectile fired by a ranged build draws glow, body and
   core dots at `1.8 ×`, `1 ×` and `0.45 ×` its hit radius in the ranged look's three colours and a
   two-tone tracer (bloom then core) of `speed × TRACER_SECONDS`; a psychic build's shot in the
-  psychic look; an enemy's in the palette hazard look with a white core; an impact and a Volley
-  tracer use the same look as the live shot would, and a same-tick psychic hit records `psychic`
+  psychic look; an enemy's in the palette hazard look with a white core; an impact, every boss
+  projectile and a boss Laser use the same look as the live shot would, and a same-tick psychic hit records `psychic`
   and is drawn violet; glow marks are on `ShotGlow`, body dots on `ShotBody` and core marks on
   `ShotCore` even when two impacts of different ages open different tracer widths; a frame with
   fifty shots of every look opens the same number of shot and effect batches for them as a frame
@@ -377,3 +424,18 @@ Window focus loss and a hidden page clear held keys and pause; canvas focus loss
   cycle apart the acid draw list is equal. Equal level, camera and time always give an equal frame;
   changing or drawing the bubbles changes neither tile contact, lethality nor the simulation
   digest, and the bubble styles add a constant number of batches independent of pool width.
+- **P-59** Scrap feedback: each of the kill, boss-award, weapon-reset and powerup-scrap paths raises
+  `run.scrap` by its exact amount and creates a label for that amount; two positive awards in one
+  tick create one label for their sum, while awards on different ticks remain distinct. At birth
+  the bold golden `+X` is centred 6 world px above the player's then-current head; halfway through
+  its 0.90 s life it is 10 screen px higher at 0.5 opacity; at expiry it is absent. Moving the
+  player after birth does not move its world anchor; interpolation produces an intermediate y and
+  opacity; a paused simulation does not age it. Zero gain and profile/shop changes create none,
+  and adding, ageing or drawing labels changes neither the canonical save nor the P-40 digest.
+- **P-62** Boss profile appearance: every attack module maps to exactly the silhouette marker in
+  the table above; every legal mini-boss and main-boss profile draws all and only its enabled
+  markers, including a locked signature, in both facing directions and in hurt/telegraph states.
+  Distinct primary pairs have distinct colour-stripped geometry; the mini/main scale and crown
+  remain distinct for every pair. Slam, Sweep, each Flurry event, Rush, Bolt, each Burst event,
+  Scatter and Laser each select and draw their declared active pose/effect, and an airborne boss
+  selects the rise/fall pose from its vertical velocity.

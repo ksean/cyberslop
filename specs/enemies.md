@@ -2,9 +2,10 @@
 
 ## Archetypes
 
-Health is `multiplier × Balance.trashHealth(mapIndex)`. Speeds are fractions of `ENEMY_SPEED`, and
-no archetype's effective speed may reach the player's run speed of 240 px/s (PROD-061). An enemy's
-body is a 14 × 14 px box; its centre is `position + (7, 7)`.
+Health is `multiplier × Balance.trashHealth(mapIndex)`. Ground speeds are fractions of
+`ENEMY_SPEED`, and no archetype's ordinary pursuit speed may reach the player's run speed of 240
+px/s (PROD-061); a committed leap may carry horizontally at, but never above, that speed. An
+enemy's body is a 14 × 14 px box; its centre is `position + (7, 7)`.
 
 | Archetype | Health × | Speed × | Role | Terrain |
 |---|---|---|---|---|
@@ -12,7 +13,7 @@ body is a 14 × 14 px box; its centre is `position + (7, 7)`.
 | Brute | 2.2 | 0.6 | melee: pursues and swings | walker |
 | Flyer | 0.7 | 1.1 | melee: pursues in both axes and swings | ignores terrain |
 | Shooter | 0.8 | 0.8 | ranged: approaches, holds, retreats, shoots | walker |
-| Turret | 1.5 | 0 | ranged: shoots | fixed |
+| Turret | 1.5 | 0.45 | ranged: waits folded; once engaged, unfolds, holds range and shoots | walker |
 
 Population: `Populator` places `widthTiles / 100 × enemiesPerHundredTiles` enemies (clamped to
 8–60) with archetype weights Swarm 0.38, Brute 0.22, Flyer 0.18, Shooter 0.15, Turret 0.07, each
@@ -30,35 +31,51 @@ enemy whose centre is at Euclidean distance strictly less than `AWARE_PX = 22 ti
 player's centre becomes *engaged* — the same strict predicate auto-aim uses, so the two boundaries
 agree at equality; it stays engaged until it dies or that distance exceeds `DISENGAGE_PX =
 28 tiles`, at which point it resumes patrol — so a pack the player has outrun by that much drops
-off rather than arriving at the boss with them. An unengaged enemy patrols `homeX ± patrolPx`. An
-engaged enemy is not confined to its patrol span. The radius is the one auto-aim uses, so an enemy
-the player's weapon can target is one that is acting on the player.
+off rather than arriving at the boss with them. An unengaged non-Turret patrols `homeX ± patrolPx`;
+a Turret folds at `homeX` and waits. An engaged enemy is not confined to its patrol span. The
+radius is the one auto-aim uses, so an enemy the player's weapon can target is one that is acting
+on the player.
 
-## Movement
+## Movement (PROD-088)
 
-- **Walkers** (Swarm, Brute, Shooter) have gravity: an unsupported walker falls at the player's
-  gravity to terminal velocity and lands on the first solid tile; a walker that lands in a lethal
-  tile dies. Falling continues while stunned. Knockback moves a walker horizontally and may push it
-  off a ledge, after which it falls.
-- **The ledge rule** governs *voluntary* horizontal steps only: a walker does not take a step whose
-  destination footprint (both bottom corners of its box) is not on solid ground, or is over a
-  lethal tile, or is blocked by a solid tile at body height. It stops at the edge, facing the
-  player, and resumes when a legal step exists. Walkers never jump.
-- **Pursuit (melee).** An engaged Swarm or Brute steps toward the player under the ledge rule. An
-  engaged Flyer moves in both axes toward the player and passes through terrain, but never enters
-  a **committed column** (completability.md) — it holds at the column boundary.
-- **The boss's ground.** No enemy pursues onto an arena or the twenty-tile approach before it
-  (`Level.isArenaGround`): a walker stops there as at a ledge and a Flyer holds as at a committed
-  column, so a pack the player has outrun waits at the door instead of joining a fight that is
+- **Walkers** (Swarm, Brute, Shooter and Turret) have gravity: an unsupported walker falls at the
+  player's gravity to terminal velocity and lands on the first solid tile; a walker that lands in
+  a lethal tile dies. Falling continues while stunned. Knockback moves a walker horizontally and
+  may push it off a ledge, after which it falls. A Turret remains folded and stationary while
+  unengaged; engagement unfolds its articulated legs and it thereafter uses the ranged pursuit
+  rules at `0.45 × ENEMY_SPEED`.
+- **Ground steps and leaps.** A grounded walker first attempts its voluntary horizontal step. If
+  the next tile in its chase direction begins an unsupported span, acid or void, a spike strip, a
+  barrel footprint, or a solid obstruction at body height, it asks `EnemyLeap.plan` for a landing
+  in that direction. The planner advances the shipped fixed-step gravity and collision rules with
+  `LEAP_VX = 240 px/s`, `LEAP_VY = -680 px/s`, the walker's real box and half-tile collision
+  substeps. It selects the nearest landing beyond the blocking/hazard span whose whole swept box is
+  clear of solid and lethal cells and the damaging-hazard footprint, and whose two bottom corners
+  finish on non-lethal solid ground.
+  It launches only if that replay succeeds; otherwise the walker stops at the old ledge-rule
+  boundary. The horizontal direction is committed at take-off, no attack may begin while airborne,
+  and another leap may not begin until `LEAP_COOLDOWN = 0.25 s` after landing. The generated gap,
+  step and damaging-hazard bounds must lie inside this measured leap envelope, so a physically
+  possible pursuit crosses every generated pit, acid span, spike strip and low step rather than
+  treating it as a permanent wall. An active fire jet is not jumpable cover: a walker waits for
+  its off-window before crossing its corridor.
+- **Pursuit (melee).** An engaged Swarm or Brute moves toward the player by ground steps and safe
+  leaps. An engaged Flyer moves in both axes toward the player and passes through terrain and
+  hazards, including committed columns; the damage fairness rule, not an invisible movement wall,
+  protects a player who is committed to a crossing.
+- **The boss's ground.** No rank-and-file enemy pursues onto an arena or the twenty-tile approach before it
+  (`Level.isArenaGround`): a walker neither steps nor selects a leap landing there and a Flyer
+  holds at the arena boundary, so a pack the player has outrun waits at the door instead of joining a fight that is
   tuned as a boss fight. A Shooter held there is still within its range of someone inside, so
   the ground is fair as well as unenterable: **no enemy swing, projectile or contact drain deals
   damage to a player whose box overlaps the boss's ground** — the second clause of the fairness rule below.
   Bosses are not bound by it; their ground is where they fight. The rule applies to every arena;
   an enemy already on that ground is not trapped by it.
-- **Approach, hold, retreat (ranged).** An engaged Shooter faces the player and: beyond
+- **Approach, hold, retreat (ranged).** An engaged Shooter or unfolded Turret faces the player and: beyond
   `SHOOTER_RANGE = 220 px` (13.75 tiles) steps toward the player; between `RETREAT_PX = 5 tiles`
-  and `SHOOTER_RANGE` holds; inside `RETREAT_PX` steps away; all under the ledge rule, shooting
-  whenever it can. A Turret never moves.
+  and `SHOOTER_RANGE` holds; inside `RETREAT_PX` steps away; all through safe ground steps/leaps, shooting
+  whenever it can. Its voluntary movement uses the same safe leap planner when ground steps cannot
+  cross the intervening obstacle.
 
 ## Attacks (PROD-061, PROD-063)
 
@@ -91,56 +108,97 @@ the player's weapon can target is one that is acting on the player.
   `SHOOTER_RANGE` and in line of sight, winds up for `SHOT_WINDUP = 0.25 s` (holding its aim), then
   fires one projectile at the player's centre as it was at the start of the wind-up: speed 340
   px/s, lifetime 2.5 s, radius 6 px, damage `0.45 × contactDamage`, cooldown 0.75 s after the shot.
-- **Fairness on committed spans and on the boss's ground.** No enemy swing, enemy projectile or
-  contact drain deals damage while the player occupies a committed column (any column their AABB overlaps),
-  nor until they have been grounded and clear of committed columns for `LANDING_GRACE = 0.25 s`,
-  nor while their box overlaps the boss's ground; a projectile that would have hit is spent. This is the runtime form of completability.md's placement invariant and holds
-  however enemies move.
+- **Fairness on committed spans and on the boss's ground.** No rank-and-file or boss swing,
+  projectile, beam or contact drain deals damage while the player occupies a committed column (any
+  column their AABB overlaps), nor until they have been grounded and clear of committed columns for
+  `LANDING_GRACE = 0.25 s`. In addition, rank-and-file damage is suppressed while the player's box
+  overlaps boss ground; the boss who owns that ground is not. A projectile that would have hit is
+  spent and a beam event is skipped. This is the runtime form of completability.md's placement
+  invariant and holds however enemies move.
 - **Status.** Slows floor at 40 % and take the strongest; a stunned enemy neither moves nor attacks
   for 0.5 s and a wind-up in progress is cancelled; burn and bleed drain per tick.
 - **Reward.** A kill yields 2 Scrap and rolls the drop table (combat.md).
 
-## Mini-boss and main boss
+## Mini-boss and main boss (PROD-087)
 
-Both reuse `BossFight` and `LiveBoss`: body 44 × 56 px, feet-anchored, hit radius 28 px, speed 55
-px/s, a walker under the ledge rule.
+Both reuse `BossFight` and `LiveBoss`: body 44 × 56 px, feet-anchored, hit radius 28 px, ground
+speed 55 px/s. They use gravity and the same replayed safe-leap decision as a walker, with their
+actual larger box. They may leap out of their own arena to follow an engaged player, but never
+move or jump before engagement and never start an attack airborne. A rank-and-file arena boundary
+does not bind the boss whose fight it is.
 
-| | Health | Phases | Attacks | Award |
-|---|---|---|---|---|
-| Mini-boss | 6 × trash | 1 | Slam | weapon ≥ T2; plus a powerup from map 4 |
-| Main boss | 12 × trash | 100 / 60 / 25 % | Slam, Sweep → + Volley → + Rush | weapon ≥ T3 with two tier shifts, powerup ≥ T2, 40 Scrap |
+### Seeded combat profiles
 
-| Attack | Telegraph (map 1 → 10) | Active | Damage | Hits a player who is… | Dodge | Drawn as |
+`BossRoster.forRun(seed)` owns profile assignment. It walks the twenty encounter slots in route
+order — mini-boss then main boss on maps 1 through 10 — using only
+`Rng.derive(seed, 0, "boss-roster")`. For the slot's map band it draws one melee module and one
+ranged module uniformly from the four possible pairs, excluding the immediately preceding pair;
+therefore a map's mini-boss and main boss never carry the same primary pair, and no adjacent
+encounters repeat exactly. A main boss also draws one **signature** uniformly from the two modules
+in its band that its primary pair did not take. The roster is reconstructed from the run seed on
+continue and never reads or shifts loot, crit, generation or attack-choice randomness.
+
+| Maps | Melee pool | Ranged pool | Difficulty character |
+|---|---|---|---|
+| 1–3 | Slam, Sweep | Bolt, Burst | slow single strikes and narrow, low-damage fire |
+| 4–6 | Slam, Flurry | Burst, Scatter | rapid sequences and area-denying spread |
+| 7–10 | Flurry, Rush | Scatter, Laser | sustained pressure, lunges and a beam |
+
+Every profile has its primary melee and primary ranged attack from full health. A mini-boss has
+one phase containing that pair. A main boss uses the pair above 60 % health, adds its signature at
+60 %, and below 25 % keeps those attacks but shortens its between-attack rest from 0.9 s to 0.65 s;
+its opening rest remains 0.8 s. The signature is announced by visible hardware from the start, not
+sprouted when the phase changes (presentation.md). The map-themed encounter names remain; the
+seeded profile changes how each named encounter fights and looks.
+
+| | Health | Damage unit `U` | Award |
+|---|---|---|---|
+| Mini-boss | 6 × trash | `0.80 × contactDamage(mapIndex)` | weapon ≥ T2; plus a powerup from map 4 |
+| Main boss | 12 × trash | `1.00 × contactDamage(mapIndex)` | weapon ≥ T3 with two tier shifts, powerup ≥ T2, 40 Scrap |
+
+The damage in the attack table is per listed hit or projectile. `contactDamage(mapIndex)` is
+strictly increasing, so the same module always hurts more on a later map; the attack bands also
+replace early narrow attacks with rapid, spread, rush and beam pressure. Telegraph interpolation
+still uses `d = (mapIndex − 1) / 9`: the left value is map 1, the right map 10, and the 0.4 s
+fairness floor never scales.
+
+| Attack | Kind | Telegraph (map 1 → 10) | Resolution | Damage | Dodge | Loadout silhouette |
 |---|---|---|---|---|---|---|
-| Slam | 0.70 → 0.55 s | 0.25 s | 1.4 × contact | within 80 px and **on the ground** | jump | wind-up, then a downward swing and a ground swoosh |
-| Sweep | 0.65 → 0.50 s | 0.30 s | 1.1 × contact | within 80 px and **standing** (not crouched) | crouch | wind-up, then a level swing and swoosh |
-| Volley | 0.60 → 0.45 s | 0.50 s | 0.8 × contact | within 8 tiles and within 24 px of the **x recorded when the telegraph began** | move aside | wind-up, then a muzzle flash and a fan of projectile dots |
-| Rush | 0.55 → 0.40 s | 0.40 s | 1.6 × contact | within 128 px and **on the ground** | jump | wind-up, then a lunge with a trailing swoosh |
+| Slam | melee | 0.70 → 0.55 s | one 0.25 s downward swing; hits within 80 px only while the player is grounded | `1.10 × U` | jump | oversized weighted forearm and ground swoosh |
+| Sweep | melee | 0.65 → 0.50 s | one 0.30 s level swing; hits a standing player within 80 px | `0.85 × U` | crouch | one long lateral blade and level swoosh |
+| Flurry | melee | 0.60 → 0.45 s | three level swings at 0.00, 0.14 and 0.28 s of a 0.38 s active window; each tests a standing player within 72 px | `0.38 × U` each | crouch through the sequence | paired short blades, each swing drawn separately |
+| Rush | melee | 0.55 → 0.40 s | one hit at the start of a 0.40 s, 300 px/s forward lunge; hits a grounded player within 128 px | `1.45 × U` | jump | forward ram and piston legs with a trailing swoosh |
+| Bolt | ranged | 0.65 → 0.50 s | a 0.10 s window emits one terrain-blocked projectile at 280 px/s along the aim recorded at telegraph start | `0.50 × U` | move away from the recorded aim | one narrow barrel and one muzzle flash |
+| Burst | ranged | 0.65 → 0.50 s | a 0.36 s window emits three terrain-blocked projectiles at 300 px/s and 0.12 s intervals along one recorded line | `0.22 × U` each | move away through the sequence | one barrel with a long magazine and three flashes |
+| Scatter | ranged | 0.60 → 0.45 s | a 0.10 s window emits five terrain-blocked projectiles at 320 px/s, simultaneously at −15°, −7.5°, 0°, +7.5° and +15° about the recorded aim | `0.24 × U` each | move clear of the recorded fan | a short five-port muzzle and five flashes/tracers |
+| Laser | ranged | 0.70 → 0.55 s | a 10 px-wide beam from the emitter to the recorded target point for 0.30 s; it may damage a player at most once | `1.05 × U` | move clear of the locked segment | a large lens which charges, then a core-and-bloom beam |
 
-A boss turns only between attacks: an attack holds its facing and its aim from the moment its
-telegraph begins, so a player crossing it mid-telegraph sees the swing go where the tell said. A
-Rush is a lunge: through its active window the boss carries forward at 300 px/s under the ledge
-rule, its hit resolving on the window's first tick before it moves; its swoosh trails behind.
-No telegraph may be shorter than 0.4 s, enforced in the constructor. An attack deals its damage
-once, on the first tick of its active window, if the player is inside its hit condition — so each
-attack's listed dodge is the input that removes the player from that geometry, and a player who
-does nothing is hit. Between attacks the boss
-rests 0.9 s (0.8 s before its first) and walks toward the player with a gait. Bosses resist slows
-entirely.
+Bolt, Burst and Scatter projectiles stop at terrain and after eight tiles of travel. That same
+eight-tile cap bounds the Laser endpoint and keeps every boss attack on-screen under the camera
+contract. Boss projectiles carry boss ownership: they may hurt a player on boss ground, where the
+fight belongs, but are suppressed while the player occupies a committed column and during the
+same `LANDING_GRACE` as every other boss hit.
+
+A boss turns only between attacks. Every melee direction, projectile line, spread centre and Laser
+endpoint is recorded when the telegraph begins, so crossing the boss mid-telegraph never turns the
+tell. No damage event may occur before at least 0.4 s of telegraph. Slam, Sweep, Rush, Bolt, Scatter
+and Laser have one damage opportunity; Flurry and Burst have the explicit event sequences above,
+all covered by the one preceding telegraph. Every event draws the implement, swing, flash,
+projectile or beam that owns it. A player who begins the listed dodge when the telegraph appears
+and holds it through the active/projectile window takes no damage; a player in the named geometry
+who does nothing is hit. For the three projectile rows, "move away" means choosing the horizontal
+direction from the locked target point away from the boss and holding it until the last
+round expires; the real-input case, not a synthetic target flag, discharges that claim. Bosses
+resist slows entirely.
 
 **Choosing the next attack (PROD-072).** When a rest ends the boss chooses between its phase's
-**melee** attacks (Slam, Sweep, Rush — `AttackVisual.ranged == false`) and its **ranged** ones
-(Volley) by how far the player stands, measured as the distance the hit condition uses (boss feet
-to player centre): the probability of a ranged attack is `RANGED_WEIGHT_NEAR = 0.2` at or inside
-`MELEE_REACH = 80 px` (the Slam and Sweep reach), `RANGED_WEIGHT_FAR = 0.8` at or beyond
-`RANGED_PREFERRED_PX = 128 px` (the Volley reach), and linear between. Within the chosen kind the
-attacks still cycle round-robin, each kind on its own index, so no attack of a phase starves. A
-phase that holds one kind only — every mini-boss phase, the main boss's first — has nothing to
-choose and cycles as before. The draw comes from the boss's own derived stream
-(`Rng.derive(seed, mapIndex, "boss")`, ENG-053), so it neither reads nor disturbs the loot and
-crit stream; the stream's state and both indices are in the digest (P-40). The choice never
-touches a telegraph, a hit condition or a dodge: a far player who sees a Volley telegraph still
-moves aside, and the rest between attacks is unchanged.
+melee and ranged modules by how far the player stands, measured boss feet to player centre. The
+probability of ranged is `RANGED_WEIGHT_NEAR = 0.2` at or inside `MELEE_REACH = 80 px`,
+`RANGED_WEIGHT_FAR = 0.8` at or beyond `RANGED_PREFERRED_PX = 128 px`, and linear between. Every
+phase now holds both kinds. Within the chosen kind its modules cycle round-robin on separate melee
+and ranged indices, so a signature cannot starve a primary. Each encounter's choice comes from its
+own stream (`Rng.derive(seed, mapIndex, "miniboss-attacks")` or `"boss-attacks"`), whose state and
+both indices are in the digest (P-40); it never touches roster assignment or any other stream.
 
 **Awards as a floor.** The starter cache never holds the bottle it exists to replace. A main
 boss's weapon award guarantees Chromed; its two extra draws raise the odds of better and nothing
@@ -148,7 +206,7 @@ more, which is why `LootFloor.weaponArrivingAt` is Street on map 1 and Chromed f
 
 **Activation (PROD-062).** A boss is inert and invulnerable until *engaged* — the player within
 `AWARE_PX` of it — and from then on it moves, attacks and can be damaged, wherever the player
-stands, and pursues the player under the ledge rule without regard to its arena. It never
+stands, and pursues the player by safe ground steps and leaps without regard to its own arena. It never
 disengages. **The exit gate (PROD-036).** The main boss's exit gate is a solid column carved with
 the map; it stands while the boss lives and, on the boss's death, it and every obstructing tile
 between the arena and the map's right edge are cleared (PROD-035). Nothing the player or their
@@ -179,7 +237,7 @@ each enemy, `damage per attack ÷ (wind-up + cooldown)` using the archetype's sw
 each damaging hazard, its per-second rate; both summed and divided by `widthTiles / 100`. Bosses
 are excluded (every map has one of each).
 
-Two harnesses in `jvmTest` measure play. Both start a map with the guaranteed loadout a player
+Two play harnesses in `jvmTest` measure survivability. Both start a map with the guaranteed loadout a player
 *arrives* with (`LootFloor.weaponArrivingAt`, `LootFloor.slotsArrivingAt`: the awards of the maps
 before, none of the map's own) at full health, with the map's optional caches removed so nothing
 unearned is taken; when the mini-boss award drops, the harness replaces it where it lies with the
@@ -194,6 +252,12 @@ every damage event before lifesteal — separately from net health.
 - **Boss pressure**, on the maps the loot floor covers: after the route, fight with the dodge
   policy — answer each telegraphed attack with its dodge for the attack's whole duration, otherwise
   close on the boss — until the boss dies or `FIGHT_TICKS = 12 000` elapse; the map must be won.
+- **Boss escalation calibration**, all ten maps: on one flat, hazard-free arena, engage the seeded
+  main boss below 25 % health against a stationary non-attacking target with enough health to live
+  for 60 s, and record gross damage per second. Over the roster seed cohort, the mean of maps 1–3,
+  then 4–6, then 7–10 must be strictly increasing. This does not claim that every random pair on
+  map N is stronger than every pair on map N − 1; it measures the band, damage and late-phase
+  cadence together while P-60 separately requires same-module damage to rise map by map.
 
 ## The loot floor
 
@@ -224,20 +288,23 @@ player kept the better weapon. Optional loot is genuinely required past the earl
 ## Verified properties
 
 - **P-12** Placement invariants (completability.md).
-- **P-17** Every boss attack is behaviourally telegraphed: no damaging hitbox exists until ≥ 0.4 s
-  after the telegraph begins; every dodge is expressible with the four inputs.
+- **P-17** Every boss attack is behaviourally telegraphed: no damaging hitbox, projectile or beam
+  exists until ≥ 0.4 s after the telegraph begins; each scheduled hit in a Flurry or Burst occurs
+  at its declared offset after that tell; every dodge is expressible with the four inputs.
 - **P-18** Loot floor, as stated above; the full-map run test crosses map 1 on the witness, kills
   the boss by answering its telegraphs, and walks out.
 - **P-24** Menace monotonicity (presentation.md).
-- **P-32** Awareness: an enemy just outside `AWARE_PX` patrols within its span; one just inside
-  engages and leaves its span; an engaged enemy stays engaged at `AWARE_PX + 1 tile` and
+- **P-32** Awareness: an unengaged non-Turret just outside `AWARE_PX` patrols within its span while
+  a Turret there stays folded at home; one just inside engages and leaves its span; an engaged enemy
+  stays engaged at `AWARE_PX + 1 tile` and
   disengages beyond `DISENGAGE_PX`; an engaged Swarm closes on the player; an engaged Shooter
   approaches from beyond `SHOOTER_RANGE`, holds between, and backs off inside `RETREAT_PX`; a
-  Turret never moves; every archetype's effective speed is below the player's run speed.
-- **P-33** Ledge rule: a walker at a ledge, beside a lethal tile or facing a wall does not step;
-  an unsupported walker falls and lands; a walker knocked into acid dies; a Flyer stops at a
-  committed column; through a bot playthrough of every map in the cohort no walker's voluntary
-  step ever leaves its footprint unsupported.
+  Turret stays folded before engagement and unfolds into the same ranged hold/retreat policy after
+  it; every archetype's ordinary pursuit speed is below the player's run speed.
+- **P-33** Ground safety: a walker never takes an unsupported, lethal or body-blocked ground step;
+  an unsupported walker falls and lands and one knocked into acid dies; when no verified leap
+  exists it stops at that boundary. A jump state never begins an attack and preserves its take-off
+  direction until landing.
 - **P-34** Attacks: an enemy overlapping the player outside a strike deals exactly its contact
   drain and nothing more; a swing deals
   nothing during wind-up and its damage exactly once per cooldown; a player in reach but behind the
@@ -247,9 +314,11 @@ player kept the better weapon. Optional loot is genuinely required past the earl
 - **P-35** Boss activation: an unengaged boss neither moves nor attacks nor takes damage; an
   engaged boss attacks and takes damage wherever the player stands; the exit gate stands while the
   boss lives and opens only on its death; an engaged boss follows the player out of its arena and
-  stops at a ledge; each attack's telegraph selects the wind-up pose and its active window the
-  swing, lunge or flash. **Dodges are mechanics:** for every attack, a player performing the listed
-  dodge through the active window takes nothing and a player who stands still takes the damage.
+  takes a verified leap across a gap between it and the player; each attack's telegraph selects the
+  wind-up pose and every active event its swing, lunge, flash, projectile or beam. **Dodges are
+  mechanics:** for every attack, including every event of Flurry and Burst, a player performing the
+  listed dodge through the active/projectile window takes nothing and a player who stands still in
+  its named geometry takes damage.
 - **P-39** Pressure: over the seed cohort, `ThreatScore`'s cohort mean rises strictly across maps
   1→10; route pressure's mean gross damage per 100 tiles averaged over maps 1–3, 4–6 and 7–10 is
   strictly increasing; the guaranteed loadout survives the route and wins the boss fight on every
@@ -262,20 +331,36 @@ player kept the better weapon. Optional loot is genuinely required past the earl
 - **P-40** Simulation determinism (simulation.md): `GameSimulation.digest()` is a canonical
   encoding of every mutable, future-affecting field — the player state and run (health, loadout,
   scrap), the auto-fire accumulator, the loot RNG state, every enemy in list order (position,
-  velocity, health, facing, engagement, cooldown, wind-up and its aim, slow, stun, burn, bleed),
-  every projectile in list order (position, velocity, damage, pierce, life, ownership), every ground
+  velocity, health, facing, engagement, leap target/cooldown, cooldown, wind-up and its aim, slow,
+  stun, burn, bleed), every projectile in list order (position, velocity, damage, pierce, life,
+  ownership and boss activation), every ground
   item, the pending burst (rounds left, seconds to the next, aim, payload), each boss (position,
-  health, engagement, attack, elapsed, rest, melee and ranged attack indices, its attack-choice
-  RNG state, reward flag),
+  velocity, profile and phase, health, engagement, attack, elapsed and scheduled events, rest,
+  melee and ranged attack indices, its attack-choice RNG state, reward flag),
   the exit state and the elapsed tick — with doubles encoded by their IEEE bits and lists by length
   then elements. Presentation-only fields (stride distance, swing and flash visuals, aim direction)
-  are excluded. After N ticks of a fixed tape on a fixed seed it matches a committed golden value on
-  both targets, and a mutation test per state family changes it.
+  and Scrap-gain labels are excluded. After N ticks of a fixed tape on a fixed seed it matches a
+  committed golden value on both targets, and a mutation test per state family changes it.
 - Shooters and turrets are at most 35 % of any map's population; every map holds at least three
   archetypes; enemies stand on the route rather than pooling at the arena.
 - **P-44** Boss attack choice: a phase-three main boss with the player inside `MELEE_REACH`
   opens with a ranged attack in about 20 % of attacks over a long fixed-seed run (within ±5
-  points) and with the player at or beyond `RANGED_PREFERRED_PX` in about 80 %; a phase that holds
-  one kind never chooses the other; within a kind the attacks cycle in registry order; a pinned
-  seed's first twelve choices match one committed sequence on both targets; a mini-boss always Slams; every
-  telegraph, hit condition and dodge case of P-17 and P-35 is unchanged.
+  points) and with the player at or beyond `RANGED_PREFERRED_PX` in about 80 %; within a kind the
+  modules cycle in profile order; a pinned seed's first twelve choices match one committed sequence
+  on both targets; every telegraph, hit condition and dodge case of P-17 and P-35 is unchanged.
+- **P-60** Boss profiles and escalation: for a fixed run seed, all twenty assignments and their
+  signature choices are identical on JVM and Wasm and reconstruct identically on continue; adjacent
+  slots never share a primary pair; every mini-boss and every phase of every main boss contains
+  melee and ranged; only the declared modules occur in each map band; over the seed cohort every
+  legal pair and both signature kinds occur. The same module's damage is strictly increasing with
+  map index, a main version exceeds the mini version on the same map, and mean no-dodge boss damage
+  per second is strictly increasing from maps 1–3 to 4–6 to 7–10. The dodge bot still wins every
+  loot-floor-covered boss fight on every cohort seed.
+- **P-61** Pursuit across hazards: fixtures for a one- to three-tile spike strip, the widest
+  generated flat acid/void gap and the tallest generated step are each crossed by every engaged
+  ground archetype and by both boss ranks, with no swept lethal contact and a non-lethal supported
+  landing; a Flyer crosses the same committed span in flight. No unengaged enemy launches, a
+  fault-injected span beyond the measured envelope produces no launch, a rank-and-file trajectory
+  never enters protected arena ground, and no enemy attack damages the player during the committed
+  span or landing grace. Across the generation cohort every generated chase-direction obstacle is
+  within the corresponding real-box leap envelope.

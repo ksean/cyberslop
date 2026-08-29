@@ -13,6 +13,7 @@ class GenerationBudgetTest {
     @Test
     fun `generation and verification stay inside the per-map budget`() {
         val samples = mutableListOf<Long>()
+        val reports = mutableListOf<Pair<ULong, GenerationReport>>()
 
         // The widest map, which is the one the budget has to hold for.
         repeat(SAMPLES) { index ->
@@ -21,6 +22,7 @@ class GenerationBudgetTest {
             val generated = LevelGenerator.generate(seed, WIDEST_MAP)
             WitnessReplay.replay(generated.level, generated.witness)
             samples.add(System.nanoTime() - start)
+            reports += seed to generated.report
         }
 
         val sorted = samples.sorted()
@@ -29,7 +31,8 @@ class GenerationBudgetTest {
 
         assertTrue(
             p99 < BUDGET_MILLIS,
-            "p99 was ${p99} ms against a ${BUDGET_MILLIS} ms budget (median ${median} ms)",
+            "p99 was ${p99} ms against a ${BUDGET_MILLIS} ms budget (median ${median} ms; " +
+                "max attempts ${reports.maxOf { it.second.attempts }})",
         )
     }
 

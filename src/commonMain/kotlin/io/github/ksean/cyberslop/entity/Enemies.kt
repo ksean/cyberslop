@@ -15,7 +15,7 @@ enum class EnemyArchetype(
     Shooter(healthMultiplier = 0.8, shoots = true, ignoresTerrain = false, speedScale = 0.8),
     Brute(healthMultiplier = 2.2, shoots = false, ignoresTerrain = false, speedScale = 0.6),
     Flyer(healthMultiplier = 0.7, shoots = false, ignoresTerrain = true, speedScale = 1.1),
-    Turret(healthMultiplier = 1.5, shoots = true, ignoresTerrain = false, speedScale = 0.0),
+    Turret(healthMultiplier = 1.5, shoots = true, ignoresTerrain = false, speedScale = 0.45),
     ;
 
     /** Melee archetypes close on the player; the rest keep their distance or never move. */

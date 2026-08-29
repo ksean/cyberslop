@@ -81,7 +81,9 @@ Kotlin/Wasm and the JVM agree bit-for-bit on IEEE-754 `+ − × ÷ √`; they ma
 `sin`, `cos` or `pow`. Therefore (ENG-053, ENG-054):
 
 - Randomness is a first-party SplitMix64 over `ULong` with per-phase derived streams (`spine`,
-  `decor`, `enemy`, `loot`, `backdrop`), so a change in one phase cannot shift another's output.
+  `decor`, `enemy`, `loot`, `backdrop`, the run-wide `boss-roster`, and per-encounter boss attack
+  choice), so a change in one phase cannot shift another's output. Profile assignment is replayed
+  from the run seed on continue; it never consumes a mutable combat or loot stream.
 - Everything reachable from the tick uses basic arithmetic and comparisons; transcendentals go
   through `core.TrigTable`; exponential growth is repeated multiplication.
 - Non-finite values never enter hashed state.
@@ -112,4 +114,6 @@ Kotlin/Wasm and the JVM agree bit-for-bit on IEEE-754 `+ − × ÷ √`; they ma
   removes every alias.
 - **P-40** Simulation determinism: a digest of the whole rule-bearing simulation state after N
   ticks of a fixed tape on a fixed seed matches a committed golden value on both targets
-  (enemies.md lists the fields). Presentation-only fields are excluded.
+  (enemies.md lists the fields). Enemy/boss leap state, selected boss profiles, scheduled multi-hit
+  events and boss-projectile ownership are rule-bearing and included. Floating Scrap labels and
+  other presentation-only fields are excluded.
