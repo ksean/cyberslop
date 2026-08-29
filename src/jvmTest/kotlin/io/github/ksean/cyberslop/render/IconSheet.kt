@@ -112,6 +112,6 @@ object IconSheet {
         scale: Double,
         aim: Vec2,
     ) {
-        IconPainter.paint(builder, entry.icon, entry.weapon, x, y, scale, Layer.ItemHalo, Layer.Items, aim)
+        IconPainter.paint(builder, entry.icon, x, y, scale, Layer.ItemHalo, Layer.Items, Layer.ItemWear, aim)
     }
 }

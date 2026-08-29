@@ -726,7 +726,12 @@ class GameSimulation(
                 projectile.secondsLeft = 0.0
             }
         }
-        projectiles.forEach { if (it.spent) spent.add(HitIndicator(HitShape.Impact(it.position, it.velocity, it.fromPlayer), FLASH_VISIBLE_SECONDS, FLASH_VISIBLE_SECONDS)) }
+        projectiles.forEach {
+            if (it.spent) {
+                val psychic = it.weapon?.spec?.cls == io.github.ksean.cyberslop.combat.WeaponClass.Psychic
+                spent.add(HitIndicator(HitShape.Impact(it.position, it.velocity, it.fromPlayer, psychic), FLASH_VISIBLE_SECONDS, FLASH_VISIBLE_SECONDS))
+            }
+        }
         projectiles.removeAll { it.spent }
     }
 

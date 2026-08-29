@@ -163,9 +163,23 @@ powerups collected by walking over them, and permadeath with persistent unlocks.
 - **PROD-049:** Every weapon and powerup has its own icon, recognisable as the object it names; no
   two items share an icon; the same icon is drawn on the ground, in the player's hand and in the
   HUD.
-- **PROD-050:** A weapon's icon is outlined in a fixed red and a powerup's in a fixed blue. Kind is
-  also readable with colour removed: a powerup's icon sits inside a module casing, a weapon's does
-  not.
-- **PROD-051:** An icon stays legible on every sub-theme: the drawn halo-and-outline pair separates
-  in Rec. 709 luminance from that palette's sky, backdrop and tile colours by at least 40 of 255,
-  and no colour used for an item is used in the same frame for a hazard or a projectile.
+- **PROD-050:** A drop on the ground is ringed in a fixed colour by kind — a weapon in red, a
+  powerup in blue — and the ring is drawn only around a drop: never around the weapon in the
+  player's hand. Kind is also readable with colour removed: a powerup's icon sits inside a module
+  casing, a weapon's does not.
+- **PROD-078:** Inside the ring, an item is drawn in the colours of what it is made of, in the
+  game's worn dystopian register: wood is brown, metal is dull silver-grey, glass is dim, an
+  energy or psychic part glows; every metal and wooden stroke wide enough to carry one bears a
+  visible streak of rust or grain, and every item carries at least one such cue of wear, so the
+  weapon reads as aged, on the ground, in the hand and in the HUD alike.
+- **PROD-079:** A drop — a weapon or a powerup — hovers: it rises and falls a small, visible
+  distance about its resting position, continuously, rather than lying still. The hover is
+  presentation only: where the player must stand to pick the item up does not move.
+- **PROD-080:** A projectile is drawn with a glow, a body and a bright core, and a two-tone
+  tracer, in a colour that tells the player what fired it: a ranged weapon's shot is hot
+  brass-orange, a psychic weapon's violet, and an enemy's shot stays in the map's hazard colour
+  with its own brighter core.
+- **PROD-051:** An icon stays legible on every sub-theme: for every material colour and both ring
+  colours, the drawn halo-and-line pair separates in Rec. 709 luminance from that palette's sky,
+  backdrop and tile colours by at least 40 of 255, and no colour used for an item is used in the
+  same frame for a hazard or a projectile.

@@ -24,30 +24,33 @@ object IconPainter {
     fun paint(
         builder: SceneBuilder,
         icon: Icon,
-        weapon: Boolean,
         originX: Double,
         originY: Double,
         scale: Double,
         haloLayer: Layer,
         outlineLayer: Layer,
+        wearLayer: Layer,
         aim: Vec2 = Vec2.Right,
     ) {
         require(haloLayer.ordinal < outlineLayer.ordinal) {
             "$haloLayer is not under $outlineLayer, so the halo would paint over the icon"
+        }
+        require(outlineLayer.ordinal < wearLayer.ordinal) {
+            "$wearLayer is not over $outlineLayer, so a material could paint over its own weathering"
         }
         icon.paint(
             originX,
             originY,
             scale,
             aim,
-            IconBatchSink(builder, haloLayer, IconStyles.HALO, scale, halo = true),
+            IconBatchSink(builder, haloLayer, scale, halo = true),
         )
         icon.paint(
             originX,
             originY,
             scale,
             aim,
-            IconBatchSink(builder, outlineLayer, IconStyles.outlineOf(weapon), scale, halo = false),
+            IconBatchSink(builder, outlineLayer, scale, halo = false, wearLayer = wearLayer),
         )
     }
 }
@@ -57,26 +60,41 @@ object IconPainter {
  *
  * Widths come from [IconStyles] rather than from the icon, and they are snapped to `Scene`'s ladder,
  * so the batches an icon opens are drawn from a fixed vocabulary however many icons the frame holds
- * (ENG-064).
+ * (ENG-064). The colour pass draws each mark in its [Material]'s colour and, for a material that
+ * weathers, a streak along the stroke's rear (PROD-078) — the age of every blade and haft is a rule
+ * of the painter, not of forty-four authored icons.
  */
 class IconBatchSink(
     private val builder: SceneBuilder,
     private val layer: Layer,
-    private val style: String,
     private val scale: Double,
     private val halo: Boolean,
+    /** Where the weathering streaks go: structurally over [layer], for the reason [Layer.ItemWear] gives. */
+    private val wearLayer: Layer = layer,
 ) : IconSink {
-    override fun stroke(x1: Double, y1: Double, x2: Double, y2: Double, weight: StrokeWeight) {
-        val width =
-            if (halo) IconStyles.haloWidthOf(weight, scale) else IconStyles.widthOf(weight, scale)
-        builder.batch(layer, style, Primitive.Segment, width).segment(x1, y1, x2, y2)
+    override fun stroke(x1: Double, y1: Double, x2: Double, y2: Double, weight: StrokeWeight, material: Material) {
+        if (halo) {
+            builder.batch(layer, IconStyles.HALO, Primitive.Segment, IconStyles.haloWidthOf(weight, scale))
+                .segment(x1, y1, x2, y2)
+            return
+        }
+        builder.batch(layer, material.colour, Primitive.Segment, IconStyles.widthOf(weight, scale))
+            .segment(x1, y1, x2, y2)
+        val streak = material.weathering ?: return
+        val width = IconStyles.streakWidthOf(weight, scale) ?: return
+        val dx = x2 - x1
+        val dy = y2 - y1
+        builder.batch(wearLayer, streak, Primitive.Segment, width).segment(
+            x1 + dx * IconStyles.STREAK_FROM, y1 + dy * IconStyles.STREAK_FROM,
+            x1 + dx * IconStyles.STREAK_TO, y1 + dy * IconStyles.STREAK_TO,
+        )
     }
 
-    override fun dot(x: Double, y: Double, radius: Double) {
+    override fun dot(x: Double, y: Double, radius: Double, material: Material) {
         // The halo pass grows a dot by half the amount it widens a line, so a dot is edged like
         // everything else rather than swallowed by the line it sits on.
         // `radius` arrives in pixels: `Icon.paint` has already applied the scale.
         val grown = if (halo) radius + IconStyles.HALO_FRACTION * scale / 2.0 else radius
-        builder.batch(layer, style, Primitive.Dot).dot(x, y, grown)
+        builder.batch(layer, if (halo) IconStyles.HALO else material.colour, Primitive.Dot).dot(x, y, grown)
     }
 }

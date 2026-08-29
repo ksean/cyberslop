@@ -24,28 +24,178 @@ import kotlin.test.assertTrue
  */
 class PickupIconTest {
     @Test
-    fun `a weapon is outlined red and a powerup blue, whatever the theme`() {
+    fun `a weapon is ringed red and a powerup blue, whatever the theme`() {
         val sim = simulation()
         sim.items.add(GroundItem(dropAt(sim, 0.0), Weapons.of(WeaponId.SableCorpRailgun), null))
         sim.items.add(GroundItem(dropAt(sim, 40.0), null, Powerups.of(PowerupId.ChillProtocol)))
 
         val styles = itemStyles(compose(sim))
 
-        assertTrue(
-            IconStyles.WEAPON_OUTLINE in styles,
-            "no weapon outline in the drop layer; found $styles",
-        )
-        assertTrue(IconStyles.POWERUP_OUTLINE in styles, "no powerup outline; found $styles")
-        // Fixed rather than themed: the outlines must be nothing any palette hands out, or a player
-        // could not learn "red means weapon" on one map and rely on it on the next.
+        assertTrue(IconStyles.WEAPON_RING in styles, "no weapon ring in the drop layer; found $styles")
+        assertTrue(IconStyles.POWERUP_RING in styles, "no powerup ring; found $styles")
+        // Fixed rather than themed: the rings and materials must be nothing any palette hands out,
+        // or a player could not learn "red means weapon" on one map and rely on it on the next.
+        val fixed = ringColours() + materialColours()
         ThemeId.entries.forEach { theme ->
             val palette = Palettes.of(theme).colours
             assertTrue(
-                IconStyles.WEAPON_OUTLINE !in palette && IconStyles.POWERUP_OUTLINE !in palette,
-                "$theme hands out one of the drop outline colours, so on that map the outline is " +
-                    "whatever the theme already uses it for",
+                fixed.none { it in palette },
+                "$theme hands out one of the drop colours ${fixed.filter { it in palette }}",
             )
         }
+    }
+
+    /**
+     * P-51: the ring is a stroked circle of `KIND_RING × scale` about the icon's drawn origin, in
+     * the kind's colour, on the item layer over a halo. Measured from the segments themselves so
+     * the hover (P-52) cannot move the centre out from under the assertion.
+     */
+    @Test
+    fun `a drop's ring is a circle of the kind's colour at the icon's scale`() {
+        listOf(
+            Triple(WeaponId.BrokenBottle, IconStyles.WEAPON_RING, PickupLook.of(Weapons.of(WeaponId.BrokenBottle))),
+            Triple(WeaponId.VoiceOfTheDeadNet, IconStyles.WEAPON_RING, PickupLook.of(Weapons.of(WeaponId.VoiceOfTheDeadNet))),
+        ).forEach { (id, colour, look) ->
+            val sim = simulation().also { it.items.clear() }
+            sim.items.add(GroundItem(dropAt(sim, 0.0), Weapons.of(id), null))
+            val ring = ringOf(compose(sim), colour)
+
+            val expected = IconStyles.KIND_RING * Scene.PICKUP_PX * look.scale
+            assertTrue(ring.isNotEmpty(), "$id drew no $colour segment on the item layer")
+            ring.forEach { (radius, _) ->
+                assertTrue(abs(radius - expected) < RING_TOLERANCE, "$id's ring point sits at $radius, not $expected")
+            }
+            assertTrue(ring.size >= MIN_RING_SEGMENTS, "$id's ring is ${ring.size} segments; that is a polygon")
+        }
+        val sim = simulation().also { it.items.clear() }
+        sim.items.add(GroundItem(dropAt(sim, 0.0), null, Powerups.of(PowerupId.ForkBomb)))
+        assertTrue(ringOf(compose(sim), IconStyles.POWERUP_RING).isNotEmpty(), "a powerup drew no blue ring")
+        assertTrue(ringOf(compose(sim), IconStyles.WEAPON_RING).isEmpty(), "a powerup drew a red ring")
+    }
+
+    /** Review round 1: "over a halo" must be asserted of the ring's own halo, on the halo layer. */
+    @Test
+    fun `a drop's ring sits on a halo ring of the same radius on the halo layer`() {
+        val sim = simulation().also { it.items.clear() }
+        sim.items.add(GroundItem(dropAt(sim, 0.0), Weapons.of(WeaponId.ChromeFang), null))
+        val frame = compose(sim)
+        val centre = ringCentreOf(frame, IconStyles.WEAPON_RING)
+        val radius = IconStyles.KIND_RING * Scene.PICKUP_PX * PickupLook.of(Weapons.of(WeaponId.ChromeFang)).scale
+
+        val haloPoints = frame.batches
+            .filter { it.layer == Layer.ItemHalo && it.style == IconStyles.HALO && it.primitive == Primitive.Segment }
+            .flatMap { batch -> (0 until batch.size).map { n -> Vec2(batch[n * 4], batch[n * 4 + 1]) } }
+            .count { abs((it - centre).length - radius) < RING_TOLERANCE }
+        assertEquals(RING_CHORDS, haloPoints, "the ring's halo is not a $RING_CHORDS-chord circle under it")
+        assertEquals(RING_CHORDS, ringOf(frame, IconStyles.WEAPON_RING).size, "the ring itself is not $RING_CHORDS chords")
+        assertTrue(Layer.ItemHalo.ordinal < Layer.Items.ordinal)
+    }
+
+    /** Review round 1: the powerup half of a paired award hovers too, out of step with its weapon. */
+    @Test
+    fun `both halves of a paired drop hover, out of step, and neither item moves`() {
+        val sim = simulation().also { it.items.clear() }
+        val item = GroundItem(dropAt(sim, 0.0), Weapons.of(WeaponId.ChromeFang), Powerups.of(PowerupId.ForkBomb))
+        sim.items.add(item)
+        val before = item.position to item.powerupPosition
+
+        val red = (0 until SAMPLES).map { ringCentreOf(compose(sim, Scene.HOVER_PERIOD * it / SAMPLES), IconStyles.WEAPON_RING).y }
+        val blue = (0 until SAMPLES).map { ringCentreOf(compose(sim, Scene.HOVER_PERIOD * it / SAMPLES), IconStyles.POWERUP_RING).y }
+        assertTrue(abs(red.max() - red.min() - 2 * Scene.HOVER_PX) < HOVER_TOLERANCE, "the weapon half swung ${red.max() - red.min()}")
+        assertTrue(abs(blue.max() - blue.min() - 2 * Scene.HOVER_PX) < HOVER_TOLERANCE, "the powerup half swung ${blue.max() - blue.min()}")
+        val redPeak = red.indexOf(red.min())
+        val bluePeak = blue.indexOf(blue.min())
+        assertTrue(redPeak != bluePeak, "the two halves peak together at sample $redPeak; the phase is not by position")
+        assertEquals(before, item.position to item.powerupPosition, "drawing moved the paired item")
+    }
+
+    /** Review round 1: the browser frame lies between two ticks; the hover follows the frame, not the tick. */
+    @Test
+    fun `the hover follows the interpolated frame time`() {
+        val sim = simulation().also { it.items.clear() }
+        sim.items.add(GroundItem(dropAt(sim, 0.0), Weapons.of(WeaponId.ChromeFang), null))
+        val t = 0.7
+        val tick = io.github.ksean.cyberslop.physics.TICK_SECONDS
+
+        val atTick = ringCentreOf(compose(sim, t, alpha = 1.0), IconStyles.WEAPON_RING).y
+        val midway = ringCentreOf(compose(sim, t, alpha = 0.5), IconStyles.WEAPON_RING).y
+        val earlier = ringCentreOf(compose(sim, t - 0.5 * tick, alpha = 1.0), IconStyles.WEAPON_RING).y
+
+        assertTrue(abs(midway - earlier) < 1e-9, "a frame halfway to the tick ($midway) is not drawn at the halfway time ($earlier)")
+        assertTrue(abs(midway - atTick) > 1e-6, "the frame time made no difference")
+        assertEquals(0.0, Scene.presentationTime(0.0, 0.0), "the first frame's time went negative")
+    }
+
+    /** Review round 1: a rarer drop's wider material batch opens after a commoner drop's streak batch. */
+    @Test
+    fun `weathering is on its own layer over the materials, whatever the mix of tiers`() {
+        val sim = simulation().also { it.items.clear() }
+        sim.items.add(GroundItem(dropAt(sim, 0.0), Weapons.of(WeaponId.CorpoRiotBaton), null))
+        sim.items.add(GroundItem(dropAt(sim, 40.0), Weapons.of(WeaponId.SableCorpRailgun), null))
+        val frame = compose(sim)
+        val icons = listOf(WeaponIcons.of(WeaponId.CorpoRiotBaton), WeaponIcons.of(WeaponId.SableCorpRailgun))
+        val scales = listOf(Weapons.of(WeaponId.CorpoRiotBaton), Weapons.of(WeaponId.SableCorpRailgun))
+            .map { Scene.PICKUP_PX * PickupLook.of(it).scale }
+
+        // Steel's rust is also the Rust material's colour, so a style cannot tell a streak from a
+        // rusted part on the material layer; the count on the wear layer can — one per weathered
+        // stroke of each icon, and none of them anywhere else.
+        fun expected(material: Material) = icons.zip(scales).sumOf { (icon, scale) ->
+            icon.strokes.count { it.material == material && IconStyles.streakWidthOf(it.weight, scale) != null }
+        }
+        fun onWear(style: String) = frame.batches
+            .filter { it.layer == Layer.ItemWear && it.style == style && it.primitive == Primitive.Segment }
+            .sumOf { it.size }
+        assertTrue(expected(Material.Steel) > 0 && expected(Material.Wood) > 0, "fixture: nothing to weather")
+        assertEquals(expected(Material.Steel), onWear(Material.Steel.weathering!!), "steel rust streaks on the wear layer")
+        assertEquals(expected(Material.Wood), onWear(Material.Wood.weathering!!), "wood grain streaks on the wear layer")
+        assertTrue(
+            frame.batches.none { it.layer == Layer.ItemWear && it.style !in setOf(Material.Steel.weathering, Material.Wood.weathering) },
+            "something other than weathering is on the wear layer",
+        )
+        assertTrue(
+            frame.batches.none { it.layer == Layer.Items && it.style == Material.Wood.weathering },
+            "wood grain is on the material layer",
+        )
+    }
+
+    /**
+     * P-52: a drop hovers (PROD-079). The ring's centre — and with it the halo and the pips — rises
+     * and falls by `HOVER_PX` about the rest position over `HOVER_PERIOD`, and the simulation's own
+     * item never moves.
+     */
+    @Test
+    fun `a drop hovers about its resting position and the item itself does not move`() {
+        val sim = simulation().also { it.items.clear() }
+        val item = GroundItem(dropAt(sim, 0.0), Weapons.of(WeaponId.ChromeFang), null)
+        sim.items.add(item)
+        val before = item.position
+
+        val samples = (0 until SAMPLES).map { step ->
+            val t = Scene.HOVER_PERIOD * step / SAMPLES
+            t to compose(sim, t)
+        }
+        val centres = samples.map { (_, frame) -> ringCentreOf(frame, IconStyles.WEAPON_RING).y }
+        val swing = centres.max() - centres.min()
+        assertTrue(abs(swing - 2 * Scene.HOVER_PX) < HOVER_TOLERANCE, "the drop swung $swing px, not ${2 * Scene.HOVER_PX}")
+        assertTrue(centres.toSet().size > 2, "the drop sat still: $centres")
+
+        val rest = ringCentreOf(compose(sim, 0.0), IconStyles.WEAPON_RING)
+        val later = ringCentreOf(compose(sim, Scene.HOVER_PERIOD), IconStyles.WEAPON_RING)
+        assertTrue(abs(rest.y - later.y) < HOVER_TOLERANCE, "a period later the drop was at ${later.y}, not ${rest.y}")
+        assertEquals(rest.x, later.x, "the hover moved the drop sideways")
+
+        // The halo and the pips travel with the ring, measured at the sample where the drop sat
+        // highest — the phase depends on where the drop is, so no fixed time is its peak.
+        val peak = samples[centres.indexOf(centres.min())].first
+        val ringShift = ringCentreOf(compose(sim, peak), IconStyles.WEAPON_RING).y - rest.y
+        val pipShift = pipYOf(compose(sim, peak)) - pipYOf(compose(sim, 0.0))
+        val haloShift = haloCentreOf(compose(sim, peak)) - haloCentreOf(compose(sim, 0.0))
+        assertTrue(abs(ringShift) > 0.5, "at its peak the drop had not moved from its rest: $ringShift")
+        assertTrue(abs(pipShift - ringShift) < HOVER_TOLERANCE, "the pips shifted $pipShift against the ring's $ringShift")
+        assertTrue(abs(haloShift - ringShift) < HOVER_TOLERANCE, "the halo shifted $haloShift against the ring's $ringShift")
+
+        assertEquals(before, item.position, "drawing moved the item in the simulation")
     }
 
     /**
@@ -56,10 +206,12 @@ class PickupIconTest {
      * What the pair guarantees is that one of the two always separates.
      */
     @Test
-    fun `an outline and its halo separate from every palette's ground and sky`() {
+    fun `every material and ring colour separates with its halo from every palette's ground and sky`() {
         val halo = Palette.luminanceOf(IconStyles.HALO)
 
-        listOf(IconStyles.WEAPON_OUTLINE, IconStyles.POWERUP_OUTLINE).forEach { outline ->
+        // The materials and the rings, which meet the background; a weathering streak lies on
+        // its own material and is judged against it on the sheet, not here.
+        (ringColours() + Material.entries.map { it.colour }).forEach { outline ->
             val line = Palette.luminanceOf(outline)
             ThemeId.entries.forEach { theme ->
                 val palette = Palettes.of(theme)
@@ -86,7 +238,7 @@ class PickupIconTest {
 
         val drops = itemStyles(frame)
         val elsewhere = frame.batches
-            .filter { it.layer == Layer.Hazard || it.layer == Layer.Effects }
+            .filter { it.layer == Layer.Hazard || (it.layer.ordinal >= Layer.ShotGlow.ordinal && it.layer.ordinal <= Layer.Effects.ordinal) }
             .map { it.style }
             .toSet()
 
@@ -95,6 +247,9 @@ class PickupIconTest {
             drops.intersect(elsewhere).isEmpty(),
             "${drops.intersect(elsewhere)} is used for both a drop and a hazard or projectile",
         )
+        // And against the fixed shot looks by construction, not only by what this frame happened to draw.
+        val fixed = (ringColours() + materialColours()).intersect(ShotLooks.fixedColours.toSet())
+        assertTrue(fixed.isEmpty(), "$fixed is both an item colour and a shot colour")
     }
 
     /** Shape is spent on identity now, so rarity has to be carried by something else (PROD-044). */
@@ -154,7 +309,7 @@ class PickupIconTest {
         val sim = simulation().also { it.items.clear(); it.stockOneOfEach(1) }
 
         val onItems = compose(sim).batches
-            .count { it.layer == Layer.Items || it.layer == Layer.ItemHalo }
+            .count { it.layer == Layer.Items || it.layer == Layer.ItemHalo || it.layer == Layer.ItemWear }
 
         assertTrue(
             onItems <= MAX_ITEM_BATCHES,
@@ -231,26 +386,81 @@ class PickupIconTest {
         sim.items.add(GroundItem(dropAt(sim, 0.0), Weapons.of(id), null))
         val frame = compose(sim)
 
-        val outline = frame.batches.filter {
-            it.layer == Layer.Items && it.style == IconStyles.WEAPON_OUTLINE
+        // The icon's own extent is its halo pass, which is one stroke per stroke of the icon;
+        // the ring is measured elsewhere and the pips are the only red dots on the layer.
+        val halo = frame.batches.filter {
+            it.layer == Layer.ItemHalo && it.style == IconStyles.HALO && it.primitive == Primitive.Segment &&
+                it.width < RING_HALO_WIDTH_CEILING
         }
         var low = Double.MAX_VALUE
         var high = -Double.MAX_VALUE
-        outline.filter { it.primitive == Primitive.Segment }.forEach { batch ->
+        halo.forEach { batch ->
             for (index in 0 until batch.size * Primitive.Segment.stride step 2) {
                 val x = batch[index]
                 if (x < low) low = x
                 if (x > high) high = x
             }
         }
-        val pips = outline.filter { it.primitive == Primitive.Dot }.sumOf { it.size } -
-            WeaponIcons.of(id).dots.size
+        val pips = frame.batches
+            .filter { it.layer == Layer.Items && it.style == IconStyles.WEAPON_RING && it.primitive == Primitive.Dot }
+            .sumOf { it.size }
         return Drawn(high - low, pips)
+    }
+
+    private fun ringColours() = listOf(IconStyles.WEAPON_RING, IconStyles.POWERUP_RING)
+
+    private fun materialColours() = Material.entries.flatMap { listOfNotNull(it.colour, it.weathering) }.distinct()
+
+    /** Every segment endpoint of [colour] on the item layer, as (distance from their centroid, point). */
+    private fun ringOf(frame: DrawList, colour: String): List<Pair<Double, Vec2>> {
+        val points = frame.batches
+            .filter { it.layer == Layer.Items && it.style == colour && it.primitive == Primitive.Segment }
+            .flatMap { batch ->
+                (0 until batch.size).map { index ->
+                    val at = index * Primitive.Segment.stride
+                    Vec2(batch[at], batch[at + 1])
+                }
+            }
+        if (points.isEmpty()) return emptyList()
+        val centre = Vec2(points.sumOf { it.x } / points.size, points.sumOf { it.y } / points.size)
+        return points.map { point ->
+            val dx = point.x - centre.x
+            val dy = point.y - centre.y
+            kotlin.math.sqrt(dx * dx + dy * dy) to point
+        }
+    }
+
+    private fun ringCentreOf(frame: DrawList, colour: String): Vec2 {
+        val points = ringOf(frame, colour).map { it.second }
+        assertTrue(points.isNotEmpty(), "no $colour ring in the frame")
+        return Vec2(points.sumOf { it.x } / points.size, points.sumOf { it.y } / points.size)
+    }
+
+    private fun pipYOf(frame: DrawList): Double {
+        val pips = frame.batches.filter {
+            it.layer == Layer.Items && it.style == IconStyles.WEAPON_RING && it.primitive == Primitive.Dot
+        }
+        assertTrue(pips.isNotEmpty(), "no pips in the frame")
+        return pips.first()[1]
+    }
+
+    private fun haloCentreOf(frame: DrawList): Double {
+        val halo = frame.batches.filter { it.layer == Layer.ItemHalo && it.primitive == Primitive.Segment }
+        var sum = 0.0
+        var count = 0
+        halo.forEach { batch ->
+            for (index in 0 until batch.size) {
+                sum += batch[index * Primitive.Segment.stride + 1]
+                count++
+            }
+        }
+        assertTrue(count > 0, "no halo in the frame")
+        return sum / count
     }
 
     private fun itemStyles(frame: DrawList): Set<String> =
         frame.batches
-            .filter { it.layer == Layer.Items || it.layer == Layer.ItemHalo }
+            .filter { it.layer == Layer.Items || it.layer == Layer.ItemHalo || it.layer == Layer.ItemWear }
             .map { it.style }
             .toSet()
 
@@ -266,13 +476,14 @@ class PickupIconTest {
         "haze" to palette.haze,
     )
 
-    private fun compose(sim: GameSimulation): DrawList = Scene.compose(
+    private fun compose(sim: GameSimulation, timeSeconds: Double = 0.0, alpha: Double = 1.0): DrawList = Scene.compose(
         sim,
         Camera(0.0, 0.0, VIEW_WIDTH, VIEW_HEIGHT),
         Backdrops.of(SEED, sim.level),
         HudModel.of(sim.run, sim.level.theme, MAPS, sim.boss.spec.name, sim.boss.healthFraction),
-        0.0,
+        timeSeconds,
         SceneBuilder(),
+        alpha = alpha,
     )
 
     /** On screen, so the drop is drawn rather than culled. */
@@ -296,6 +507,37 @@ class PickupIconTest {
          */
         const val SPACING = 1.0
         const val MIN_SEPARATION = 40.0
-        const val MAX_ITEM_BATCHES = 24
+        /**
+         * P-31's `ITEM_BATCHES`, derived from the vocabulary in `specs/presentation.md` (Item
+         * icons): every style the item layers may open, times the distinct ladder widths a weight
+         * collapses onto across the five tiers — derived below, at most four (`Slab` is 3.5, 4.5,
+         * 6, 6, 8). Halo: three weights of segment, one dot, and
+         * the ring's halo. Items: five materials and two streak colours over three weights of
+         * segment, five material dots, two ring colours over one width, two pip dot styles.
+         */
+        private val TIER_SCALES = (0 until 5).map {
+            Scene.PICKUP_PX * (PickupLook.MIN_SCALE + (PickupLook.MAX_SCALE - PickupLook.MIN_SCALE) * it / 4.0)
+        }
+        private fun distinct(width: (StrokeWeight, Double) -> Double?): Int =
+            StrokeWeight.entries.sumOf { weight -> TIER_SCALES.mapNotNull { width(weight, it) }.toSet().size }
+        private val HALO_WIDTHS = distinct { w, s -> IconStyles.haloWidthOf(w, s) }
+        private val BODY_WIDTHS = distinct { w, s -> IconStyles.widthOf(w, s) }
+        private val STREAK_WIDTHS = distinct { w, s -> IconStyles.streakWidthOf(w, s) }
+        private val RING_HALO_WIDTHS = TIER_SCALES.map { IconStyles.haloWidthOf(StrokeWeight.Hair, it) }.toSet().size
+        private val RING_WIDTHS = TIER_SCALES.map { IconStyles.widthOf(StrokeWeight.Hair, it) }.toSet().size
+        private const val MATERIALS = 5
+        private const val STREAK_COLOURS = 2
+        private const val RING_COLOURS = 2
+        val MAX_ITEM_BATCHES: Int =
+            (HALO_WIDTHS + 1 + RING_HALO_WIDTHS) +
+                (MATERIALS * BODY_WIDTHS + MATERIALS + RING_COLOURS * RING_WIDTHS + RING_COLOURS) +
+                (STREAK_COLOURS * STREAK_WIDTHS)
+        const val RING_TOLERANCE = 0.5
+        const val MIN_RING_SEGMENTS = 12
+        const val RING_CHORDS = 16
+        const val SAMPLES = 16
+        const val HOVER_TOLERANCE = 0.05
+        /** A ring's halo is wider than any icon stroke's halo could be at Ascended scale. */
+        const val RING_HALO_WIDTH_CEILING = 1e9
     }
 }

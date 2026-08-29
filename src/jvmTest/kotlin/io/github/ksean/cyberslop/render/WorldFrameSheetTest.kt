@@ -66,7 +66,7 @@ class WorldFrameSheetTest {
 
         assertTrue(out.length() > 0, "no frame was written")
         assertTrue(
-            frame.batches.any { it.layer == Layer.Items && it.style == IconStyles.WEAPON_OUTLINE },
+            frame.batches.any { it.layer == Layer.Items && it.style == IconStyles.WEAPON_RING },
             "the frame drew no weapon drop, so the sheet shows nothing worth looking at",
         )
     }

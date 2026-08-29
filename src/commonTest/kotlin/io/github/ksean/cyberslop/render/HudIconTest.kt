@@ -40,12 +40,12 @@ class HudIconTest {
 
         val frame = compose(weapon, *held.toTypedArray())
 
-        // The display's own layers only: the same frame also draws the weapon in the player's
-        // hand, in the same red, which would otherwise be counted twice.
+        // The display's own halo layer only: the same frame also draws the weapon in the player's
+        // hand, in the same materials, which would otherwise be counted twice. The halo pass is
+        // one stroke per icon stroke; the colour pass adds a streak per weathered stroke.
         val drawn = frame.batches
             .filter {
-                it.layer == Layer.HudOverlay && it.primitive == Primitive.Segment &&
-                    (it.style == IconStyles.WEAPON_OUTLINE || it.style == IconStyles.POWERUP_OUTLINE)
+                it.layer == Layer.Hud && it.primitive == Primitive.Segment && it.style == IconStyles.HALO
             }
             .sumOf { it.size }
 
@@ -56,13 +56,18 @@ class HudIconTest {
         )
     }
 
+    /** P-51: the display draws the icon in its materials and wears no kind ring. */
     @Test
-    fun `a weapon icon is red and a powerup icon blue in the display too`() {
+    fun `the display draws materials and no kind ring`() {
         val frame = compose(WeaponId.ChromeFang, PowerupId.ForkBomb)
-        val styles = frame.batches.filter { it.layer == Layer.HudOverlay }.map { it.style }.toSet()
+        val styles = frame.batches
+            .filter { it.layer == Layer.HudOverlay || it.layer == Layer.Hud || it.layer == Layer.HudWear }
+            .map { it.style }
+            .toSet()
 
-        assertTrue(IconStyles.WEAPON_OUTLINE in styles, "no red weapon icon in the display")
-        assertTrue(IconStyles.POWERUP_OUTLINE in styles, "no blue powerup icon in the display")
+        assertTrue(Material.Steel.colour in styles, "no steel in the display: $styles")
+        assertTrue(IconStyles.WEAPON_RING !in styles, "the display ringed the weapon")
+        assertTrue(IconStyles.POWERUP_RING !in styles, "the display ringed a powerup")
     }
 
     /** PROD-004's path is text, and it must not have moved. */

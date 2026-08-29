@@ -356,8 +356,11 @@ sealed interface HitShape {
     /** A blast, pull or orbit at its resolved [radius]. */
     data class Ring(val centre: Vec2, val radius: Double) : HitShape
 
-    /** A projectile spent this tick — by a hit or by terrain — where it stopped and how it was moving. */
-    data class Impact(val at: Vec2, val velocity: Vec2, val fromPlayer: Boolean) : HitShape
+    /**
+     * A projectile spent this tick — by a hit or by terrain — where it stopped, how it was moving
+     * and whether a psychic build fired it, so it is drawn as the shot it was (PROD-080).
+     */
+    data class Impact(val at: Vec2, val velocity: Vec2, val fromPlayer: Boolean, val psychic: Boolean = false) : HitShape
 }
 
 data class HitIndicator(

@@ -6,6 +6,7 @@ import io.github.ksean.cyberslop.core.TrigTable
 import io.github.ksean.cyberslop.core.Vec2
 import io.github.ksean.cyberslop.entity.AttackVisual
 import io.github.ksean.cyberslop.physics.Physics
+import io.github.ksean.cyberslop.physics.TICK_SECONDS
 import io.github.ksean.cyberslop.sim.GameSimulation
 import io.github.ksean.cyberslop.sim.HitShape
 import io.github.ksean.cyberslop.sim.LiveBoss
@@ -51,6 +52,12 @@ object Scene {
      * to 53 px at Ascended.
      */
     const val PICKUP_PX = 14.0
+
+    /** How far a drop hovers above and below its resting position, in screen px (PROD-079). */
+    const val HOVER_PX = 4.0
+
+    /** One rise and fall of a hovering drop, in seconds. */
+    const val HOVER_PERIOD = 1.8
 
     /**
      * Snaps a stroke width onto a bounded ladder.
@@ -102,7 +109,7 @@ object Scene {
         tiles(builder, palette, sim.level, camera)
         arenas(builder, palette, sim.level, camera)
         jets(builder, palette, sim.level, camera, timeSeconds)
-        pickups(builder, sim, camera)
+        pickups(builder, sim, camera, presentationTime(timeSeconds, alpha))
         enemies(builder, palette, sim, camera, timeSeconds)
         bosses(builder, palette, sim, camera)
         projectiles(builder, palette, sim, camera)
@@ -348,23 +355,64 @@ object Scene {
         builder: SceneBuilder,
         sim: GameSimulation,
         camera: Camera,
+        timeSeconds: Double,
     ) {
         sim.items.forEach { item ->
             // A paired award (weapon and powerup on one item) draws both, the powerup a tile to
             // the right, so it looks like the two drops it resolves as.
-            item.weapon?.let { pickup(builder, camera, item.position, PickupLook.of(it), WeaponIcons.of(it.id)) }
-            item.powerup?.let { pickup(builder, camera, item.powerupPosition, PickupLook.of(it), PowerupIcons.of(it.id)) }
+            item.weapon?.let {
+                pickup(builder, camera, item.position, PickupLook.of(it), WeaponIcons.of(it.id), timeSeconds)
+            }
+            item.powerup?.let {
+                pickup(builder, camera, item.powerupPosition, PickupLook.of(it), PowerupIcons.of(it.id), timeSeconds)
+            }
         }
     }
 
-    private fun pickup(builder: SceneBuilder, camera: Camera, at: Vec2, look: PickupLook, icon: Icon) {
+    /**
+     * A drop: its icon in its materials, ringed in its kind's colour, hovering (PROD-050, PROD-078,
+     * PROD-079). The ring is drawn here and nowhere else, which is what keeps it off the hand and
+     * out of the HUD; the hover is an offset on the drawn origin only, so where the player must
+     * stand to collect the item is the simulation's business alone.
+     */
+    private fun pickup(
+        builder: SceneBuilder,
+        camera: Camera,
+        at: Vec2,
+        look: PickupLook,
+        icon: Icon,
+        timeSeconds: Double,
+    ) {
         val x = (at.x - camera.x) * ZOOM
-        val y = (at.y - camera.y) * ZOOM
+        val y = (at.y - camera.y) * ZOOM - hoverOffset(timeSeconds, at.x)
         if (x < -OFF_SCREEN || x > camera.viewWidth * ZOOM + OFF_SCREEN) return
 
         val scale = PICKUP_PX * look.scale
-        IconPainter.paint(builder, icon, look.weapon, x, y, scale, Layer.ItemHalo, Layer.Items)
-        tierPips(builder, look, x, y + scale + PIP_DROP)
+        IconPainter.paint(builder, icon, x, y, scale, Layer.ItemHalo, Layer.Items, Layer.ItemWear)
+        kindRing(builder, look, x, y, scale)
+        tierPips(builder, look, x, y + scale * IconStyles.KIND_RING + PIP_DROP)
+    }
+
+    /**
+     * The time a frame shows: the tick's time less the fraction of a tick the frame has not yet
+     * reached. The player and camera are interpolated by [alpha] (ENG-062), so a drop that hovered
+     * at the tick's time alone would step while they slide on a display faster than the tick rate.
+     */
+    fun presentationTime(timeSeconds: Double, alpha: Double): Double =
+        (timeSeconds - (1.0 - alpha) * TICK_SECONDS).coerceAtLeast(0.0)
+
+    /**
+     * How far above its rest a drop at world [x] is drawn at [timeSeconds] (`specs/presentation.md`,
+     * Hover): a sine of the period, phased by position so neighbouring drops are out of step.
+     */
+    fun hoverOffset(timeSeconds: Double, x: Double): Double =
+        HOVER_PX * TrigTable.sinDegrees(360.0 * timeSeconds / HOVER_PERIOD + x * HOVER_PHASE_DEGREES_PER_PX)
+
+    private fun kindRing(builder: SceneBuilder, look: PickupLook, x: Double, y: Double, scale: Double) {
+        val radius = IconStyles.KIND_RING * scale
+        val at = Vec2(x, y)
+        ring(builder, IconStyles.HALO, at, radius, Layer.ItemHalo, IconStyles.haloWidthOf(StrokeWeight.Hair, scale), KIND_RING_SEGMENTS)
+        ring(builder, IconStyles.ringOf(look.weapon), at, radius, Layer.Items, IconStyles.widthOf(StrokeWeight.Hair, scale), KIND_RING_SEGMENTS)
     }
 
     /**
@@ -378,7 +426,7 @@ object Scene {
         val halo = builder.batch(Layer.ItemHalo, IconStyles.HALO, Primitive.Dot)
         val pips = builder.batch(
             Layer.Items,
-            IconStyles.outlineOf(look.weapon),
+            IconStyles.ringOf(look.weapon),
             Primitive.Dot,
         )
         val first = centreX - (count - 1) * PIP_PITCH / 2.0
@@ -714,13 +762,13 @@ object Scene {
                 IconPainter.paint(
                     builder,
                     heldIcon,
-                    weapon = true,
                     originX = handX + pose.weaponAim.x * scale,
                     originY = handY + pose.weaponAim.y * scale,
                     scale = scale,
                     // Over the arm that holds it, under nothing else the actor draws.
                     haloLayer = Layer.ActorFront,
                     outlineLayer = Layer.ActorTrim,
+                    wearLayer = Layer.ActorWear,
                     aim = pose.weaponAim,
                 )
             }
@@ -853,18 +901,17 @@ object Scene {
             // it, further along the later in the window.
             val aimed = Vec2((live.aimedX - camera.x) * ZOOM, feet.y)
             val bandY = feet.y
-            val shots = builder.batch(Layer.Effects, palette.hazard, Primitive.Segment, strokeWidth(TRACER_WIDTH))
             val left = aimed.x - LiveBoss.VOLLEY_WIDTH * ZOOM
             val right = aimed.x + LiveBoss.VOLLEY_WIDTH * ZOOM
-            shots.segment(left, bandY, right, bandY)
-            val bodies = builder.batch(Layer.Effects, palette.hazard, Primitive.Dot)
+            builder.batch(Layer.Effects, palette.hazard, Primitive.Segment, strokeWidth(TRACER_WIDTH))
+                .segment(left, bandY, right, bandY)
+            val look = ShotLooks.enemy(palette)
             val progress = 1.0 - flash.strength
             for (n in 0 until FAN_DOTS) {
                 val landing = Vec2(left + (right - left) * n / (FAN_DOTS - 1), bandY)
                 val head = barrel + (landing - barrel) * progress
                 val tail = barrel + (landing - barrel) * (progress - FAN_TRACER).coerceAtLeast(0.0)
-                bodies.dot(head.x, head.y, FAN_DOT_PX)
-                shots.segment(head.x, head.y, tail.x, tail.y)
+                shotMarks(builder, look, head, tail, FAN_DOT_PX)
             }
         } else {
             val swing = SwingVisual(
@@ -922,36 +969,39 @@ object Scene {
         sim: GameSimulation,
         camera: Camera,
     ) {
-        // A body and a tracer (PROD-071): the dot is the shot, the segment behind it is
-        // TRACER_SECONDS of its travel, so a shot reads as a line of flight rather than a
-        // floating point. Two batches per side, never one per shot.
-        val mineStyle = palette.glow[palette.glow.size - 1]
-        val mine = builder.batch(Layer.Effects, mineStyle, Primitive.Dot)
-        val mineTracer = builder.batch(Layer.Effects, mineStyle, Primitive.Segment, strokeWidth(TRACER_WIDTH))
-        val theirs = builder.batch(Layer.Effects, palette.hazard, Primitive.Dot)
-        val theirTracer = builder.batch(Layer.Effects, palette.hazard, Primitive.Segment, strokeWidth(TRACER_WIDTH))
+        // Four marks in the shooter's look (PROD-071, PROD-080): glow, body and core dots at the
+        // shot, and a two-tone tracer back along TRACER_SECONDS of its travel, so a shot reads as a
+        // lit line of flight rather than a floating point. Five batches per look, never one per shot.
         sim.projectiles.forEach { shot ->
-            val x = (shot.position.x - camera.x) * ZOOM
-            val y = (shot.position.y - camera.y) * ZOOM
-            (if (shot.fromPlayer) mine else theirs).dot(x, y, shot.radius * ZOOM)
-            (if (shot.fromPlayer) mineTracer else theirTracer).segment(
-                x, y,
-                x - shot.velocity.x * TRACER_SECONDS * ZOOM, y - shot.velocity.y * TRACER_SECONDS * ZOOM,
-            )
+            val head = Vec2((shot.position.x - camera.x) * ZOOM, (shot.position.y - camera.y) * ZOOM)
+            shotMarks(builder, ShotLooks.of(shot, palette), head, head - shot.velocity * (TRACER_SECONDS * ZOOM), shot.radius * ZOOM)
         }
         // A shot spent inside the tick it was fired was never in the list above; its last line of
         // flight is kept for the flash window so a point-blank hit is still seen to go somewhere.
         sim.impacts.forEach { hit ->
             val impact = hit.shape as? HitShape.Impact ?: return@forEach
-            val x = (impact.at.x - camera.x) * ZOOM
-            val y = (impact.at.y - camera.y) * ZOOM
+            val head = Vec2((impact.at.x - camera.x) * ZOOM, (impact.at.y - camera.y) * ZOOM)
             // Thins with the window like every indicator; the ladder bounds how many batches open.
-            val style = if (impact.fromPlayer) mineStyle else palette.hazard
-            builder.batch(Layer.Effects, style, Primitive.Segment, strokeWidth(TRACER_WIDTH * hit.strength)).segment(
-                x, y,
-                x - impact.velocity.x * TRACER_SECONDS * ZOOM, y - impact.velocity.y * TRACER_SECONDS * ZOOM,
+            shotMarks(
+                builder, ShotLooks.of(impact, palette), head,
+                head - impact.velocity * (TRACER_SECONDS * ZOOM), IMPACT_PX * hit.strength, hit.strength,
             )
         }
+    }
+
+    /**
+     * One shot's marks (`specs/presentation.md`, Weapon effects): a glow dot at [SHOT_GLOW] × the
+     * radius, the body at the radius, the core at [SHOT_CORE] ×, and the tracer as a bloom in the
+     * glow colour under a line in the core colour. On three layers, glow under body under core,
+     * because an impact's widths thin with its window and a fresher impact would otherwise open
+     * its wider tracer batch after an older one's dots (review round 1).
+     */
+    private fun shotMarks(builder: SceneBuilder, look: ShotLook, head: Vec2, tail: Vec2, radius: Double, strength: Double = 1.0) {
+        builder.batch(Layer.ShotGlow, look.glow, Primitive.Segment, strokeWidth(TRACER_BLOOM_WIDTH * strength)).segment(head.x, head.y, tail.x, tail.y)
+        builder.batch(Layer.ShotGlow, look.glow, Primitive.Dot).dot(head.x, head.y, radius * SHOT_GLOW)
+        builder.batch(Layer.ShotBody, look.body, Primitive.Dot).dot(head.x, head.y, radius)
+        builder.batch(Layer.ShotCore, look.core, Primitive.Segment, strokeWidth(TRACER_WIDTH * strength)).segment(head.x, head.y, tail.x, tail.y)
+        builder.batch(Layer.ShotCore, look.core, Primitive.Dot).dot(head.x, head.y, radius * SHOT_CORE)
     }
 
     /**
@@ -989,11 +1039,15 @@ object Scene {
     }
 
     /** A ring as a closed polygon of segments, in one batch. */
-    private fun ring(builder: SceneBuilder, style: String, at: Vec2, radius: Double, width: Double = FLASH_WIDTH) {
-        val batch = builder.batch(Layer.Effects, style, Primitive.Segment, strokeWidth(width))
+    private fun ring(builder: SceneBuilder, style: String, at: Vec2, radius: Double, width: Double = FLASH_WIDTH) =
+        ring(builder, style, at, radius, Layer.Effects, strokeWidth(width), PULSE_SEGMENTS)
+
+    /** A stroked circle as [chords] chords, on [layer] at an already-snapped [width]. */
+    private fun ring(builder: SceneBuilder, style: String, at: Vec2, radius: Double, layer: Layer, width: Double, chords: Int) {
+        val batch = builder.batch(layer, style, Primitive.Segment, width)
         var previous = Vec2(at.x + radius, at.y)
-        for (step in 1..PULSE_SEGMENTS) {
-            val direction = TrigTable.rotate(Vec2.Right, 360.0 * step / PULSE_SEGMENTS)
+        for (step in 1..chords) {
+            val direction = TrigTable.rotate(Vec2.Right, 360.0 * step / chords)
             val point = Vec2(at.x + direction.x * radius, at.y + direction.y * radius)
             batch.segment(previous.x, previous.y, point.x, point.y)
             previous = point
@@ -1245,16 +1299,16 @@ object Scene {
      * whichever batch was opened first, and a display listing items of several rarities opens them
      * in the wrong one.
      */
-    private fun hudIcon(builder: SceneBuilder, icon: Icon, weapon: Boolean, line: Double) {
+    private fun hudIcon(builder: SceneBuilder, icon: Icon, line: Double) {
         IconPainter.paint(
             builder,
             icon,
-            weapon,
             HUD_MARGIN + HUD_ICON,
             line - HUD_ICON_RISE,
             HUD_ICON,
             haloLayer = Layer.Hud,
             outlineLayer = Layer.HudOverlay,
+            wearLayer = Layer.HudWear,
         )
     }
 
@@ -1283,7 +1337,7 @@ object Scene {
         // The weapon the player is carrying, drawn as the shape it was when it was on the floor —
         // which is what makes the next one of those on the floor mean something (PROD-049).
         val weaponLine = HUD_MARGIN + HUD_BAR_HEIGHT + HUD_LINE
-        hudIcon(builder, WeaponIcons.of(model.weaponId), weapon = true, line = weaponLine)
+        hudIcon(builder, WeaponIcons.of(model.weaponId), line = weaponLine)
         builder.text(
             TextItem(
                 model.weaponName,
@@ -1314,7 +1368,7 @@ object Scene {
         val pips = builder.batch(Layer.HudOverlay, palette.accent, Primitive.Rect)
         model.powerups.forEachIndexed { index, stack ->
             val y = HUD_MARGIN + HUD_BAR_HEIGHT + HUD_LINE * (index + 2)
-            hudIcon(builder, PowerupIcons.of(stack.id), weapon = false, line = y)
+            hudIcon(builder, PowerupIcons.of(stack.id), line = y)
             builder.text(TextItem(stack.name, HUD_MARGIN + HUD_ICON_COLUMN, y, HUD_SMALL, HUD_TEXT))
             repeat(io.github.ksean.cyberslop.loot.Powerup.MAX_STACKS) { pip ->
                 val batch = if (pip < stack.stacks) pips else empty
@@ -1430,7 +1484,17 @@ object Scene {
     private const val BAR_HEIGHT = 6.0
     /** How much of a projectile's travel its tracer shows (`specs/presentation.md`). */
     const val TRACER_SECONDS = 0.05
+
+    /** A shot's glow and core dots as multiples of its hit radius (PROD-080). */
+    const val SHOT_GLOW = 1.8
+    const val SHOT_CORE = 0.45
     private const val TRACER_WIDTH = 2.0
+
+    /** The bloom under a tracer's core line. */
+    private const val TRACER_BLOOM_WIDTH = 5.0
+
+    /** The body radius an impact is drawn at while it fades; the live shot's radius is not kept. */
+    private const val IMPACT_PX = 5.0
     private const val BEAM_CORE_WIDTH = 2.0
     private const val BEAM_BLOOM_WIDTH = 8.0
     private const val CHAIN_WIDTH = 2.0
@@ -1446,6 +1510,12 @@ object Scene {
     private const val CHARGE_OFFSET = 0.1
     private const val PULSE_GROWTH = 0.6
     private const val PULSE_SEGMENTS = 12
+
+    /** A drop's kind ring, drawn rounder than an effect's pulse because it is a fixture, not a flash. */
+    private const val KIND_RING_SEGMENTS = 16
+
+    /** The hover phase `x / 40` radians (`specs/presentation.md`), in degrees per world px. */
+    private const val HOVER_PHASE_DEGREES_PER_PX = 1.4324
     private const val STRIP_WIDTH = 2.0
     private const val STRIP_BASE_PX = 4.0
     private const val STRIP_POINTS = 3
@@ -1499,7 +1569,8 @@ object Scene {
      * Under half [HUD_LINE], so consecutive rows do not touch. At 9.0 a powerup's casing bracket
      * reached into the row above it.
      */
-    private const val HUD_ICON = 8.0
+    /** The display's icon scale: the smallest an icon is drawn at, which the wear-cue rule is held to. */
+    const val HUD_ICON = 8.0
 
     /** Where a name starts, clear of the icon in front of it. */
     private const val HUD_ICON_COLUMN = 26.0

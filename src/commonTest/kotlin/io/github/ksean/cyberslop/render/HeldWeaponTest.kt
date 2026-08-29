@@ -134,21 +134,46 @@ class HeldWeaponTest {
         return heldStrokesOf(GameSimulation(level, run, SEED))
     }
 
-    /** The two icon passes on the actor's own layer, which only the held weapon draws. */
+    /**
+     * P-51: the ring is the drop's, not the weapon's (PROD-050). The frame that draws the held
+     * weapon draws no segment in either ring colour on the actor's layers — and none anywhere
+     * once the level's own drops are cleared.
+     */
+    @Test
+    fun `the held weapon wears no kind ring`() {
+        val level = LevelGenerator.generate(SEED, MAP).level
+        val run = RunState.begin(SEED).let { it.copy(loadout = it.loadout.copy(weapon = Weapons.of(WeaponId.SableCorpRailgun))) }
+        val sim = GameSimulation(level, run, SEED).also { it.items.clear() }
+
+        val ringed = frameOf(sim).batches.filter {
+            it.style == IconStyles.WEAPON_RING || it.style == IconStyles.POWERUP_RING
+        }
+
+        assertTrue(ringed.isEmpty(), "a ring colour was drawn with no drop on screen: ${ringed.map { it.layer }}")
+        assertTrue(heldStrokesOf(sim).isNotEmpty(), "and yet the weapon itself must still be in the hand")
+    }
+
+    private fun frameOf(sim: GameSimulation) = Scene.compose(
+        sim,
+        Camera(0.0, 0.0, VIEW_WIDTH, VIEW_HEIGHT),
+        Backdrops.of(SEED, sim.level),
+        HudModel.of(sim.run, sim.level.theme, MAPS, sim.boss.spec.name, sim.boss.healthFraction),
+        0.0,
+        SceneBuilder(),
+    )
+
+    /**
+     * The halo pass on the actor's own layer, which only the held weapon draws: one stroke per
+     * stroke of the icon, whatever material each is (the colour pass adds a streak per weathered
+     * stroke and is measured by `IconTest`).
+     */
     private fun heldStrokesOf(sim: GameSimulation): List<Placed> {
-        val frame = Scene.compose(
-            sim,
-            Camera(0.0, 0.0, VIEW_WIDTH, VIEW_HEIGHT),
-            Backdrops.of(SEED, sim.level),
-            HudModel.of(sim.run, sim.level.theme, MAPS, sim.boss.spec.name, sim.boss.healthFraction),
-            0.0,
-            SceneBuilder(),
-        )
+        val frame = frameOf(sim)
         return frame.batches
             .filter {
-                (it.layer == Layer.ActorFront || it.layer == Layer.ActorTrim) &&
+                it.layer == Layer.ActorFront &&
                     it.primitive == Primitive.Segment &&
-                    (it.style == IconStyles.WEAPON_OUTLINE || it.style == IconStyles.HALO)
+                    it.style == IconStyles.HALO
             }
             .flatMap { batch ->
                 (0 until batch.size).map { index ->
@@ -170,8 +195,8 @@ class HeldWeaponTest {
         const val SETTLE = 24
         const val LOTS = 100000.0
 
-        /** Halo and outline. */
-        const val PASSES = 2
+        /** The halo pass alone. */
+        const val PASSES = 1
 
         val WEAPONS = listOf(
             WeaponId.BrokenBottle,

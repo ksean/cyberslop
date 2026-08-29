@@ -7,8 +7,13 @@ const { pathToFileURL } = require("node:url")
 const nodeProcess = process
 const RUN_KEY = "cyberslop.run.v1"
 
-/** One stroke setup per width-keyed batch; the start frame measured 14 for 41 segments. */
-const MAX_STROKES_PER_FRAME = 30
+/**
+ * One stroke setup per width-keyed batch; the start frame measured 14 for 41 segments before
+ * drops were drawn in materials, and 34 after: every drop on the start screen may open a halo,
+ * five material and two weathering-streak styles over its weights, plus its kind ring
+ * (`specs/presentation.md`, Item icons). The bound is a constant over drops, not over segments.
+ */
+const MAX_STROKES_PER_FRAME = 48
 
 /** A batched frame fills far more rectangles than it sets styles; measured well above this. */
 const MIN_FILLS_PER_STYLE = 8

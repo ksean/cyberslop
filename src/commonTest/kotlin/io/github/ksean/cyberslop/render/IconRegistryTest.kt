@@ -73,10 +73,46 @@ class IconRegistryTest {
         }
     }
 
+    /** P-50: the sheet is one material vocabulary, and every material in it is used somewhere. */
     @Test
-    fun `the two outline colours differ in hue and in luminance`() {
-        val weapon = IconStyles.WEAPON_OUTLINE
-        val powerup = IconStyles.POWERUP_OUTLINE
+    fun `every material is used and every icon names what it is made of`() {
+        val used = allIcons().flatMap { (_, icon) -> icon.materials }.toSet()
+        assertEquals(Material.entries.toSet(), used, "materials no icon is made of: ${Material.entries - used}")
+
+        allIcons().forEach { (name, icon) ->
+            assertTrue(
+                icon.materials.size >= 2,
+                "$name is made of only ${icon.materials}, so nothing on it reads as a different part",
+            )
+        }
+        assertTrue(
+            Material.entries.none { it.colour == IconStyles.WEAPON_RING || it.colour == IconStyles.POWERUP_RING },
+            "a material is the colour of a kind ring",
+        )
+    }
+
+    /**
+     * Review rounds 2 and 3: an item of pure energy and glass had nothing to age, and an item of
+     * `Line` metal alone lost its only streak at the HUD's 8 px scale. Every item bears a wear cue
+     * at every scale it is drawn at (PROD-078, P-50).
+     */
+    @Test
+    fun `every icon bears at least one cue of wear at the HUD and ground scales`() {
+        listOf(Scene.HUD_ICON, Scene.PICKUP_PX).forEach { scale ->
+            allIcons().forEach { (name, icon) ->
+                val corroded = icon.materials.contains(Material.Rust)
+                val weathered = icon.strokes.any {
+                    it.material.weathering != null && IconStyles.streakWidthOf(it.weight, scale) != null
+                }
+                assertTrue(corroded || weathered, "$name at $scale px has nothing rusted and nothing that rusts")
+            }
+        }
+    }
+
+    @Test
+    fun `the two ring colours differ in hue and in luminance`() {
+        val weapon = IconStyles.WEAPON_RING
+        val powerup = IconStyles.POWERUP_RING
 
         assertTrue(
             rgbDistance(weapon, powerup) >= MIN_HUE_DISTANCE,

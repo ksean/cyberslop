@@ -1,22 +1,28 @@
 package io.github.ksean.cyberslop.render
 
 /**
- * The fixed colours a drop is drawn in (PROD-050, PROD-051).
+ * The fixed colours a drop is drawn in (PROD-050, PROD-051, PROD-078).
  *
- * Red and blue do not move with the sub-theme: a red-outlined thing is a weapon on all ten maps, or
- * the rule teaches a player nothing. What that costs, and why the halo is not optional, is measured
- * in `specs/presentation.md` — the red outline alone is worth **2.0** of luminance separation against
- * `ArcologyVault.tileBody`, and a near-black halo alone **0.1** against `ReactorCore.sky`. Drawn as a
- * pair so that at least one line always separates, the worst case over all ten palettes is 45.8.
+ * Red and blue do not move with the sub-theme: a red-ringed thing is a weapon on all ten maps, or
+ * the rule teaches a player nothing. The ring is the *drop's*, not the icon's: the icon inside it is
+ * drawn in its materials ([Material]), the same on the ground, in the hand and in the HUD, and only
+ * the ground adds the ring (`Scene.pickup`).
+ *
+ * Why the halo is not optional is measured in `specs/presentation.md` — a coloured line alone is
+ * worth **2.0** of luminance separation against `ArcologyVault.tileBody`, and a near-black halo alone
+ * **0.1** against `ReactorCore.sky`. Drawn as a pair so that at least one line always separates.
  */
 object IconStyles {
-    const val WEAPON_OUTLINE = "#ff2f2f"
-    const val POWERUP_OUTLINE = "#3d8bff"
+    const val WEAPON_RING = "#ff2f2f"
+    const val POWERUP_RING = "#3d8bff"
 
-    /** Under every line, wider, so the outline is never read against the terrain directly. */
+    /** Under every line, wider, so a material is never read against the terrain directly. */
     const val HALO = "#05060a"
 
-    fun outlineOf(weapon: Boolean): String = if (weapon) WEAPON_OUTLINE else POWERUP_OUTLINE
+    fun ringOf(weapon: Boolean): String = if (weapon) WEAPON_RING else POWERUP_RING
+
+    /** The ring's radius as a multiple of the icon's scale (its half-extent in pixels). */
+    const val KIND_RING = 1.35
 
     /**
      * How wide a stroke of this weight is on an icon drawn at [scale], snapped to `Scene`'s ladder.
@@ -29,12 +35,25 @@ object IconStyles {
      * enough to read as a bottle's body at 28 px is more than half the height of the icon at 53 px.
      *
      * The ladder makes the cost far smaller than fifteen anyway. Snapping collapses the five tiers
-     * onto **three** distinct widths per weight, so the ground layer opens nine outline batches and
-     * nine halo batches whatever is on screen — a bigger constant than the plan estimated, still a
-     * constant, and `IconBatchBoundTest` counts it rather than believing it.
+     * onto at most **four** distinct widths per weight, so the item layers open a constant
+     * vocabulary of batches whatever is on screen, and `PickupIconTest` derives the bound from the
+     * ladder and counts against it rather than believing it.
      */
     fun widthOf(weight: StrokeWeight, scale: Double): Double =
         Scene.strokeWidth(weight.fraction * scale)
+
+    /**
+     * The width of the weathering streak along a stroke of this weight: one weight lighter
+     * (`specs/presentation.md`, Materials), or nothing where the ladder does not give the streak a
+     * width strictly under its stroke's — a `Hair` at any scale, since the ladder's floor is
+     * 1.5 px, and a `Line` on a small held weapon. A streak as wide as its line replaces rather
+     * than weathers it (review rounds 1 and 2).
+     */
+    fun streakWidthOf(weight: StrokeWeight, scale: Double): Double? {
+        if (weight == StrokeWeight.Hair) return null
+        val streak = widthOf(weight.lighter, scale)
+        return if (streak < widthOf(weight, scale)) streak else null
+    }
 
     /**
      * The halo under a stroke of this weight.
@@ -48,4 +67,8 @@ object IconStyles {
 
     /** How much wider the halo is than the line it backs, as a fraction of the icon's half-extent. */
     const val HALO_FRACTION = 0.09
+
+    /** Where along a stroke its weathering streak starts and ends, as fractions of its length. */
+    const val STREAK_FROM = 0.55
+    const val STREAK_TO = 0.95
 }

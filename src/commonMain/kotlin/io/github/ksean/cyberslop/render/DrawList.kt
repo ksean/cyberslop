@@ -36,6 +36,14 @@ enum class Layer {
     Items,
 
     /*
+     * The weathering streak on a drop (PROD-078) is an overlay on its material, and for the same
+     * reason as the halo it cannot share the material's layer: a Street drop opens a streak batch
+     * at one ladder width that a rarer drop then reuses, while the rarer drop's wider material
+     * batch opens later — and paints over its own rust. Review round 1 of the materials change.
+     */
+    ItemWear,
+
+    /*
      * An actor is five roles, not one layer.
      *
      * Batching by style merges the same part of every actor on screen, so a batch can only sit at
@@ -54,13 +62,26 @@ enum class Layer {
     ActorHead,
     ActorFront,
     ActorTrim,
+    /** The held weapon's weathering, over its materials on [ActorTrim]. */
+    ActorWear,
     ActorGlow,
+
+    /*
+     * A shot is three marks in a fixed order — glow, body, core (PROD-080) — and an impact's
+     * tracer thins with its window, so a fresher impact opens a wider tracer batch after an older
+     * one's dots and would paint over them. Three layers make the order structural.
+     */
+    ShotGlow,
+    ShotBody,
+    ShotCore,
 
     Effects,
     /** Development only, over the world and under the display. */
     Debug,
     Hud,
     HudOverlay,
+    /** The display's icons' weathering, over their materials on [HudOverlay]. */
+    HudWear,
 }
 
 /** What a batch draws. Three shapes cover everything the game puts on screen. */

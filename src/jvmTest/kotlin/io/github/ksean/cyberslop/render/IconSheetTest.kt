@@ -24,12 +24,12 @@ class IconSheetTest {
                 IconPainter.paint(
                     builder,
                     entry.icon,
-                    entry.weapon,
                     0.0,
                     0.0,
                     Scene.PICKUP_PX * tier,
                     Layer.ItemHalo,
                     Layer.Items,
+                    Layer.ItemWear,
                 )
                 val marks = builder.build().batches.sumOf { it.size }
                 assertTrue(

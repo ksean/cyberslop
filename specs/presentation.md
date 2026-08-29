@@ -27,8 +27,11 @@ primitives they draw. The batch count bounds state changes, which is what was me
 bound rasterization.
 
 Layers, back to front: `Sky`, `BackdropFar/Mid/Near`, `Haze`, `Terrain`, `Hazard`, `ItemHalo`,
-`Items`, actors, `Effects`, `Hud`, `HudOverlay`, `Debug`. The halo and outline of an icon are on two
-layers because on one layer their order depends on which batch opened first.
+`Items`, `ItemWear`, actors (with `ActorWear` over `ActorTrim`), `ShotGlow`, `ShotBody`, `ShotCore`,
+`Effects`, `Debug`, `Hud`, `HudOverlay`, `HudWear`. The halo, the material and the weathering of an
+icon are on three layers, and a shot's three marks on three, because on one layer their order
+depends on which batch opened first — and a wider batch a later drop or a fresher impact opens
+paints over an earlier one's overlay.
 
 ## The view
 
@@ -98,12 +101,32 @@ highest point stays within the physics' crouch height; nothing is scaled.
   window. The outer arc is the reach the hit test used.
 - A ranged shot draws a **muzzle flash** at the barrel: a bright core dot, a longer bloom segment
   along the aim and two short spikes at ±35°, fading over the flash window.
-- **Every shot shows where it went (PROD-071).** A travelling projectile is drawn as a **body and
-  tracer**: a dot at its position at its hit radius, and a segment trailing it along its velocity
-  for `TRACER_SECONDS = 0.05 s` of travel (17 px at the enemy shot speed), so a shot reads as a
-  line of flight rather than a floating dot. The player's projectiles use the palette's brightest
-  glow; enemy and boss projectiles the palette hazard colour; the Volley's fan of dots is the
-  same tracer treatment. An attack that resolves instantly leaves a **hit indicator** on the
+- **Every shot shows where it went (PROD-071), and what fired it (PROD-080).** A travelling
+  projectile is drawn in four marks in one **shot look**: a **glow** dot at `1.8 ×` its hit radius
+  behind everything, a **body** dot at its hit radius, a **core** dot at `0.45 ×` its radius on
+  top, and a **two-tone tracer** trailing it along its velocity for `TRACER_SECONDS = 0.05 s` of
+  travel (17 px at the enemy shot speed) — a wide bloom segment in the glow colour under a thin
+  one in the core colour — so a shot reads as a lit line of flight rather than a floating dot.
+  The look is chosen by what fired the shot, from `ShotLooks`:
+
+  | Fired by | Glow | Body | Core |
+  |---|---|---|---|
+  | a ranged weapon of the player's | `#7a3a10` | `#ff9a3c` | `#fff1c4` |
+  | a psychic weapon of the player's | `#3a1a6e` | `#b06cff` | `#efe2ff` |
+  | an enemy or a boss | `palette.hazardGlow` | `palette.hazard` | `#ffffff` |
+
+  The player's colours are fixed across themes so that PROD-051's disjointness with the item
+  colours is a property of two constant sets rather than of ten palettes. A player's shot with no
+  build recorded (there is none in play; the branch exists) takes the ranged look. The bloom is
+  `TRACER_BLOOM_WIDTH = 5` px under a `TRACER_WIDTH = 2` px core. The Volley's fan and every
+  impact kept for the flash window take the same four-mark look as the live shot in the
+  shooter's colours — an impact carries whether a psychic build fired it (`HitShape.Impact.psychic`)
+  and is drawn at `IMPACT_PX = 5` px, both radii and widths thinning with the window, since the
+  live shot's radius is not kept. The marks are on three layers under `Effects` — `ShotGlow`
+  (bloom and glow dot), `ShotBody`, `ShotCore` (core line and dot) — so glow is under body under
+  core whatever opened first; a frame holding live shots of all three looks opens at most
+  **fifteen** batches for them, a constant no number of shots moves (the fading impacts add only
+  ladder widths). An attack that resolves instantly leaves a **hit indicator** on the
   simulation for the flash window, presentation-only and outside the digest like the swoosh, whose
   geometry is the geometry the hit test used:
 
@@ -164,29 +187,74 @@ draws none.
 
 ## Item icons
 
-An icon is a list of `Stroke(x1, y1, x2, y2, weight)` and `Dot(x, y, r)` ops in a local `[-1, 1]²`
-box, keyed by `WeaponId` or `PowerupId` in one registry (ENG-064). Only segments and dots, because
-a segment is closed under rotation and a rectangle is not. Orientation by a unit vector is
-`(u·ax − v·ay, u·ay + v·ax)` — no transform, no trig.
+An icon is a list of `Stroke(x1, y1, x2, y2, weight, material)` and `Dot(x, y, r, material)` ops in
+a local `[-1, 1]²` box, keyed by `WeaponId` or `PowerupId` in one registry (ENG-064). Only segments
+and dots, because a segment is closed under rotation and a rectangle is not. Orientation by a unit
+vector is `(u·ax − v·ay, u·ay + v·ax)` — no transform, no trig.
 
 - **Three weights** — `Hair` 0.07, `Line` 0.13, `Slab` 0.28 of the half-extent — with round caps;
   a `Slab` is a filled bar, and every gap is measured against cap extension.
-- **Colours** — weapon outline `#ff2f2f`, powerup outline `#3d8bff`, halo `#05060a`, fixed across
-  themes (PROD-050). Every icon is drawn twice, halo under outline, because the outline alone is
-  within 2.0 luma of a tile colour on one palette and the halo alone within 0.1 of a sky on another;
-  the pair is never closer than 42.9 (PROD-051).
-- **Kind twice** — a powerup's icon sits in a module casing, a weapon's never does, because two
-  palettes carry an accent within RGB distance 13 of an outline colour.
+- **Materials (PROD-078)** — every op names what it is made of, and the material is its colour,
+  fixed across themes. Five, no more, because every material is a batch style:
+
+  | Material | Colour | Reads as | Weathering |
+  |---|---|---|---|
+  | `Wood` | `#8a5a2e` | a grip, a haft, a stock | a darker **grain** streak, `#4a2e14` |
+  | `Steel` | `#9aa3ad` | a blade, a barrel, a receiver, a casing | a **rust** streak, `#b4542a` |
+  | `Rust` | `#b4542a` | a part that is nothing but corrosion — chain links, a pipe, a rebar club | none: it is the streak |
+  | `Glass` | `#7fa39a` | a bottle, a vial, a lens, a screen | none |
+  | `Energy` | `#e8c46a` | a muzzle point, a coil, a field, a psychic wound | none |
+
+  `Steel` is the default, so an unmarked op is metal. **Weathering** is systematic rather than
+  authored: the painter draws every eligible `Steel` and `Wood` stroke twice, the material at its
+  weight and then a streak one weight lighter (`Slab` → `Line`, `Line` → `Hair`) along the
+  stroke's **rear 40 %** — from 55 % to 95 % of its length — on the wear layer above the
+  material's, so no icon carries rust as extra geometry and every blade, barrel and haft is
+  pitted the same way wherever a streak fits. A streak is drawn only where the ladder gives it a width **strictly under**
+  its stroke's: a `Hair` never gets one (the ladder's floor is 1.5 px), and a `Line` on a small
+  held weapon (Chrome Fang's hand scale is about 11.5 px) does not either, because a streak as
+  wide as its line replaces rather than weathers it. A `Steel` or `Wood` dot — a rivet, a cap —
+  gets no streak. **Every item bears at least one wear cue** (PROD-078): a `Rust` op, or a
+  `Steel`/`Wood` stroke that carries a streak at the HUD's 8 px scale — the smallest an icon is
+  drawn at, where a `Line`'s streak no longer fits and only a `Slab`'s does; a field of pure
+  `Energy` and `Glass`, or an icon of nothing but `Line` metal, is given a corroded part. The icon's geometry, and so its
+  identity (P-27, P-28), is unchanged by weathering; the sheet is the judge of how aged it looks.
+  A streak lies on its own material, so it is judged against that material on the sheet and not
+  against the backgrounds (P-30 ranges over the five material colours and the two rings).
+- **Kind (PROD-050)** — a drop is ringed: a stroked circle of sixteen chords at `KIND_RING =
+  1.35 ×` the icon's scale, one `Hair`-of-scale wide over its `Hair` halo, in the kind's colour —
+  weapon `#ff2f2f`, powerup `#3d8bff` — fixed across themes; the tier pips sit under the ring. The ring is drawn by the pickup, not by the icon, which is
+  what keeps it off the hand and out of the HUD: `IconPainter` knows nothing of it. Kind is also
+  said twice: a powerup's icon sits in a module casing, a weapon's never does, because two
+  palettes carry an accent within RGB distance 13 of a ring colour.
+- **Halo** — `#05060a`, under every line and the ring, fixed across themes. Every icon is drawn
+  twice, halo under material, because a coloured line alone is within 2.0 luma of a tile colour on
+  one palette and the halo alone within 0.1 of a sky on another; the pair separates by ≥ 40 for
+  every material and both ring colours on all ten palettes (PROD-051). The `Wood` colour is the
+  darkest allowed: at luma 100 against the halo's 6 the pair still clears the rule on every
+  background between them.
+- **Hover (PROD-079)** — a drop is drawn at `y − HOVER_PX × sin(2π · t / HOVER_PERIOD + φ)` with
+  `HOVER_PX = 4` screen px, `HOVER_PERIOD = 1.8 s`, `t` the frame's **presentation time** — the
+  tick's elapsed simulation time less the fraction of a tick the frame has not reached,
+  `t_tick − (1 − alpha) × TICK_SECONDS`, clamped at zero, the same `alpha` the player and camera
+  are interpolated by (ENG-062) — and `φ = x_world / 40` so neighbouring drops, and the two halves
+  of a paired award, are out of step. The ring and the
+  pips hover with the icon. The simulation's item position, and so the pickup overlap, never moves.
 - **Rarity** — `PickupLook.scale` 1.0 → 1.9 across the five tiers over `PICKUP_PX = 14` screen px
-  (28 px at Street to 53 px at Ascended), plus a row of `tier + 1` pips in the kind's colour.
+  (28 px at Street to 53 px at Ascended), plus a row of `tier + 1` pips in the kind's colour under
+  the ring.
 - **Composition** — icons are built from shared parts (`grip`, `stock`, `muzzle`, `ring`,
   `Icon.cased`); a melee weapon is a mass on a handle, a ranged weapon a barrel over a grip, a
-  psychic weapon has neither.
+  psychic weapon has neither. A `grip` and a `stock` are `Wood`, a `muzzle` is `Energy`, a `ring`
+  is whatever the caller says, the casing is `Steel`.
 
-Icons vary in geometry, not style, so the item layers open at most 24 batches with all forty-four
-on screen. The whole worst-case frame (600 enemies, half of them in the hurt flash, every icon on
-the ground, a full build in the HUD) opens about 105 batches. Whether an icon is *recognisable* is a human judgement made against
-the icon sheet, not a test.
+Icons vary in geometry, not style, so the item layers open a bounded number of batches with all
+forty-four on screen: five materials plus two streak colours plus two ring colours, each over the
+distinct ladder widths the five tier scales snap a weight onto — at most **four** per weight (a
+`Slab` body is 3.5, 4.5, 6, 6, 8 across the tiers) — is the vocabulary, and `PickupIconTest`
+derives the bound from the ladder and counts against it rather than believing arithmetic in
+prose (P-31 states it). Whether an icon is *recognisable*, or looks
+aged, is a human judgement made against the icon sheet, not a test.
 
 ## HUD and screens
 
@@ -200,7 +268,8 @@ pause; canvas focus loss clears held keys (`specs/simulation.md`, key ledger).
 
 - **P-23** Batch bound: the same scene at 10 and at 600 entities issues the same number of
   drawing-state changes, counted at the paint sink; no batch mixes stroke widths; the production
-  bundle's smoke test bounds strokes per frame.
+  bundle's smoke test bounds strokes per frame at 48 — the start frame measured 14 before drops
+  were drawn in materials and 34 after, and the bound is a constant over drops, not segments.
 - **P-24** Menace monotonicity: over the archetype × map grid ordered by health, plates and spikes
   are non-decreasing and strictly increasing between the extremes; within each map, drawn size and
   glow luminance are non-decreasing in health; every palette's glow ramp is strictly increasing.
@@ -238,10 +307,43 @@ pause; canvas focus loss clears held keys (`specs/simulation.md`, key ledger).
   least 60 % of the box's longer axis.
 - **P-28** One icon, three presentations: ground, hand and HUD draw the same op list differing only
   in scale and orientation; orienting is a rigid motion.
-- **P-29** Kind survives colour removal: casing on every powerup, on no weapon; id → kind → colour
-  is total; the two outline colours differ in hue and luminance.
-- **P-30** Legible on every map: for each palette and each of its nine background colours, the
-  halo or the outline differs in luminance by ≥ 40; no items-layer style appears on the hazard or
-  effects layer in the same frame.
+- **P-29** Kind survives colour removal: casing on every powerup, on no weapon; id → kind → ring
+  colour is total; the two ring colours differ in hue and luminance.
+- **P-30** Legible on every map: for each palette and each of its nine background colours, and
+  for each material colour and each ring colour, the halo or the line differs in luminance by
+  ≥ 40; no items-layer style appears on the hazard or effects layer in the same frame.
 - **P-31** Icon batch bound: a frame with the forty-four icons once and a frame with them four
-  times issue the same number of drawing-state changes, and the item layers open ≤ 24 batches.
+  times issue the same number of drawing-state changes, and the item layers open ≤ `ITEM_BATCHES`,
+  derived in the test from the vocabulary above and the distinct widths the ladder actually
+  yields per weight over the five tiers.
+- **P-50** Materials and weathering: every op in every registered icon names a material; each of
+  the five materials is used by some icon; every `Steel` and `Wood` `Slab` or `Line` stroke drawn
+  is followed by a streak in that material's weathering colour, at the lighter weight, whose
+  endpoints lie at 55 % and 95 % along the stroke, on the wear layer above the material's; a
+  `Hair` stroke, a dot, and a `Rust`, `Glass` or `Energy` stroke draw no streak, nor does any
+  stroke whose streak would not be strictly narrower than it; every registered icon has a wear
+  cue at the HUD scale and at the ground scale — a `Rust` op or a `Steel`/`Wood` stroke whose
+  streak fits at that scale; a frame mixing tiers has every
+  streak on the wear layer, one per weathered stroke of each icon, and none on the material
+  layer; the ground, hand and HUD presentations emit the same material per op (P-28 extended to
+  colour).
+- **P-51** Kind ring: a weapon drop's frame holds a stroked circle of sixteen chords of radius
+  `KIND_RING × scale` about the icon's drawn origin in `#ff2f2f`, a powerup drop's in `#3d8bff`,
+  each over a sixteen-chord halo of the same radius on the halo layer; the
+  player's held weapon draws no segment in either ring colour; the HUD draws no segment in either
+  ring colour; the icon's own ops never contain a ring colour.
+- **P-52** Hover: the drawn origin of a drop at time `t` is its world position less
+  `HOVER_PX × sin(2π t / HOVER_PERIOD + φ)`; at `t + HOVER_PERIOD` it is the same; over a period
+  its extremes differ by `2 × HOVER_PX`; the ring and pips move with it; both halves of a paired
+  award hover and peak at different times; a frame at `alpha = 0.5` is drawn at the time a frame
+  half a tick earlier at `alpha = 1` is; the simulation's item positions, the pickup overlap and
+  the digest (P-40) are unchanged by the frame time.
+- **P-53** Shot looks: a live player's projectile fired by a ranged build draws glow, body and
+  core dots at `1.8 ×`, `1 ×` and `0.45 ×` its hit radius in the ranged look's three colours and a
+  two-tone tracer (bloom then core) of `speed × TRACER_SECONDS`; a psychic build's shot in the
+  psychic look; an enemy's in the palette hazard look with a white core; an impact and a Volley
+  tracer use the same look as the live shot would, and a same-tick psychic hit records `psychic`
+  and is drawn violet; glow marks are on `ShotGlow`, body dots on `ShotBody` and core marks on
+  `ShotCore` even when two impacts of different ages open different tracer widths; a frame with
+  fifty shots of every look opens the same number of shot and effect batches for them as a frame
+  with one of each; no shot colour is an item colour (PROD-051).

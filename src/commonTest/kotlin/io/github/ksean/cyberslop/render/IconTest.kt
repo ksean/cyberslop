@@ -110,6 +110,92 @@ class IconTest {
         )
     }
 
+    /**
+     * P-50: age is a rule of the painter (PROD-078). A steel stroke is followed by a rust streak
+     * along its rear 40 %, one weight lighter; a material that does not weather draws nothing more.
+     */
+    @Test
+    fun `a steel stroke is drawn with a rust streak along its rear and glass is not`() {
+        val steel = Icon(listOf(IconOp.Stroke(-1.0, 0.0, 1.0, 0.0, StrokeWeight.Slab, Material.Steel)))
+        val glass = Icon(listOf(IconOp.Stroke(-1.0, 0.0, 1.0, 0.0, StrokeWeight.Slab, Material.Glass)))
+
+        val rusted = colourPass(steel)
+        val clean = colourPass(glass)
+
+        val body = rusted.single { it.style == Material.Steel.colour }
+        assertEquals(listOf(0.0, 50.0, 40.0, 50.0), body.segment(0), "the steel body is not the stroke")
+        assertEquals(IconStyles.widthOf(StrokeWeight.Slab, SCALE), body.width)
+        val streak = rusted.single { it.style == Material.Steel.weathering }
+        assertEquals(listOf(22.0, 50.0, 38.0, 50.0), streak.segment(0), "the streak is not the rear 40 %")
+        assertEquals(Layer.ItemWear, streak.layer, "the streak is not on the wear layer, over its material")
+        assertEquals(Layer.Items, body.layer)
+        assertEquals(IconStyles.widthOf(StrokeWeight.Line, SCALE), streak.width, "the streak is not one weight lighter")
+
+        assertEquals(1, clean.size, "glass weathered: ${clean.map { it.style }}")
+        assertEquals(Material.Glass.colour, clean.single().style)
+    }
+
+    /** Review round 2: a streak must be strictly narrower than its line, at the hand's scales too. */
+    @Test
+    fun `a streak is only drawn where it is narrower than its stroke`() {
+        val line = Icon(listOf(IconOp.Stroke(-1.0, 0.0, 1.0, 0.0, StrokeWeight.Line, Material.Steel)))
+        // Chrome Fang in the hand is about 11.5 px of scale: Line and Hair both snap to the floor.
+        val held = colourPass(line, scale = HELD_SCALE)
+        assertEquals(listOf(Material.Steel.colour), held.map { it.style }, "a streak as wide as its line was drawn")
+        assertEquals(null, IconStyles.streakWidthOf(StrokeWeight.Line, HELD_SCALE))
+
+        val ground = colourPass(line, scale = SCALE)
+        val body = ground.single { it.style == Material.Steel.colour }.width
+        val streak = ground.single { it.style == Material.Steel.weathering }.width
+        assertTrue(streak < body, "at ground scale the streak ($streak) is not narrower than its line ($body)")
+        StrokeWeight.entries.forEach { weight ->
+            listOf(HELD_SCALE, SCALE, Scene.PICKUP_PX, Scene.PICKUP_PX * 1.9).forEach { scale ->
+                val width = IconStyles.streakWidthOf(weight, scale) ?: return@forEach
+                assertTrue(width < IconStyles.widthOf(weight, scale), "$weight at $scale: streak $width is not narrower")
+            }
+        }
+    }
+
+    /** Review round 1: the ladder floor makes a "half Hair" as wide as the Hair, so a Hair has no streak. */
+    @Test
+    fun `a hair stroke has no streak and a dot never streaks`() {
+        val hair = Icon(listOf(IconOp.Stroke(-1.0, 0.0, 1.0, 0.0, StrokeWeight.Hair, Material.Wood)))
+        val marks = colourPass(hair)
+        assertEquals(listOf(Material.Wood.colour), marks.map { it.style }, "a hair stroke streaked")
+
+        val dot = Icon(listOf(IconOp.Dot(0.0, 0.0, 0.5, Material.Steel)))
+        val dotMarks = colourPass(dot)
+        assertEquals(1, dotMarks.size, "a steel dot drew ${dotMarks.map { it.style }}")
+        assertEquals(Material.Steel.colour, dotMarks.single().style)
+    }
+
+    @Test
+    fun `the halo pass is one colour whatever the material`() {
+        val icon = Icon(
+            listOf(
+                IconOp.Stroke(-1.0, 0.0, 0.0, 0.0, StrokeWeight.Line, Material.Wood),
+                IconOp.Stroke(0.0, 0.0, 1.0, 0.0, StrokeWeight.Line, Material.Energy),
+                IconOp.Dot(0.0, 0.5, 0.2, Material.Glass),
+            ),
+        )
+        val builder = SceneBuilder().also { it.begin() }
+        icon.paint(20.0, 50.0, SCALE, Vec2.Right, IconBatchSink(builder, Layer.ItemHalo, SCALE, halo = true))
+        val styles = builder.build().batches.map { it.style }.toSet()
+        assertEquals(setOf(IconStyles.HALO), styles)
+    }
+
+    /** What the colour pass of [icon] puts in a frame, at [SCALE] with the origin at (20, 50). */
+    private fun colourPass(icon: Icon, scale: Double = SCALE): List<DrawBatch> {
+        val builder = SceneBuilder().also { it.begin() }
+        icon.paint(20.0, 50.0, scale, Vec2.Right, IconBatchSink(builder, Layer.Items, scale, halo = false, wearLayer = Layer.ItemWear))
+        return builder.build().batches
+    }
+
+    private fun DrawBatch.segment(index: Int): List<Double> {
+        val at = index * Primitive.Segment.stride
+        return listOf(this[at], this[at + 1], this[at + 2], this[at + 3])
+    }
+
     private fun aims(): List<Vec2> = listOf(
         Vec2.Right,
         Vec2(0.0, 1.0),
@@ -121,6 +207,8 @@ class IconTest {
 
     private companion object {
         const val TOLERANCE = 1e-9
+        const val SCALE = 20.0
+        const val HELD_SCALE = 11.47
     }
 }
 
@@ -129,11 +217,11 @@ private class RecordingIconSink : IconSink {
     val strokes = mutableListOf<PlacedStroke>()
     val dots = mutableListOf<PlacedDot>()
 
-    override fun stroke(x1: Double, y1: Double, x2: Double, y2: Double, weight: StrokeWeight) {
+    override fun stroke(x1: Double, y1: Double, x2: Double, y2: Double, weight: StrokeWeight, material: Material) {
         strokes += PlacedStroke(x1, y1, x2, y2, weight)
     }
 
-    override fun dot(x: Double, y: Double, radius: Double) {
+    override fun dot(x: Double, y: Double, radius: Double, material: Material) {
         dots += PlacedDot(x, y, radius)
     }
 

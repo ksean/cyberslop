@@ -6,6 +6,13 @@ judged against. Icons are composed from shared parts (`grip`, `stock`, `muzzle`,
 `Icon.cased`) so that "every pistol has a grip" is a function rather than a coincidence. A weapon
 uses three to ten strokes; a powerup four to eight inside its four-stroke casing.
 
+Every op names its material (PROD-078; the table is in `presentation.md`, Item icons): a haft,
+grip or stock is `Wood`; a blade, barrel, receiver, head, chain or casing is `Steel`, which the
+painter rusts along its rear 40 %; a part that is corrosion through and through — a rebar club,
+a pipe, a chain's links — is `Rust`; a bottle, vial, lens or screen is `Glass`; a muzzle point,
+coil, field, arc or psychic wound is `Energy`. The catalog below names silhouettes; the material
+of each part follows this rule, and the icon sheet is judged against both.
+
 ## Melee — a blade or a mass on a handle
 
 | Weapon | Silhouette |

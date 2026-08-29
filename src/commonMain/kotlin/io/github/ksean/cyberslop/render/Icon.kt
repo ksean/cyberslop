@@ -12,13 +12,40 @@ import io.github.ksean.cyberslop.core.Vec2
  *
  * A weight is a fraction of the icon's half-extent, so an icon is the same design at every tier
  * rather than a differently-proportioned one. [IconStyles.widthOf] resolves it, snapping to `Scene`'s
- * stroke ladder — which is what keeps the batch count constant: five tier scales collapse onto three
+ * stroke ladder — which is what keeps the batch count constant: five tier scales collapse onto at most four
  * distinct widths per weight.
  */
 enum class StrokeWeight(val fraction: Double) {
     Hair(0.07),
     Line(0.13),
     Slab(0.28),
+    ;
+
+    /** The weight a weathering streak on a stroke of this weight is drawn at; `Hair` has none lighter. */
+    val lighter: StrokeWeight
+        get() = when (this) {
+            Slab -> Line
+            Line -> Hair
+            Hair -> Hair
+        }
+}
+
+/**
+ * What a mark is made of, and so what colour it is (PROD-078).
+ *
+ * Five and no more, because a material is a batch style and the item layers' batch bound (P-31)
+ * is the product of this list with the weight ladder. Colours are fixed across the ten themes for
+ * the reason the kind ring's are: a grip is brown on every map or a player cannot learn it.
+ *
+ * [weathering] is the colour of the streak the painter lays along the rear of every stroke of the
+ * material — rust on steel, grain on wood — so that no icon carries its age as extra geometry.
+ */
+enum class Material(val colour: String, val weathering: String? = null) {
+    Wood("#8a5a2e", weathering = "#4a2e14"),
+    Steel("#9aa3ad", weathering = "#b4542a"),
+    Rust("#b4542a"),
+    Glass("#7fa39a"),
+    Energy("#e8c46a"),
 }
 
 /**
@@ -42,10 +69,16 @@ sealed interface IconOp {
         val x2: Double,
         val y2: Double,
         val weight: StrokeWeight = StrokeWeight.Line,
+        val material: Material = Material.Steel,
     ) : IconOp
 
     /** [radius] is in box units like every other coordinate here, not in pixels. */
-    data class Dot(val x: Double, val y: Double, val radius: Double) : IconOp
+    data class Dot(
+        val x: Double,
+        val y: Double,
+        val radius: Double,
+        val material: Material = Material.Steel,
+    ) : IconOp
 }
 
 /**
@@ -55,9 +88,9 @@ sealed interface IconOp {
  * screen, and the caller already owns batches to push into. Nothing here allocates.
  */
 interface IconSink {
-    fun stroke(x1: Double, y1: Double, x2: Double, y2: Double, weight: StrokeWeight)
+    fun stroke(x1: Double, y1: Double, x2: Double, y2: Double, weight: StrokeWeight, material: Material)
 
-    fun dot(x: Double, y: Double, radius: Double)
+    fun dot(x: Double, y: Double, radius: Double, material: Material)
 }
 
 /**
@@ -94,6 +127,14 @@ class Icon(val ops: List<IconOp>) {
 
     val dots: List<IconOp.Dot> = ops.filterIsInstance<IconOp.Dot>()
 
+    /** The materials this icon is made of. */
+    val materials: Set<Material> = ops.map {
+        when (it) {
+            is IconOp.Stroke -> it.material
+            is IconOp.Dot -> it.material
+        }
+    }.toSet()
+
     /**
      * Whether this icon wears the module casing that marks a powerup (PROD-050).
      *
@@ -127,12 +168,14 @@ class Icon(val ops: List<IconOp>) {
                     originX + (op.x2 * ax - op.y2 * ay) * scale,
                     originY + (op.x2 * ay + op.y2 * ax) * scale,
                     op.weight,
+                    op.material,
                 )
 
                 is IconOp.Dot -> sink.dot(
                     originX + (op.x * ax - op.y * ay) * scale,
                     originY + (op.x * ay + op.y * ax) * scale,
                     op.radius * scale,
+                    op.material,
                 )
             }
         }

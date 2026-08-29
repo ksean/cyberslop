@@ -930,8 +930,11 @@ class SceneTest {
 
     // ---- PROD-071 / P-43: every shot shows where it went ---------------------------------------
 
+    /** The shot layers and the effects layer: where every attack's marks are drawn. */
+    private fun Layer.isEffect() = ordinal >= Layer.ShotGlow.ordinal && ordinal <= Layer.Effects.ordinal
+
     private fun segmentsOf(frame: DrawList, style: String? = null): List<Pair<Vec2, Vec2>> =
-        frame.batches.filter { it.layer == Layer.Effects && it.primitive == Primitive.Segment && (style == null || it.style == style) }
+        frame.batches.filter { it.layer.isEffect() && it.primitive == Primitive.Segment && (style == null || it.style == style) }
             .flatMap { batch ->
                 (0 until batch.size).map { n ->
                     val i = n * Primitive.Segment.stride
@@ -940,7 +943,7 @@ class SceneTest {
             }
 
     private fun dotsOf(frame: DrawList, style: String? = null): List<Pair<Vec2, Double>> =
-        frame.batches.filter { it.layer == Layer.Effects && it.primitive == Primitive.Dot && (style == null || it.style == style) }
+        frame.batches.filter { it.layer.isEffect() && it.primitive == Primitive.Dot && (style == null || it.style == style) }
             .flatMap { batch ->
                 (0 until batch.size).map { n ->
                     val i = n * Primitive.Dot.stride
@@ -966,11 +969,156 @@ class SceneTest {
 
         val frame = frameOf(sim)
 
-        val style = palette.glow[palette.glow.size - 1]
+        val style = ShotLooks.RANGED.body
         val body = dotsOf(frame, style).firstOrNull { (at, _) -> (at - head).length < 1e-6 }
         assertTrue(body != null, "no body at $head")
         assertEquals(shot.radius * Scene.ZOOM, body!!.second, 1e-9, "the body is not drawn at the hit radius")
-        assertTrue(hasSegment(segmentsOf(frame, style), head, tail), "no tracer from $head to $tail: ${segmentsOf(frame, style)}")
+        assertTrue(hasSegment(segmentsOf(frame, ShotLooks.RANGED.core), head, tail), "no tracer from $head to $tail: ${segmentsOf(frame, style)}")
+    }
+
+    /** P-53 (PROD-080): a ranged build's shot is four marks in the ranged look. */
+    @Test
+    fun `a ranged shot draws glow, body, core and a two-tone tracer in the ranged look`() {
+        val sim = simulation(WeaponId.ScraplineZipPistol)
+        while (sim.projectiles.none { it.fromPlayer }) sim.tick(InputFrame())
+        trimTo(sim, 0)
+        val shot = sim.projectiles.first { it.fromPlayer }
+
+        assertShotMarks(frameOf(sim), shot.position, shot.velocity, shot.radius, ShotLooks.RANGED)
+    }
+
+    @Test
+    fun `a psychic shot takes the psychic look`() {
+        val sim = simulation(WeaponId.NeuralSpike)
+        while (sim.projectiles.none { it.fromPlayer }) sim.tick(InputFrame())
+        trimTo(sim, 0)
+        val shot = sim.projectiles.first { it.fromPlayer }
+        assertEquals(io.github.ksean.cyberslop.combat.WeaponClass.Psychic, shot.weapon?.spec?.cls, "fixture: not a psychic shot")
+
+        val frame = frameOf(sim)
+        assertShotMarks(frame, shot.position, shot.velocity, shot.radius, ShotLooks.PSYCHIC)
+        assertTrue(dotsOf(frame, ShotLooks.RANGED.body).isEmpty(), "a psychic shot drew a ranged body")
+    }
+
+    @Test
+    fun `an enemy shot takes the hazard look with a white core`() {
+        val sim = simulation()
+        trimTo(sim, 0)
+        val palette = Palettes.of(sim.level.theme)
+        val position = playerCentre(sim) + Vec2(40.0, 0.0)
+        val velocity = Vec2(-340.0, 0.0)
+        sim.projectiles.add(io.github.ksean.cyberslop.sim.LiveProjectile(position, velocity, 1.0, 0, 1.0, passesTerrain = false, fromPlayer = false))
+
+        val look = ShotLooks.enemy(palette)
+        assertEquals(palette.hazard, look.body)
+        assertEquals(ShotLooks.ENEMY_CORE, look.core)
+        assertShotMarks(frameOf(sim), position, velocity, 6.0, look)
+    }
+
+    /** P-53: the marks are a fixed vocabulary of batches, however many shots are flying. */
+    @Test
+    fun `fifty shots of every look open no more effect batches than one of each`() {
+        fun frameWith(count: Int): DrawList {
+            val sim = simulation(WeaponId.ScraplineZipPistol)
+            trimTo(sim, 0)
+            val at = playerCentre(sim)
+            val ranged = io.github.ksean.cyberslop.combat.DamagePipeline.resolve(Weapons.of(WeaponId.ScraplineZipPistol), sim.run.loadout.slots)
+            val psychic = io.github.ksean.cyberslop.combat.DamagePipeline.resolve(Weapons.of(WeaponId.NeuralSpike), sim.run.loadout.slots)
+            repeat(count) { n ->
+                val offset = Vec2(10.0 + n * 3.0, -20.0)
+                sim.projectiles.add(io.github.ksean.cyberslop.sim.LiveProjectile(at + offset, Vec2(200.0, 0.0), 1.0, 0, 1.0, passesTerrain = false, fromPlayer = true, weapon = ranged))
+                sim.projectiles.add(io.github.ksean.cyberslop.sim.LiveProjectile(at + offset + Vec2(0.0, 10.0), Vec2(200.0, 0.0), 1.0, 0, 1.0, passesTerrain = false, fromPlayer = true, weapon = psychic))
+                sim.projectiles.add(io.github.ksean.cyberslop.sim.LiveProjectile(at + offset + Vec2(0.0, 20.0), Vec2(-200.0, 0.0), 1.0, 0, 1.0, passesTerrain = false, fromPlayer = false))
+            }
+            return frameOf(sim)
+        }
+        val one = frameWith(1).batches.count { it.layer.isEffect() }
+        val fifty = frameWith(50).batches.count { it.layer.isEffect() }
+        assertEquals(one, fifty, "fifty shots of each look opened $fifty effect batches against $one")
+    }
+
+    private fun assertShotMarks(frame: DrawList, position: Vec2, velocity: Vec2, radius: Double, look: ShotLook) {
+        val head = position * Scene.ZOOM
+        val tail = (position - velocity * Scene.TRACER_SECONDS) * Scene.ZOOM
+        fun radiusOf(style: String) = dotsOf(frame, style).firstOrNull { (at, _) -> (at - head).length < 1e-6 }?.second
+        assertEquals(radius * Scene.ZOOM * Scene.SHOT_GLOW, radiusOf(look.glow) ?: -1.0, 1e-9, "no glow at $head in ${look.glow}")
+        assertEquals(radius * Scene.ZOOM, radiusOf(look.body) ?: -1.0, 1e-9, "no body at $head in ${look.body}")
+        assertEquals(radius * Scene.ZOOM * Scene.SHOT_CORE, radiusOf(look.core) ?: -1.0, 1e-9, "no core at $head in ${look.core}")
+        assertTrue(hasSegment(segmentsOf(frame, look.glow), head, tail), "no bloom tracer in ${look.glow}")
+        assertTrue(hasSegment(segmentsOf(frame, look.core), head, tail), "no core tracer in ${look.core}")
+        val bloom = frame.batches.filter { it.layer.isEffect() && it.primitive == Primitive.Segment && it.style == look.glow }.maxOf { it.width }
+        val core = frame.batches.filter { it.layer.isEffect() && it.primitive == Primitive.Segment && it.style == look.core }.maxOf { it.width }
+        assertTrue(bloom > core, "the bloom ($bloom) is not wider than the core ($core)")
+        assertShotLayers(frame, look)
+    }
+
+    /**
+     * Glow under body under core is structural: each mark is on its own layer, whatever opened
+     * first. Judged on the shot layers — an enemy look's glow is the palette's `hazardGlow`, which
+     * a muzzle flash also uses on `Effects`.
+     */
+    private fun assertShotLayers(frame: DrawList, look: ShotLook) {
+        val shotLayers = listOf(Layer.ShotGlow, Layer.ShotBody, Layer.ShotCore)
+        val onShotLayers = frame.batches.filter { it.layer in shotLayers }
+        assertTrue(onShotLayers.isNotEmpty(), "no shot marks in the frame")
+        onShotLayers.forEach { batch ->
+            val expected = when (batch.style) {
+                look.glow -> Layer.ShotGlow
+                look.body -> Layer.ShotBody
+                look.core -> Layer.ShotCore
+                else -> return@forEach
+            }
+            assertEquals(expected, batch.layer, "a ${batch.style} ${batch.primitive} mark is on ${batch.layer}")
+        }
+    }
+
+    /** Review round 1: a same-tick psychic hit must record the flag and keep the violet look. */
+    @Test
+    fun `a psychic shot spent on the tick it was fired leaves a violet impact`() {
+        val sim = simulation(WeaponId.NeuralSpike)
+        trimTo(sim, 0)
+        val target = enemy(sim, EnemyArchetype.Brute)
+        // On the muzzle, which for a psychic weapon is the player's centre: spent the tick it leaves.
+        target.position = playerCentre(sim) + Vec2(2.0, -7.0)
+        target.health = 1e9
+        sim.enemies.add(target)
+        while (sim.lastShot == null) sim.tick(InputFrame())
+        assertTrue(sim.projectiles.isEmpty(), "fixture: the bolt outlived its firing tick")
+        val impact = sim.impacts.singleOrNull() ?: error("no impact recorded for a same-tick hit")
+        val shape = impact.shape as io.github.ksean.cyberslop.sim.HitShape.Impact
+        assertTrue(shape.psychic, "the impact forgot a psychic build fired it")
+
+        val frame = frameOf(sim)
+        val head = shape.at * Scene.ZOOM
+        val tail = (shape.at - shape.velocity * Scene.TRACER_SECONDS) * Scene.ZOOM
+        assertTrue(hasSegment(segmentsOf(frame, ShotLooks.PSYCHIC.core), head, tail), "no violet core tracer for the spent bolt")
+        assertTrue(hasSegment(segmentsOf(frame, ShotLooks.PSYCHIC.glow), head, tail), "no violet bloom for the spent bolt")
+        assertTrue(segmentsOf(frame, ShotLooks.RANGED.core).isEmpty(), "the psychic impact was drawn as a ranged one")
+        assertShotLayers(frame, ShotLooks.PSYCHIC)
+    }
+
+    /** Review round 1: two impacts of different ages open different tracer widths; the order must hold anyway. */
+    @Test
+    fun `impacts of different ages keep glow under body under core`() {
+        // Two point-blank slugs, four ticks apart, so the older impact has thinned when the fresher one lands.
+        val sim = simulation(WeaponId.ScraplineZipPistol)
+        trimTo(sim, 0)
+        val target = enemy(sim, EnemyArchetype.Brute)
+        target.position = playerCentre(sim) + Vec2(8.0, -7.0)
+        target.health = 1e9
+        sim.enemies.add(target)
+        while (sim.impacts.isEmpty()) sim.tick(InputFrame())
+        sim.autoFire.remaining = 100.0
+        repeat(4) { sim.tick(InputFrame()) }
+        sim.autoFire.remaining = 0.0
+        while (sim.impacts.size < 2) sim.tick(InputFrame())
+        val ages = sim.impacts.map { it.strength }.toSet()
+        assertTrue(ages.size == 2, "fixture: the two impacts have the same age $ages")
+
+        val frame = frameOf(sim)
+        val bloomWidths = frame.batches.filter { it.layer.isEffect() && it.style == ShotLooks.RANGED.glow && it.primitive == Primitive.Segment }.map { it.width }.toSet()
+        assertTrue(bloomWidths.size == 2, "fixture: the two impacts share a bloom width $bloomWidths")
+        assertShotLayers(frame, ShotLooks.RANGED)
     }
 
     @Test
@@ -987,7 +1135,9 @@ class SceneTest {
         val head = position * Scene.ZOOM
         val tail = (position - velocity * Scene.TRACER_SECONDS) * Scene.ZOOM
         assertTrue(dotsOf(frame, palette.hazard).any { (at, _) -> (at - head).length < 1e-6 }, "no enemy body at $head")
-        assertTrue(hasSegment(segmentsOf(frame, palette.hazard), head, tail), "no enemy tracer from $head to $tail")
+        // The tracer is the look's bloom under its core (PROD-080), both in the enemy look.
+        assertTrue(hasSegment(segmentsOf(frame, palette.hazardGlow), head, tail), "no enemy bloom from $head to $tail")
+        assertTrue(hasSegment(segmentsOf(frame, ShotLooks.ENEMY_CORE), head, tail), "no enemy core tracer from $head to $tail")
     }
 
     /** The Kessler resolves instantly at the aim point: a beam from the top of the view onto it, and a ring at its radius. */
@@ -1076,11 +1226,12 @@ class SceneTest {
 
         val frame = frameOf(sim)
 
-        val style = palette.glow[palette.glow.size - 1]
+        val style = ShotLooks.RANGED.core
         assertTrue(hasSegment(segmentsOf(frame, style), head, tail), "no tracer for the spent slug from $head to $tail")
+        assertTrue(hasSegment(segmentsOf(frame, ShotLooks.RANGED.glow), head, tail), "no bloom for the spent slug")
 
         // Round-2 finding: the impact's tracer thins with the window like every other indicator.
-        fun width(f: DrawList) = f.batches.filter { it.layer == Layer.Effects && it.primitive == Primitive.Segment && it.style == style }
+        fun width(f: DrawList) = f.batches.filter { it.layer.isEffect() && it.primitive == Primitive.Segment && it.style == style }
             .filter { b -> (0 until b.size).any { n -> (Vec2(b[n * 4], b[n * 4 + 1]) - head).length < 1e-6 } }.maxOf { it.width }
         val fresh = width(frame)
         sim.autoFire.remaining = 100.0
@@ -1107,7 +1258,10 @@ class SceneTest {
         val right = Vec2((boss.aimedX + io.github.ksean.cyberslop.sim.LiveBoss.VOLLEY_WIDTH) * Scene.ZOOM, boss.position.y * Scene.ZOOM)
         val shots = segmentsOf(frame, palette.hazard)
         assertTrue(hasSegment(shots, left, right), "no band from $left to $right in the shot colour; segments $shots")
-        assertTrue(shots.size > 1, "no tracers toward the band")
+        // The fan is tracers in the enemy look: bloom and core (PROD-080), bodies in the hazard colour.
+        assertTrue(segmentsOf(frame, ShotLooks.ENEMY_CORE).isNotEmpty(), "no core tracers toward the band")
+        assertTrue(segmentsOf(frame, palette.hazardGlow).isNotEmpty(), "no bloom tracers toward the band")
+        assertTrue(dotsOf(frame, palette.hazard).isNotEmpty(), "no fan bodies")
     }
 
     @Test

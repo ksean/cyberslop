@@ -570,6 +570,130 @@ life steal, bounce, caps, P-45, P-46, Known gaps; `presentation.md` hurt flash, 
       in the implementation; its two MODERATE findings are rejected design decisions the user
       may overrule (above). Per ENG-072 a fourth round is the user's call.
 
+### LOOK — Aged materials, kind rings, hovering drops, shot looks (plan step 12)
+
+**Request (verbatim):** "add a red circle around weapon drops, and a blue circle around weapon
+powerup drops, but otherwise apply a dystonian color scheme to the rest of the weapon, i.e. woods
+are brown, metals are silver/grey, all the weapons should look "aged" or "rusty" in keeping with
+the cyberpunk dystopian theme. When either a weapon or weapon powerup drops, the drop should hover
+up and down slightly in the air, rather than remaining static in place. When a weapon is picked up
+and wielded, the red circle should not be included as the player holds the weapon. Give
+projectiles more detail and color. Ask the user any clarifying questions if needed. Implement
+using adversarial review."
+
+**Phase one:** PROD-050 restated, PROD-078..080 and PROD-051 amended in `product.md`;
+`presentation.md` Item icons (materials, weathering, kind ring, hover), Weapon effects (shot
+looks), P-29..P-31 restated, P-50..P-53 added; `iconography.md` material rule.
+
+**Implementation approval:** given by the user after reviewing phase one — "defaults are fine,
+approved, implement it" — so the four assumptions below stand as specified.
+
+Open questions for the user (assumptions taken in the spec, each reversible):
+1. The HUD draws **no** kind ring (the equipped weapon and the powerup column are already told
+   apart by position and casing). Alternative: a small ring in the HUD too.
+2. Powerups take the **same** material treatment as weapons (steel casing with rust, glass
+   vials, energy coils). Alternative: powerups keep a single flat colour.
+3. Enemy and boss shots **do** get the four-mark look, in the palette hazard colours with a
+   white core. Alternative: only the player's shots change.
+4. Hover amplitude 4 px over 1.8 s, phased by x so drops are out of step. Numbers are a guess
+   until seen; the sheet does not show motion, so this one is judged in the running game.
+
+Sub-steps, one owner, each red then green (`./gradlew jvmTest --tests` on the named class), then
+`./scripts/check.sh`, then gate 5 per ENG-070..073, up to three rounds:
+
+- [x] LOOK-1 **Materials.** *(done: `IconTest` 3 red → green, `IconRegistryTest` materials red → green; sheet regenerated and looked at — grips brown, blades grey with rust streaks, energy gold, glass teal.)* `Material` enum and colours in `IconStyle.kt`; `IconOp.Stroke` /
+  `IconOp.Dot` gain `material = Steel`; `IconSink` carries it; `IconBatchSink` draws the
+  weathering streak (`IconStyles.streakOf`, `StrokeWeight.lighter`). Red: `IconTest` — a `Steel`
+  stroke placed emits a rust streak at 55–95 % one weight lighter; a `Glass` stroke emits none;
+  `IconRegistryTest` — every material used, every op's material a member. Then author the
+  materials across `WeaponIcons` and `PowerupIcons` by the rule in `iconography.md`, regenerate
+  the icon sheet (`IconSheetTest`) and look at it.
+- [x] LOOK-2 **Kind ring, not in the hand.** *(done: `PickupIconTest` ring case red → green; `HeldWeaponTest`/`HudIconTest` no-ring cases green; world frame looked at.)* `Scene.pickup` draws the ring over its halo via a
+  `ring` on `ItemHalo`/`Items` (the `Effects` ring helper gains a layer parameter);
+  `IconStyles.ringOf(weapon)` replaces `outlineOf`. Red: `PickupIconTest` — a weapon drop's
+  frame holds red segments on `Items` tracing a circle of `KIND_RING × scale`, a powerup's blue;
+  `HeldWeaponTest` — no red segment anywhere in the actor layers; `HudIconTest` — no ring colour
+  in `Hud`/`HudOverlay`. P-30 rerun over the material and ring colours.
+- [x] LOOK-3 **Hover.** *(done: hover case red → green.)* `Scene.pickups` takes `timeSeconds`; `Scene.hoverOffset(t, x)`.
+  Red: `PickupIconTest` — origin at `t = HOVER_PERIOD / 4` differs from `t = 0` by `HOVER_PX`,
+  returns at `t = HOVER_PERIOD`, pips and ring move with it; `GameSimulation` untouched, so P-40
+  and the pickup tests are the proof the overlap did not move.
+- [x] LOOK-4 **Shot looks.** *(done: 5 `SceneTest` cases red → green; `HitShape.Impact.psychic` added so an impact keeps its look.)* `ShotLook(glow, body, core)` and `ShotLooks.of(shot, palette)` in
+  `commonMain/render`; `Scene.projectiles` and the Volley/impact paths draw four marks through
+  one `shotMarks` function. Red: `SceneTest` — a ranged build's shot draws the three dots at the
+  three radii in the ranged colours and a bloom-under-core tracer; a psychic build's in violet;
+  an enemy's with `palette.hazard` body and white core; fifty shots open no more `Effects`
+  batches than three. `PickupIconTest`'s disjointness case gains the shot colours.
+- [x] LOOK-5 `./scripts/check.sh` green (JVM, wasm, distribution, smoke). First run: only
+  `titleScreenSmokeTest` failed — 34 strokes per frame over a cap of 30 set when a drop was one
+  colour; cap raised to 48 with its reasoning (P-23 amended); second run green.
+- [x] Gate 5, round 1 (9 findings, 1 MAJOR; "Load-bearing findings: 6"). Dispositions:
+  - MAJOR weathering not reliably over its material: a Street `Line` opens a streak batch a
+    rarer drop reuses while the rarer drop's wider material batch opens later and paints over
+    its own rust — **confirmed** (batches paint in first-open order within a layer). Fixed
+    structurally: `ItemWear`, `ActorWear`, `HudWear` layers; `IconPainter.paint` takes a
+    `wearLayer` and requires it above the material layer; mixed-tier test in `PickupIconTest`.
+  - MODERATE PROD-078 said every metal/wooden *part* streaks while dots were exempt —
+    **confirmed**. Fixed: PROD-078 says "stroke wide enough to carry one".
+  - MODERATE a `Hair` streak snaps to the ladder floor (1.5 px) and is as wide as its line —
+    **confirmed**. Fixed: a `Hair` has no streak; `streakWidthOf` returns null; spec and
+    `IconTest` say so.
+  - MODERATE shot paint order breaks across impacts of different ages (a fresher impact's wider
+    tracer batch opens after an older one's dots) — **confirmed**. Fixed structurally:
+    `ShotGlow`, `ShotBody`, `ShotCore` layers under `Effects`; test with two impacts four ticks
+    apart.
+  - MODERATE the browser passes tick time, so the hover steps while the player interpolates —
+    **confirmed** (`GameHost.draw` passes `elapsedTicks × TICK_SECONDS` and `alpha`). Fixed:
+    `Scene.presentationTime(t, alpha)` feeds the hover; spec restated; `alpha = 0.5` test.
+  - MINOR the pulse/beam/blast rings went from 12 to 16 chords — **confirmed**, unintended.
+    Fixed: `PULSE_SEGMENTS = 12` restored; `KIND_RING_SEGMENTS = 16` for drops only.
+  - MODERATE no test that a psychic impact records the flag and stays violet — **confirmed**.
+    Fixed: `SceneTest` case.
+  - MINOR the ring's halo was not asserted — **confirmed**. Fixed: sixteen halo chords at the
+    ring radius on `ItemHalo`.
+  - MINOR the powerup half of a paired drop was untested — **confirmed**. Fixed: paired-drop
+    case (both hover, peak apart, neither item moves).
+- [x] `./scripts/check.sh` green after round 1 (JVM, wasm, distribution, smoke).
+- [x] Gate 5, round 2 (7 findings, no MAJOR; "Load-bearing findings: 3"; every round-1 fix
+  confirmed present). Dispositions:
+  - MODERATE the shot-looks paragraph still said every mark is on `Effects` — **confirmed**.
+    Fixed: names the three shot layers.
+  - MODERATE Migraine Loop and Chill Protocol were pure energy/glass with nothing to age,
+    against the request's "all the weapons" — **confirmed**. Fixed: PROD-078 and P-50 require a
+    wear cue on every item; the Loop's emitter ring is `Rust`, the Protocol's spars `Steel`, the
+    Broken Bottle's neck wrap `Rust` (the only cue the registry test then found missing);
+    `IconRegistryTest` asserts the cue on all forty-four.
+  - MINOR plan.md step 12 still said "awaiting approval" — **confirmed**. Fixed.
+  - MODERATE a `Line` streak on a small held weapon (Chrome Fang, ≈11.5 px) snaps to the same
+    1.5 px as its line — **confirmed**. Fixed: a streak is drawn only where its snapped width is
+    strictly under its stroke's (`streakWidthOf` returns null otherwise); `IconTest` covers the
+    held scale and every weight × scale; spec restated.
+  - MINOR P-31's "three widths per weight" is false (Slab: 3.5, 4.5, 6, 6, 8) — **confirmed**.
+    Fixed: the bound is derived in the test from the ladder over the five tiers; prose says four.
+  - MINOR the psychic-impact test did not prove same-tick — **confirmed**. Fixed: target on the
+    muzzle (the player's centre), asserts the projectile list is empty after the firing tick.
+  - MINOR the mixed-tier test dropped steel rust because it is also `Rust`'s colour —
+    **confirmed**. Fixed: counts streaks on the wear layer per material against the icons'
+    weathered strokes.
+- [x] `./scripts/check.sh` green after round 2 (JVM, wasm, distribution, smoke).
+- [x] Gate 5, round 3 (3 findings, no MAJOR; "Load-bearing findings: 1"; every round-2 fix
+  confirmed present). Dispositions:
+  - MINOR the weathering paragraph still said "every stroke … at every scale" beside the
+    exemptions — **confirmed**. Fixed: "every eligible stroke … wherever a streak fits".
+  - MODERATE Overclock Coil, Chill Protocol and Voice of the Dead Net had only `Line` metal and
+    no `Rust`, so at the HUD's 8 px scale (where a `Line` streak no longer fits) they had no
+    wear cue — **confirmed**. Fixed: each gets a corroded part (the Coil's leads, the Protocol's
+    level spar, the mask's jaw); `Scene.HUD_ICON` is public and `IconRegistryTest` holds the
+    wear-cue rule at the HUD scale and the ground scale; PROD-078/P-50 say so.
+  - MINOR `Icon.kt` and the test's comment still said three widths per weight — **confirmed**.
+    Fixed: "at most four".
+- [x] `./scripts/check.sh` green after round 3 (JVM, wasm, distribution, smoke).
+- [ ] **Gate 5 closed at the plan's three-round cap.** Round 3 returned one load-bearing finding,
+  fixed; per ENG-072 a fourth round is the user's call. (`codex exec --model gpt-5.6-sol
+  -c model_reasoning_effort=high --sandbox read-only`, brief on stdin, pid recorded, closed
+  with `close-agents.sh`); findings dispositioned here; spec corrected where a finding is
+  confirmed; `./scripts/check.sh` after every fix round.
+
 ## Deferred
 
 Not scheduled by the current plan; kept so they are not forgotten.
@@ -578,5 +702,5 @@ Not scheduled by the current plan; kept so they are not forgotten.
 - Sound effects: kotlinx-browser exposes no Web Audio API, so this needs hand-written externals.
 - Recalibrate `WeaponScore` against `expectedDps` (see `specs/combat.md`, Known gaps).
 - A committed, reproducible frame-time benchmark (the 7.6× transform figure is unretained).
-- Draw projectiles as their weapon's own shape (a slug, a nail, a grenade) — the tracer in CPS-3 gives them a line of flight, not a silhouette.
+- Draw projectiles as their weapon's own shape (a slug, a nail, a grenade) — the tracer in CPS-3 gives them a line of flight and LOOK-4 a lit body, not a silhouette.
 - Pass-two styling: grime, scanlines, screen shake, hit flashes, particles.
