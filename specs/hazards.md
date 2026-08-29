@@ -10,7 +10,7 @@ are placed off the witness route so the proven path stays hazard-free.
 
 | Hazard | Class | Where it is written | Effect on contact |
 |---|---|---|---|
-| Acid | lethal | the floor of a gap, when the theme allows acid and the curve's hazard frequency rolls | death |
+| Acid (toxic pool) | lethal | the floor of a gap, when the theme allows acid and the curve's hazard frequency rolls | death |
 | Void | lethal | below the bottom row of the map | death |
 | Fire jet | lethal while on | one per jet corridor, spanning the six rows above the floor, timed `period / duty / phase` | death |
 | Spike strip | damaging | a `Spikes` tile on walkable floor, 1–3 tiles long | `1.0 × contactDamage` per second of overlap |
@@ -19,6 +19,11 @@ are placed off the witness route so the proven path stays hazard-free.
 Acid, void and spikes are tile kinds (`Acid`, `Void`, `Spikes`; none blocks movement). A fire jet
 and a barrel are objects on the `Level`, not tiles. A jet's state is `isOnAt(t) = ((t + phase) mod
 period) < on` on the level clock, so a witness replay and the live game agree on every jet.
+
+Acid's liquid identity is presentational: an exposed surface has a bright edge and several
+differently phased bubbles rising through the pool (PROD-085, presentation.md P-58). Bubble phase,
+height and size never enter the level or contact model; an acid tile is equally lethal at every
+animation phase.
 
 ## Contact rules
 

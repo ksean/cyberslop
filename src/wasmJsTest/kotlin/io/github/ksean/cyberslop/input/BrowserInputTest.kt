@@ -11,6 +11,7 @@ import kotlin.test.AfterTest
 import kotlin.test.BeforeTest
 import kotlin.test.Test
 import kotlin.test.assertEquals
+import kotlin.test.assertTrue
 
 /** Input wiring (P-50): what the browser delivers must reach the simulation, and stuck keys must be let go. */
 class BrowserInputTest {
@@ -57,6 +58,75 @@ class BrowserInputTest {
     }
 
     @Test
+    fun `wasd and space map to the four gameplay actions`() {
+        binding("KeyA", Keys(left = true))
+        binding("KeyD", Keys(right = true))
+        binding("KeyS", Keys(crouch = true))
+        binding("KeyW", Keys(jump = true))
+        binding("Space", Keys(jump = true), keyValue = " ")
+    }
+
+    @Test
+    fun `key value fallbacks are case insensitive and include legacy space`() {
+        binding("Unidentified", Keys(left = true), keyValue = "A")
+        binding("Unidentified", Keys(right = true), keyValue = "d")
+        binding("Unidentified", Keys(crouch = true), keyValue = "S")
+        binding("Unidentified", Keys(jump = true), keyValue = "w")
+        binding("Unidentified", Keys(jump = true), keyValue = "Spacebar")
+    }
+
+    @Test
+    fun `gameplay keydown prevents browser handling`() {
+        listOf(
+            "ArrowLeft" to "ArrowLeft",
+            "KeyA" to "a",
+            "KeyD" to "d",
+            "KeyS" to "s",
+            "KeyW" to "w",
+            "Space" to " ",
+        ).forEach { (code, value) ->
+            val event = KeyboardEvent(
+                "keydown",
+                KeyboardEventInit(key = value, code = code, cancelable = true),
+            )
+
+            window.dispatchEvent(event)
+
+            assertTrue(event.defaultPrevented, "$code should not scroll or activate the page")
+            key("keyup", code, value)
+            input.keys()
+        }
+    }
+
+    @Test
+    fun `releasing one of two aliases keeps their action held`() {
+        key("keydown", "ArrowLeft")
+        key("keydown", "KeyA", "a")
+        assertEquals(Keys(left = true), input.keys())
+
+        key("keyup", "ArrowLeft")
+        assertEquals(Keys(left = true), input.keys())
+
+        key("keyup", "KeyA", "a")
+        assertEquals(Keys(), input.keys())
+    }
+
+    @Test
+    fun `focus loss clears every physical alias`() {
+        key("keydown", "ArrowUp")
+        key("keydown", "Space", " ")
+        input.keys()
+
+        window.dispatchEvent(Event("blur"))
+        window.dispatchEvent(Event("focus"))
+
+        assertEquals(Keys(), input.keys())
+        key("keyup", "ArrowUp")
+        key("keyup", "Space", " ")
+        assertEquals(Keys(), input.keys())
+    }
+
+    @Test
     fun `window blur releases every key and pauses`() {
         key("keydown", "ArrowRight")
         input.keys()
@@ -81,17 +151,38 @@ class BrowserInputTest {
 
     @Test
     fun `canvas focus loss releases every key without pausing`() {
-        canvas.focus()
         key("keydown", "ArrowRight")
         input.keys()
 
-        canvas.blur()
+        // Dispatch the event directly: headless Firefox does not guarantee that a synthetic
+        // `focus()` made this detached test surface the active element.
+        canvas.dispatchEvent(Event("blur"))
 
         assertEquals(Keys(), input.keys())
         assertEquals(false, input.paused)
     }
 
-    private fun key(type: String, code: String) {
-        window.dispatchEvent(KeyboardEvent(type, KeyboardEventInit(key = code, code = code)))
+    @Test
+    fun `an explicit gameplay clear drops held sources and latched presses`() {
+        key("keydown", "KeyD", "d")
+        key("keydown", "Space", " ")
+        key("keyup", "Space", " ")
+
+        input.clear()
+
+        assertEquals(Keys(), input.keys())
+        key("keyup", "KeyD", "d")
+        assertEquals(Keys(), input.keys(), "a cleared physical source survived until keyup")
+    }
+
+    private fun binding(code: String, expected: Keys, keyValue: String = code) {
+        key("keydown", code, keyValue)
+        assertEquals(expected, input.keys(), code)
+        key("keyup", code, keyValue)
+        assertEquals(Keys(), input.keys(), "$code released")
+    }
+
+    private fun key(type: String, code: String, keyValue: String = code) {
+        window.dispatchEvent(KeyboardEvent(type, KeyboardEventInit(key = keyValue, code = code)))
     }
 }

@@ -115,6 +115,33 @@ class HeldWeaponTest {
         )
     }
 
+    @Test
+    fun `aiming left mirrors the held weapon without turning it upside down`() {
+        listOf(
+            Vec2.Right to Vec2(-1.0, 0.0),
+            Vec2(4.0, -3.0) to Vec2(-4.0, -3.0),
+            Vec2(4.0, 3.0) to Vec2(-4.0, 3.0),
+        )
+            .forEach { (rightAim, leftAim) ->
+                val right = simulationAiming(rightAim, facing = 1)
+                val left = simulationAiming(leftAim, facing = -1)
+                val rightStrokes = heldStrokesOf(right)
+                val leftStrokes = heldStrokesOf(left)
+                val rightAxis = (right.player.x + io.github.ksean.cyberslop.physics.Physics.Default.width / 2.0) * Scene.ZOOM
+                val leftAxis = (left.player.x + io.github.ksean.cyberslop.physics.Physics.Default.width / 2.0) * Scene.ZOOM
+
+                assertEquals(rightStrokes.size, leftStrokes.size)
+                rightStrokes.indices.forEach { index ->
+                    val expected = rightStrokes[index]
+                    val actual = leftStrokes[index]
+                    assertEquals(-(expected.x1 - rightAxis), actual.x1 - leftAxis, MIRROR_TOLERANCE)
+                    assertEquals(expected.y1, actual.y1, MIRROR_TOLERANCE)
+                    assertEquals(-(expected.x2 - rightAxis), actual.x2 - leftAxis, MIRROR_TOLERANCE)
+                    assertEquals(expected.y2, actual.y2, MIRROR_TOLERANCE)
+                }
+            }
+    }
+
     // ---- fixtures -----------------------------------------------------------------------------
 
     private fun lengthOf(stroke: IconOp.Stroke): Double {
@@ -132,6 +159,36 @@ class HeldWeaponTest {
         var run = RunState.begin(SEED)
         run = run.copy(loadout = run.loadout.copy(weapon = Weapons.of(id)))
         return heldStrokesOf(GameSimulation(level, run, SEED))
+    }
+
+    private fun simulationAiming(aim: Vec2, facing: Int): GameSimulation {
+        val level = LevelGenerator.generate(SEED, MAP).level
+        val run = RunState.begin(SEED).let {
+            it.copy(loadout = it.loadout.copy(weapon = Weapons.of(WeaponId.RiotbreakerShotgun)))
+        }
+        return GameSimulation(level, run, SEED).also { sim ->
+            sim.items.clear()
+            sim.enemies.clear()
+            val direction = aim.normalisedOr(Vec2.Right)
+            val playerCentre = Vec2(
+                sim.player.x + io.github.ksean.cyberslop.physics.Physics.Default.width / 2.0,
+                sim.player.y + sim.player.height(io.github.ksean.cyberslop.physics.Physics.Default) / 2.0,
+            )
+            val targetCorner = playerCentre + direction * TARGET_AHEAD - Vec2(ENEMY_HALF, ENEMY_HALF)
+            sim.enemies += io.github.ksean.cyberslop.sim.LiveEnemy(
+                archetype = io.github.ksean.cyberslop.entity.EnemyArchetype.Swarm,
+                position = targetCorner,
+                health = LOTS,
+                homeX = targetCorner.x,
+                patrolPx = 0.0,
+            )
+            sim.tick(
+                io.github.ksean.cyberslop.physics.InputFrame(
+                    left = facing < 0,
+                    right = facing > 0,
+                ),
+            )
+        }
     }
 
     /**
@@ -190,6 +247,9 @@ class HeldWeaponTest {
         const val VIEW_WIDTH = 260.0
         const val VIEW_HEIGHT = 150.0
         const val TOLERANCE = 1e-6
+        // The integration fixture acquires its aims through a live target after one movement tick;
+        // collision integration leaves the two bearings a few hundredths of a screen pixel apart.
+        const val MIRROR_TOLERANCE = 0.5
         const val AIM_APART = 0.2
         const val MOVED = 6.0
         const val SETTLE = 24
@@ -214,6 +274,7 @@ class HeldWeaponTest {
          */
         const val TARGET_AHEAD = 90.0
         const val TARGET_OFFSET = 90.0
+        const val ENEMY_HALF = 7.0
         const val LEVEL = 0
         const val UP = 1
         const val DOWN = 2

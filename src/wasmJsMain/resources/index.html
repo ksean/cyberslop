@@ -60,6 +60,25 @@
 
         #game-root p { margin: 0; color: var(--dim); }
 
+        #game-root.shop-screen {
+            justify-content: flex-start;
+            gap: 1rem;
+        }
+
+        #game-root.shop-screen h1 { font-size: clamp(2.25rem, 8vw, 4.5rem); }
+
+        #game-root .shop-upgrade {
+            width: min(38rem, 100%);
+            padding: 1rem 1.25rem;
+            box-sizing: border-box;
+            border: 1px solid var(--edge);
+            background: rgba(13, 16, 24, 0.82);
+        }
+
+        #game-root .shop-upgrade h2 { margin: 0 0 0.5rem; color: #f2f5ff; }
+        #game-root .shop-upgrade p + p { margin-top: 0.35rem; }
+        #game-root .shop-upgrade button { margin-top: 0.8rem; }
+
         #game-root button {
             font: inherit;
             font-weight: 600;
@@ -81,8 +100,14 @@
             box-shadow: 0 0 0 1px rgba(255, 47, 179, 0.35), 0 0 22px rgba(255, 47, 179, 0.28);
         }
 
+        #game-root button:disabled {
+            cursor: not-allowed;
+            opacity: 0.48;
+            box-shadow: none;
+        }
+
         /*
-         * The game is played on four keys and must stay fully operable from the keyboard
+         * The game must stay fully operable from the keyboard
          * (PROD-004), so the focus ring is louder than the hover state rather than quieter.
          */
         #game-root button:focus-visible {
@@ -106,7 +131,7 @@
 <body>
 <main id="game-root"></main>
 <canvas id="game-canvas" tabindex="0" role="application"
-        aria-label="Cyberslop gameplay. Arrow keys move, crouch and jump. The weapon fires by itself."
+        aria-label="Cyberslop gameplay. Use Arrow keys or WASD to move and crouch; use Arrow Up, W, or Space to jump. The weapon fires automatically."
         aria-describedby="game-status"></canvas>
 <!-- Run state in text, so the game is not opaque to assistive technology. A canvas announces
      nothing on its own. -->

@@ -7,17 +7,18 @@ import io.github.ksean.cyberslop.physics.IntentFilter
 import io.github.ksean.cyberslop.physics.MovementModel
 import io.github.ksean.cyberslop.physics.Stance
 import io.github.ksean.cyberslop.physics.TICK_SECONDS
+import io.github.ksean.cyberslop.progression.PlayerProfile
 import io.github.ksean.cyberslop.render.Camera
 import io.github.ksean.cyberslop.render.CanvasRenderer
 import io.github.ksean.cyberslop.render.HudModel
 import io.github.ksean.cyberslop.render.Scene
-import io.github.ksean.cyberslop.run.MetaProgression
 import io.github.ksean.cyberslop.run.RunState
 import io.github.ksean.cyberslop.save.LocalStorageSaveStore
 import io.github.ksean.cyberslop.screen.ScreenEvent
 import io.github.ksean.cyberslop.screen.ScreenRouter
 import io.github.ksean.cyberslop.screen.ScreenState
 import io.github.ksean.cyberslop.sim.GameSimulation
+import io.github.ksean.cyberslop.sim.TickReport
 import io.github.ksean.cyberslop.title.TitleScreenAction
 import kotlinx.browser.document
 import kotlinx.browser.window
@@ -36,24 +37,33 @@ class GameHost(
     private val root: HTMLElement,
     private val canvas: HTMLCanvasElement,
     private val saves: LocalStorageSaveStore,
+    private val onReturnToTitle: () -> Unit = {},
 ) {
     private val input = BrowserInput(canvas)
     private var filter = IntentFilter()
 
     private var screen: ScreenState = ScreenState.Title
-    private var meta: MetaProgression = MetaProgression()
+    private var profile: PlayerProfile = PlayerProfile()
     private var simulation: GameSimulation? = null
     private var renderer: CanvasRenderer? = null
     private var camera = Camera(0.0, 0.0, 1.0, 1.0)
     private var loop: RafLoop? = null
     private var announced = ""
+    private var deferredReport: TickReport? = null
+    private var lastActivityRevision = 0
+    private val discovery = DiscoverySession(
+        record = saves::recordDiscoveries,
+        clearInput = ::clearGameplayInput,
+        announce = ::announce,
+    )
 
     fun start(action: TitleScreenAction) {
+        if (action == TitleScreenAction.Shop) return
         val context = canvas.getContext("2d") as? CanvasRenderingContext2D ?: return
         renderer = CanvasRenderer(canvas, context)
 
         val restored = if (action == TitleScreenAction.ContinueGame) saves.load() else null
-        meta = restored?.second ?: saves.loadMeta()
+        profile = restored?.second ?: saves.loadProfile()
 
         // The screen must be told which map is being resumed, or it starts at one while the run is
         // on four — and the next boss death then rewrites the run's map index backwards.
@@ -62,6 +72,7 @@ class GameHost(
             when (action) {
                 TitleScreenAction.ContinueGame -> ScreenEvent.ContinueGame
                 TitleScreenAction.NewGame -> ScreenEvent.NewGame
+                TitleScreenAction.Shop -> return
             },
             resumeAt = restored?.first?.mapIndex ?: 1,
         )
@@ -71,22 +82,26 @@ class GameHost(
         canvas.style.display = "block"
         renderer?.resizeToDisplay()
         canvas.focus()
+        discovery.clear()
+        deferredReport = null
 
-        enter(restored?.first ?: RunState.begin(freshSeed()), playing.mapIndex)
+        enter(restored?.first ?: RunState.begin(freshSeed(), profile.upgrades), playing.mapIndex)
         input.detach()
         input.attach()
+        lastActivityRevision = input.activityRevision
 
         loop = RafLoop(
             step = { step() },
-            render = { alpha -> render(alpha) },
-            isPaused = { input.paused },
+            render = { alpha, deltaSeconds -> render(alpha, deltaSeconds) },
+            isPaused = { input.paused || discovery.paused },
         ).also { it.start() }
     }
 
     private fun enter(run: RunState, mapIndex: Int) {
-        val entering = run.copy(mapIndex = mapIndex)
+        // A purchase made while Continue was available applies now without rewriting current HP.
+        val entering = run.copy(mapIndex = mapIndex, upgrades = profile.upgrades)
         val generated = LevelGenerator.generate(entering.seed, mapIndex)
-        val sim = GameSimulation(generated.level, entering, entering.seed)
+        val sim = GameSimulation(generated.level, entering, entering.seed, profile.unlockedWeapons)
         simulation = sim
         // Assist state belongs to one simulation: a jump held into a map change is not a jump on
         // the next map, and a buffered press does not carry over.
@@ -99,7 +114,7 @@ class GameHost(
             canvas.height.toDouble() / Scene.ZOOM,
         )
         renderer?.enterLevel(sim, entering.seed)
-        saves.save(entering, meta)
+        saves.save(entering)
     }
 
     private fun step() {
@@ -110,6 +125,20 @@ class GameHost(
         val standingBlocked =
             player.stance == Stance.Crouch && !MovementModel.canStand(player, sim.level.tiles)
         val report = sim.tick(filter.next(input.keys(), player.onGround, standingBlocked))
+        if (report.collectedDiscoveries.isNotEmpty()) {
+            profile = discovery.collect(report.collectedDiscoveries).profile
+        }
+
+        if (discovery.paused) {
+            if (report.playerDied || report.mapCleared) deferredReport = report
+            return
+        }
+
+        handleReport(report)
+    }
+
+    private fun handleReport(report: TickReport) {
+        val sim = simulation ?: return
 
         if (report.playerDied) {
             endRun(sim.run.scrap, ScreenEvent.PlayerDied(sim.run.scrap))
@@ -128,6 +157,11 @@ class GameHost(
         }
     }
 
+    private fun clearGameplayInput() {
+        input.clear()
+        filter = IntentFilter()
+    }
+
     /**
      * Ends a run once and stops.
      *
@@ -141,39 +175,45 @@ class GameHost(
         loop?.stop()
         loop = null
         simulation = null
+        deferredReport = null
+        discovery.clear()
         saves.clearRun()
-        meta = meta.banking(scrap)
-        saves.saveMeta(meta)
+        profile = profile.banking(scrap)
+        saves.saveProfile(profile)
         showEndScreen(scrap)
     }
 
     private fun showEndScreen(scrap: Int) {
         canvas.style.display = "none"
         root.style.display = "flex"
-        root.textContent = ""
-
-        val heading = document.createElement("h1") as HTMLElement
-        heading.textContent = if (screen is ScreenState.Victory) "Run complete" else "You died"
-        root.appendChild(heading)
-
-        val summary = document.createElement("p") as HTMLElement
-        summary.textContent = "Scrap banked: $scrap. Total: ${meta.scrap}."
-        root.appendChild(summary)
-
-        val again = document.createElement("button") as org.w3c.dom.HTMLButtonElement
-        again.type = "button"
-        again.textContent = "New game"
-        again.onclick = { _ ->
-            screen = ScreenState.Title
-            start(TitleScreenAction.NewGame)
-        }
-        root.appendChild(again)
-        again.focus()
-
-        announce(heading.textContent.orEmpty() + ". " + summary.textContent.orEmpty())
+        announce(
+            renderRunEndedScreen(
+                root,
+                victory = screen is ScreenState.Victory,
+                scrapBanked = scrap,
+                profile = profile,
+                onReturnToTitle = {
+                    screen = ScreenRouter.next(screen, ScreenEvent.ReturnToTitle)
+                    onReturnToTitle()
+                },
+                onNewGame = {
+                    screen = ScreenState.Title
+                    start(TitleScreenAction.NewGame)
+                },
+            ),
+        )
     }
 
-    private fun render(alpha: Double) {
+    private fun render(alpha: Double, frameDeltaSeconds: Double) {
+        val currentRevision = input.activityRevision
+        val uninterruptedActiveFrame = !input.paused && currentRevision == lastActivityRevision
+        lastActivityRevision = currentRevision
+        if (discovery.advance(frameDeltaSeconds, uninterruptedActiveFrame)) {
+            val report = deferredReport
+            deferredReport = null
+            if (report != null) handleReport(report)
+        }
+
         val sim = simulation ?: return
         val active = renderer ?: return
         active.resizeToDisplay()
@@ -191,9 +231,15 @@ class GameHost(
             ),
             x, y, sim.facing, sim.level,
         )
-        active.draw(sim, camera, sim.elapsedTicks * TICK_SECONDS, alpha)
+        active.draw(
+            sim,
+            camera,
+            sim.elapsedTicks * TICK_SECONDS,
+            alpha,
+            discovery = discovery.active,
+        )
         // The same model the bar is drawn from, so the two cannot disagree (PROD-004).
-        announce(HudModel.of(sim).announcement)
+        discovery.active?.let { announce(it.announcement) } ?: announce(HudModel.of(sim).announcement)
     }
 
     /**

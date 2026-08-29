@@ -28,6 +28,7 @@ import io.github.ksean.cyberslop.physics.MovementModel
 import io.github.ksean.cyberslop.physics.Physics
 import io.github.ksean.cyberslop.physics.PlayerState
 import io.github.ksean.cyberslop.physics.TICK_SECONDS
+import io.github.ksean.cyberslop.progression.DiscoveryId
 import io.github.ksean.cyberslop.run.RunState
 import io.github.ksean.cyberslop.gen.Populator
 import io.github.ksean.cyberslop.world.Hazards
@@ -69,6 +70,8 @@ data class TickReport(
     val playerDied: Boolean = false,
     val mapCleared: Boolean = false,
     val bossDefeated: Boolean = false,
+    /** Items whose contact fully resolved this tick, in resolution order. */
+    val collectedDiscoveries: List<DiscoveryId> = emptyList(),
 )
 
 /**
@@ -165,8 +168,9 @@ class GameSimulation(
         private set
 
     private fun hurt(amount: Double) {
-        grossDamageTaken += amount
-        run = run.damaged(amount)
+        val reduced = amount * run.upgrades.incomingDamageMultiplier
+        grossDamageTaken += reduced
+        run = run.damaged(reduced)
     }
 
     /** How long the player has been grounded and clear of committed columns; see [playerExposed]. */
@@ -210,7 +214,11 @@ class GameSimulation(
      */
     private val starterRng = Rng.derive(seed, level.mapIndex, "starter-cache")
 
-    internal val autoFire = AutoFire(run.loadout.weapon, run.loadout.slots)
+    internal val autoFire = AutoFire(
+        run.loadout.weapon,
+        run.loadout.slots,
+        run.upgrades.weaponDamageMultiplier,
+    )
     private var minibossRewarded = false
     private var bossRewarded = false
 
@@ -316,7 +324,7 @@ class GameSimulation(
         advanceStatuses()
         advanceEnemies()
         advanceBosses()
-        collectItems()
+        val collectedDiscoveries = collectItems()
         drainHazards()
         drainContact()
 
@@ -332,6 +340,7 @@ class GameSimulation(
             playerDied = run.dead,
             mapCleared = exitReached,
             bossDefeated = boss.fight.defeated,
+            collectedDiscoveries = collectedDiscoveries,
         )
     }
 
@@ -342,6 +351,18 @@ class GameSimulation(
      */
     fun digest(): ULong = Digest().apply {
         add(run.health); add(run.scrap); add(run.mapIndex); add(run.loadout.weapon.id.ordinal)
+        // Keep the committed rank-zero cross-target golden stable. Non-default profile snapshots
+        // still carry an explicit tagged family because they change future health and damage rules.
+        if (
+            run.upgrades.reinforcedChassis != 0 ||
+            run.upgrades.blackMarketFirmware != 0 ||
+            run.upgrades.reactiveDermalWeave != 0
+        ) {
+            add(UPGRADE_DIGEST_TAG)
+            add(run.upgrades.reinforcedChassis)
+            add(run.upgrades.blackMarketFirmware)
+            add(run.upgrades.reactiveDermalWeave)
+        }
         val held = run.loadout.slots.held.entries.sortedBy { it.key.ordinal }
         add(held.size); held.forEach { add(it.key.ordinal); add(it.value) }
         add(player.x); add(player.y); add(player.vx); add(player.vy)
@@ -669,7 +690,10 @@ class GameSimulation(
         var total = amount
         weapon.spec.onHit.forEach { effect ->
             when (effect) {
-                is HitEffect.Bleed -> enemy.bleed.apply(effect.seconds, effect.perSecond)
+                is HitEffect.Bleed -> enemy.bleed.apply(
+                    effect.seconds,
+                    effect.perSecond * weapon.permanentDamageMultiplier,
+                )
                 is HitEffect.Ignite -> enemy.burn.apply(
                     effect.seconds, effect.fractionPerSecond * weapon.damagePerProjectile,
                 )
@@ -1153,10 +1177,11 @@ class GameSimulation(
         if (optionalLoot) items.add(drop)
     }
 
-    private fun collectItems() {
+    private fun collectItems(): List<DiscoveryId> {
         val reach = TILE_SIZE.toDouble()
         val centre = centreOf(player)
         val taken = items.filter { it.inReachOf(centre, reach) }
+        val collected = mutableListOf<DiscoveryId>()
         taken.forEach { item ->
             // Weapon first, then powerup (PROD-070): a paired award is one item, so its powerup
             // lands on its weapon whichever side the player walked in from.
@@ -1164,6 +1189,7 @@ class GameSimulation(
                 val (next, outcome) = run.loadout.collect(weapon)
                 // The weapon replaced and every slot cleared are sold.
                 run = run.copy(loadout = next, scrap = run.scrap + (outcome as WeaponPickup.Equipped).scrap)
+                collected += DiscoveryId.Weapon(weapon.id)
             }
             item.powerup?.let { powerup ->
                 val (next, outcome) = run.loadout.collect(powerup.id, level.mapIndex, item.guaranteed)
@@ -1175,10 +1201,12 @@ class GameSimulation(
                     is Pickup.Applied -> 0
                 }
                 if (scrap > 0) run = run.copy(scrap = run.scrap + scrap)
+                collected += DiscoveryId.Powerup(powerup.id)
             }
             autoFire.rebuild(run.loadout.weapon, run.loadout.slots)
         }
         items.removeAll(taken)
+        return collected
     }
 
     /** Harness hook: hold exactly this loadout, as the loot-floor model assumes. */
@@ -1314,5 +1342,6 @@ class GameSimulation(
         /** How long a hit enemy or boss is drawn red (PROD-076). */
         const val HURT_FLASH_SECONDS = 0.12
         const val EXIT_CLEARANCE = 6
+        private const val UPGRADE_DIGEST_TAG = 0x55504752
     }
 }

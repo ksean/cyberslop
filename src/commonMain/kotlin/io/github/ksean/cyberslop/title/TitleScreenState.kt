@@ -9,6 +9,7 @@ fun interface SavedGameAvailability {
 enum class TitleScreenAction(val accessibleName: String) {
     ContinueGame("Continue game"),
     NewGame("New game"),
+    Shop("Shop"),
 }
 
 data class TitleScreenState(
@@ -25,4 +26,5 @@ fun createTitleScreenState(savedGames: SavedGameAvailability): TitleScreenState 
 private fun availableActions(hasSavedGame: Boolean): List<TitleScreenAction> = buildList {
     if (hasSavedGame) add(TitleScreenAction.ContinueGame)
     add(TitleScreenAction.NewGame)
+    add(TitleScreenAction.Shop)
 }

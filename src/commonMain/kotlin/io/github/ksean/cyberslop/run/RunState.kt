@@ -2,6 +2,7 @@ package io.github.ksean.cyberslop.run
 
 import io.github.ksean.cyberslop.entity.Balance
 import io.github.ksean.cyberslop.loot.Loadout
+import io.github.ksean.cyberslop.progression.UpgradeRanks
 
 /** A run in progress. */
 data class RunState(
@@ -10,8 +11,10 @@ data class RunState(
     val loadout: Loadout,
     val health: Double,
     val scrap: Int,
+    /** Immutable profile snapshot applied to this active simulation. */
+    val upgrades: UpgradeRanks = UpgradeRanks(),
 ) {
-    val maxHealth: Double get() = Balance.playerMaxHealth(mapIndex)
+    val maxHealth: Double get() = Balance.playerMaxHealth(mapIndex) * upgrades.healthMultiplier
 
     fun damaged(amount: Double): RunState = copy(health = (health - amount).coerceAtLeast(0.0))
 
@@ -20,42 +23,17 @@ data class RunState(
     /** Entering the next map restores health, which is the reward for clearing a boss. */
     fun advanced(): RunState = copy(
         mapIndex = mapIndex + 1,
-        health = Balance.playerMaxHealth(mapIndex + 1),
+        health = Balance.playerMaxHealth(mapIndex + 1) * upgrades.healthMultiplier,
     )
 
     companion object {
-        fun begin(seed: ULong): RunState = RunState(
+        fun begin(seed: ULong, upgrades: UpgradeRanks = UpgradeRanks()): RunState = RunState(
             seed = seed,
             mapIndex = 1,
             loadout = Loadout.starting(),
-            health = Balance.playerMaxHealth(1),
+            health = Balance.playerMaxHealth(1) * upgrades.healthMultiplier,
             scrap = 0,
+            upgrades = upgrades,
         )
-    }
-}
-
-/**
- * What survives a run.
- *
- * Death ends the run and returns the player to the first map with the starting weapon (PROD-031).
- * Scrap persists and widens the pool of things later runs can find, which is the only thing that
- * carries forward — there are no permanent stat bonuses, so a run is always won by playing it.
- */
-data class MetaProgression(
-    val scrap: Int = 0,
-    val unlockedWeapons: Int = STARTING_UNLOCKS,
-) {
-    fun banking(runScrap: Int): MetaProgression {
-        val total = scrap + runScrap
-        return copy(scrap = total, unlockedWeapons = unlocksFor(total))
-    }
-
-    companion object {
-        const val STARTING_UNLOCKS = 8
-        const val SCRAP_PER_UNLOCK = 400
-        const val MAX_UNLOCKS = 26
-
-        fun unlocksFor(scrap: Int): Int =
-            (STARTING_UNLOCKS + scrap / SCRAP_PER_UNLOCK).coerceAtMost(MAX_UNLOCKS)
     }
 }

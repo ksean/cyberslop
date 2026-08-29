@@ -8,7 +8,7 @@ class TitleScreenStateTest {
     fun `continue game is withheld without a saved game`() {
         val state = createTitleScreenState(SavedGameAvailability { false })
 
-        assertEquals(listOf(TitleScreenAction.NewGame), state.actions)
+        assertEquals(listOf(TitleScreenAction.NewGame, TitleScreenAction.Shop), state.actions)
     }
 
     @Test
@@ -16,7 +16,7 @@ class TitleScreenStateTest {
         val state = createTitleScreenState(SavedGameAvailability { true })
 
         assertEquals(
-            listOf(TitleScreenAction.ContinueGame, TitleScreenAction.NewGame),
+            listOf(TitleScreenAction.ContinueGame, TitleScreenAction.NewGame, TitleScreenAction.Shop),
             state.actions,
         )
     }
@@ -25,6 +25,10 @@ class TitleScreenStateTest {
     fun `the game needs no pointing device, so there is no aim setting to offer`() {
         val state = createTitleScreenState(SavedGameAvailability { false })
 
-        assertEquals(1, state.actions.size, "an unexpected action is on the title screen")
+        assertEquals(
+            listOf(TitleScreenAction.NewGame, TitleScreenAction.Shop),
+            state.actions,
+            "an unexpected action is on the title screen",
+        )
     }
 }

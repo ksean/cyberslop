@@ -42,8 +42,15 @@ consumes it**: a key pressed and released between two samples is reported as hel
 sample, so a tap can never be shorter than the simulation's ability to see it. A frame stall only
 delays the press; it cannot erase it.
 
-- Keys are identified by physical position (`KeyboardEvent.code`) and, failing that, by the
-  arrow `key` value, so the keypad's arrows work with NumLock off.
+- Gameplay bindings are identified by physical position (`KeyboardEvent.code`) first: arrows or
+  `KeyA`/`KeyD`/`KeyS`/`KeyW`, with `Space` as a third jump binding. A missing or unrecognised code
+  falls back to the arrow value, case-insensitive `a`/`d`/`s`/`w`, `" "` or legacy `Spacebar`, so
+  keypad arrows and synthetic assistive events work too. Every recognised gameplay `keydown`
+  prevents the browser's scrolling behaviour.
+- Bindings are sources for one of the four canonical actions, not keys that compete for its one
+  slot. If two aliases for an action are down together — `ArrowLeft` and `A`, for example —
+  releasing either one leaves the action held until the other is released. A press edge from
+  either alias is still latched exactly once by the ledger.
 - Held keys are released wholesale whenever a `keyup` might have been lost: on window blur, on the
   page becoming hidden or being put away, and when the canvas loses focus. Window blur and a
   hidden page also pause the loop; canvas focus loss does not.
@@ -98,6 +105,11 @@ Kotlin/Wasm and the JVM agree bit-for-bit on IEEE-754 `+ − × ÷ √`; they ma
   `jumpStart` and then produces exactly one on the first tick the player can stand.
 - **P-50** Input wiring: in a browser, `keydown` marks a key held, `keyup` releases it, and canvas
   blur, `pagehide` and window blur release every key.
+- **P-54** Alternate bindings: arrows map to left/right/crouch/jump; physical A/D/S/W map to the
+  same four actions; Space maps to jump; the case-insensitive and space key-value fallbacks do the
+  same; each `keydown` prevents default browser handling. Holding two bindings for one action and
+  releasing one keeps that action held, while releasing both clears it; focus-loss clearing
+  removes every alias.
 - **P-40** Simulation determinism: a digest of the whole rule-bearing simulation state after N
   ticks of a fixed tape on a fixed seed matches a committed golden value on both targets
   (enemies.md lists the fields). Presentation-only fields are excluded.

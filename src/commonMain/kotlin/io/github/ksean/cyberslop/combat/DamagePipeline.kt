@@ -9,6 +9,8 @@ import kotlin.math.min
 data class ResolvedWeapon(
     val spec: WeaponSpec,
     val damagePerProjectile: Double,
+    /** Profile multiplier kept so fixed-rate hit consequences such as Bleed scale once too. */
+    val permanentDamageMultiplier: Double,
     val cooldown: Double,
     val projectileCount: Int,
     val pierce: Int,
@@ -59,7 +61,14 @@ object DamagePipeline {
     /** Enemies never drop below this fraction of their speed, so slow cannot become a stun-lock. */
     const val MIN_ENEMY_SPEED_FRACTION = 0.40
 
-    fun resolve(spec: WeaponSpec, slots: PowerupSlots): ResolvedWeapon {
+    fun resolve(
+        spec: WeaponSpec,
+        slots: PowerupSlots,
+        permanentDamageMultiplier: Double = 1.0,
+    ): ResolvedWeapon {
+        require(permanentDamageMultiplier.isFinite() && permanentDamageMultiplier > 0.0) {
+            "invalid permanent damage multiplier $permanentDamageMultiplier"
+        }
         val additiveDamage = slots.magnitudeOf(PowerupId.HollowpointFirmware)
         val hitboxBonus = slots.magnitudeOf(PowerupId.MassDriver)
 
@@ -75,7 +84,7 @@ object DamagePipeline {
         val splitFactor =
             if (extraProjectiles == 0) 1.0 else (base + forkGain) / totalProjectiles.toDouble()
 
-        val damage = spec.damage * (1.0 + additiveDamage) * splitFactor
+        val damage = spec.damage * (1.0 + additiveDamage) * splitFactor * permanentDamageMultiplier
 
         val speedFactor = 1.0 - slots.magnitudeOf(PowerupId.OverclockCoil)
         val cooldown = clampCooldown(spec.cooldown, spec.cooldown * speedFactor)
@@ -83,6 +92,7 @@ object DamagePipeline {
         return ResolvedWeapon(
             spec = spec,
             damagePerProjectile = damage,
+            permanentDamageMultiplier = permanentDamageMultiplier,
             cooldown = cooldown,
             projectileCount = totalProjectiles,
             pierce = spec.pierce.saturatingPlus(slots.magnitudeOf(PowerupId.SpikeDriver).toInt()),

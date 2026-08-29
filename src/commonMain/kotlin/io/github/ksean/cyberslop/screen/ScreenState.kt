@@ -10,6 +10,8 @@ package io.github.ksean.cyberslop.screen
 sealed interface ScreenState {
     data object Title : ScreenState
 
+    data object Shop : ScreenState
+
     data class Playing(val mapIndex: Int) : ScreenState
 
     /** The run is over. Permadeath (D1): there is no resuming from here. */
@@ -21,6 +23,7 @@ sealed interface ScreenState {
 sealed interface ScreenEvent {
     data object NewGame : ScreenEvent
     data object ContinueGame : ScreenEvent
+    data object OpenShop : ScreenEvent
     data class BossDefeated(val scrapEarned: Int) : ScreenEvent
     data class PlayerDied(val scrapEarned: Int) : ScreenEvent
     data object ReturnToTitle : ScreenEvent
@@ -36,6 +39,9 @@ object ScreenRouter {
             // Only meaningful from the title, and only when a run was actually in progress.
             ScreenEvent.ContinueGame ->
                 if (current is ScreenState.Title) ScreenState.Playing(resumeAt) else current
+
+            ScreenEvent.OpenShop ->
+                if (current is ScreenState.Title) ScreenState.Shop else current
 
             is ScreenEvent.BossDefeated -> when {
                 current !is ScreenState.Playing -> current

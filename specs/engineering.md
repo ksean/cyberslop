@@ -35,15 +35,16 @@ commonMain/io/github/ksean/cyberslop/
   verify/    Reachability (UnderReach / OverReach), Witness, WitnessReplay
   combat/    WeaponSpec, Weapons, DamagePipeline, Targeting, AutoFire, WeaponScore
   loot/      Powerup, Powerups, PowerupSlots, Loadout, DropTable, LootFloor
+  progression/  PlayerProfile, UpgradeCatalog, DiscoveryCatalog
   entity/    Enemies, Boss, Bosses, Balance
   sim/       GameSimulation, Entities
   render/    Palette, Rig, Actor, EnemyLook, Backdrop, Scene, DrawList, Icon*, Hud, Camera
   run/       RunState, SaveCodec
   screen/    ScreenState
-  title/     TitleScreenState
+  title/     TitleScreenState, ShopScreenState
 wasmJsMain/io/github/ksean/cyberslop/
   render/CanvasRenderer  input/BrowserInput  loop/RafLoop  save/LocalStorageSaveStore
-  game/GameHost  title/BrowserTitleScreen  Main.kt
+  game/GameHost  title/BrowserTitleScreen, BrowserShopScreen  Main.kt
 ```
 
 ## Simulation

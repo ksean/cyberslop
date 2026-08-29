@@ -31,6 +31,7 @@ object IconPainter {
         outlineLayer: Layer,
         wearLayer: Layer,
         aim: Vec2 = Vec2.Right,
+        handedness: IconHandedness = IconHandedness.Right,
     ) {
         require(haloLayer.ordinal < outlineLayer.ordinal) {
             "$haloLayer is not under $outlineLayer, so the halo would paint over the icon"
@@ -44,6 +45,7 @@ object IconPainter {
             scale,
             aim,
             IconBatchSink(builder, haloLayer, scale, halo = true),
+            handedness,
         )
         icon.paint(
             originX,
@@ -51,6 +53,7 @@ object IconPainter {
             scale,
             aim,
             IconBatchSink(builder, outlineLayer, scale, halo = false, wearLayer = wearLayer),
+            handedness,
         )
     }
 }

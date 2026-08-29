@@ -71,7 +71,7 @@ async function smokeTestBundle(hasSavedGame) {
         env.root.children
             .filter((element) => element.tagName === "BUTTON")
             .map((button) => button.textContent),
-        hasSavedGame ? ["Continue game", "New game"] : ["New game"],
+        hasSavedGame ? ["Continue game", "New game", "Shop"] : ["New game", "Shop"],
     )
 }
 
@@ -160,7 +160,7 @@ async function smokeTestStaleMarker() {
         env.root.children
             .filter((element) => element.tagName === "BUTTON")
             .map((button) => button.textContent),
-        ["New game"],
+        ["New game", "Shop"],
         "an unreadable save was offered as resumable",
     )
 }

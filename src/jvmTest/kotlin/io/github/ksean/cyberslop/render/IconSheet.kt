@@ -95,7 +95,15 @@ object IconSheet {
             val x = CELL * (step % COLUMNS + 0.5)
             val y = CELL * (step / COLUMNS + 0.5)
             builder.batch(Layer.Debug, "#1a2030", Primitive.Dot).dot(x, y, 3.0)
-            paint(builder, entry, x, y, Scene.PICKUP_PX * tierScales.last(), aim)
+            paint(
+                builder,
+                entry,
+                x,
+                y,
+                Scene.PICKUP_PX * tierScales.last(),
+                aim,
+                IconHandedness.forHeldAim(aim, if (aim.x < 0.0) -1 else 1),
+            )
         }
         return builder.build()
     }
@@ -111,7 +119,10 @@ object IconSheet {
         y: Double,
         scale: Double,
         aim: Vec2,
+        handedness: IconHandedness = IconHandedness.Right,
     ) {
-        IconPainter.paint(builder, entry.icon, x, y, scale, Layer.ItemHalo, Layer.Items, Layer.ItemWear, aim)
+        IconPainter.paint(
+            builder, entry.icon, x, y, scale, Layer.ItemHalo, Layer.Items, Layer.ItemWear, aim, handedness,
+        )
     }
 }

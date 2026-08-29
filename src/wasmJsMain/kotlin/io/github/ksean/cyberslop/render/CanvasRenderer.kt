@@ -1,5 +1,6 @@
 package io.github.ksean.cyberslop.render
 
+import io.github.ksean.cyberslop.progression.DiscoveryEntry
 import io.github.ksean.cyberslop.sim.GameSimulation
 import io.github.ksean.cyberslop.world.TILE_SIZE
 import io.github.ksean.cyberslop.world.TileMap
@@ -60,13 +61,20 @@ class CanvasRenderer(
         backdrop = Backdrops.of(seed, sim.level)
     }
 
-    fun draw(sim: GameSimulation, camera: Camera, timeSeconds: Double, alpha: Double = 1.0) {
+    fun draw(
+        sim: GameSimulation,
+        camera: Camera,
+        timeSeconds: Double,
+        alpha: Double = 1.0,
+        discovery: DiscoveryEntry? = null,
+    ) {
         val skyline = backdrop ?: Backdrops.of(sim.run.seed, sim.level).also { backdrop = it }
 
         FramePainter.paint(
             Scene.compose(
                 sim, camera, skyline, HudModel.of(sim), timeSeconds, builder, alpha,
                 debugMasks = showDebugOverlay,
+                discovery = discovery,
             ),
             sink,
         )

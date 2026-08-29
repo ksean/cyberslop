@@ -26,12 +26,13 @@ for a label. Buffers are reused per frame; allocation grows with actors on scree
 primitives they draw. The batch count bounds state changes, which is what was measured; it does not
 bound rasterization.
 
-Layers, back to front: `Sky`, `BackdropFar/Mid/Near`, `Haze`, `Terrain`, `Hazard`, `ItemHalo`,
-`Items`, `ItemWear`, actors (with `ActorWear` over `ActorTrim`), `ShotGlow`, `ShotBody`, `ShotCore`,
-`Effects`, `Debug`, `Hud`, `HudOverlay`, `HudWear`. The halo, the material and the weathering of an
-icon are on three layers, and a shot's three marks on three, because on one layer their order
-depends on which batch opened first — and a wider batch a later drop or a fresher impact opens
-paints over an earlier one's overlay.
+Layers, back to front: `Sky`, `BackdropFar/Mid/Near`, `Haze`, `Terrain`, `Hazard`, `HazardSurface`,
+`ItemHalo`, `Items`, `ItemWear`, actors (with `ActorWear` over `ActorTrim`), `ShotGlow`, `ShotBody`,
+`ShotCore`, `Effects`, `Debug`, `Hud`, `HudOverlay`, `HudWear`. The halo, the material and the
+weathering of an icon are on three layers, and a shot's three marks on three, because on one layer
+their order depends on which batch opened first — and a wider batch a later drop or a fresher impact
+opens paints over an earlier one's overlay. A bubble's glow dot is on `Hazard` and its smaller body
+dot on `HazardSurface`, so every bubble remains a ring however the acid body batches opened.
 
 ## The view
 
@@ -50,10 +51,16 @@ ramp that is strictly increasing in luminance (enforced at construction). Colour
 drifts across the run, from cold slate and sodium orange to sterile white-gold.
 
 Tiles have a lit top edge and a darker body (two batches, not two draws per tile). Acid has a
-bright surface line and a dimmer body; a fire jet has a hot core, a cooler outer column and a floor
-pool of light. The backdrop is three parallax layers of procedural skyline at 0.12×, 0.30× and
-0.55× the camera rate, generated once per level from the `backdrop` stream and posed per frame by a
-damped horizontal and vertical offset. It is never collidable.
+bright surface line and a dimmer body. Every exposed acid surface tile also carries three
+two-tone bubble rings: a `hazardGlow` outer dot under a smaller `hazard` dot, at three horizontal
+offsets and coordinate-derived phases. During a 1.2 s cycle each bubble rises through the upper
+70 % of the liquid and grows from 1.5 to 4 screen px before resetting at the bottom; neighbouring
+tiles and bubbles are out of phase, so the whole surface never pulses as one. The cycle reads the
+same interpolated presentation time as hovering drops and has no simulation state. A fire jet has
+a hot core, a cooler outer column and a floor pool of light. The backdrop is three parallax layers
+of procedural skyline at 0.12×, 0.30× and 0.55× the camera rate, generated once per level from the
+`backdrop` stream and posed per frame by a damped horizontal and vertical offset. It is never
+collidable.
 
 ## The player rig
 
@@ -189,8 +196,15 @@ draws none.
 
 An icon is a list of `Stroke(x1, y1, x2, y2, weight, material)` and `Dot(x, y, r, material)` ops in
 a local `[-1, 1]²` box, keyed by `WeaponId` or `PowerupId` in one registry (ENG-064). Only segments
-and dots, because a segment is closed under rotation and a rectangle is not. Orientation by a unit
-vector is `(u·ax − v·ay, u·ay + v·ax)` — no transform, no trig.
+and dots, because a segment is closed under rotation or reflection and a rectangle is not.
+Orientation takes a unit aim `(ax, ay)` and a handedness `s`: `s = +1` for a right-facing
+presentation and `s = −1` for a left-facing one, giving
+`(u·ax − s·v·ay, u·ay + s·v·ax)` — no transform and no trig. Ground, HUD and discovery-card icons
+use `s = +1`. A held icon uses the sign of the aim's x component, falling back to the actor's
+facing when it is exactly vertical. Thus horizontal left maps `(u, v)` to `(−u, v)`, and an angled
+left aim is the pointwise horizontal mirror of the corresponding angled right aim: the muzzle
+follows the target without turning the stock, blade teeth, magazine or sight upside down
+(PROD-084).
 
 - **Three weights** — `Hair` 0.07, `Line` 0.13, `Slab` 0.28 of the half-extent — with round caps;
   a `Slab` is a filled bar, and every gap is measured against cap extension.
@@ -259,10 +273,13 @@ aged, is a human judgement made against the icon sheet, not a test.
 ## HUD and screens
 
 The HUD shows health, the equipped weapon's icon and name, each held powerup's icon and stack
-count, and the map index and sub-theme (PROD-045). The title screen is a DOM screen with real
-buttons and accessible names; the canvas carries `role="application"`, an `aria-label` and a
-visually hidden live region for run state. Window focus loss and a hidden page clear held keys and
-pause; canvas focus loss clears held keys (`specs/simulation.md`, key ledger).
+count, and the map index and sub-theme (PROD-045). The title and shop are DOM screens with real
+buttons and accessible names. A first-pickup discovery card is drawn centred over a dimmed canvas
+with the registered icon, item name and description; its text is repeated through the visually
+hidden live region (PROD-083, progression.md). The canvas carries `role="application"` and an
+`aria-label` which names the arrow and A/D/S/W movement bindings, Space jump and automatic fire.
+Window focus loss and a hidden page clear held keys and pause; canvas focus loss clears held keys
+(`specs/simulation.md`, key ledger).
 
 ## Verified properties
 
@@ -305,8 +322,9 @@ pause; canvas focus loss clears held keys (`specs/simulation.md`, key ledger).
 - **P-27** Icon totality and distinctness: every id resolves to an icon, purely; no two icons are
   equal as geometry; every op is inside the box; every icon has at least three strokes spanning at
   least 60 % of the box's longer axis.
-- **P-28** One icon, three presentations: ground, hand and HUD draw the same op list differing only
-  in scale and orientation; orienting is a rigid motion.
+- **P-28** One icon, four presentations: ground, hand, HUD and discovery card draw the same op list
+  and materials, differing only in scale and orientation; orientation preserves every distance and
+  either preserves or horizontally reflects handedness.
 - **P-29** Kind survives colour removal: casing on every powerup, on no weapon; id → kind → ring
   colour is total; the two ring colours differ in hue and luminance.
 - **P-30** Legible on every map: for each palette and each of its nine background colours, and
@@ -347,3 +365,15 @@ pause; canvas focus loss clears held keys (`specs/simulation.md`, key ledger).
   `ShotCore` even when two impacts of different ages open different tracer widths; a frame with
   fifty shots of every look opens the same number of shot and effect batches for them as a frame
   with one of each; no shot colour is an item colour (PROD-051).
+- **P-55** Held-weapon handedness: for every icon, a horizontal left aim maps every local point
+  `(u, v)` to `(−u, v)` relative to the hand where a right aim maps it to `(u, v)`; left-up and
+  left-down presentations are pointwise horizontal mirrors of their right-side counterparts.
+  Stroke weights, materials and inter-point distances are unchanged, and the icon's positive-x
+  damaging end remains on the aim ray. Ground, HUD and discovery presentations remain right-facing.
+- **P-58** Bubbly acid: every visible acid tile with no acid directly above retains one body and
+  bright surface and draws three two-tone bubble rings with distinct phases, glow under body on
+  separate ordered layers. At two presentation
+  times inside the 1.2 s cycle at least one ring has changed height and radius; at times one full
+  cycle apart the acid draw list is equal. Equal level, camera and time always give an equal frame;
+  changing or drawing the bubbles changes neither tile contact, lethality nor the simulation
+  digest, and the bubble styles add a constant number of batches independent of pool width.

@@ -21,6 +21,12 @@ class ScreenRouterTest {
     }
 
     @Test
+    fun `shop opens from and returns to the title`() {
+        assertEquals(ScreenState.Shop, ScreenRouter.next(ScreenState.Title, ScreenEvent.OpenShop))
+        assertEquals(ScreenState.Title, ScreenRouter.next(ScreenState.Shop, ScreenEvent.ReturnToTitle))
+    }
+
+    @Test
     fun `defeating a boss advances to the next map`() {
         assertEquals(
             ScreenState.Playing(mapIndex = 3),
@@ -82,6 +88,7 @@ class ScreenRouterTest {
             ScreenState.Playing(3),
             ScreenState.Dead(3, 0),
             ScreenState.Victory(0),
+            ScreenState.Shop,
         ).forEach {
             assertEquals(ScreenState.Title, ScreenRouter.next(it, ScreenEvent.ReturnToTitle))
         }

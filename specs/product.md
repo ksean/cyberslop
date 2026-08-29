@@ -4,8 +4,8 @@
 
 Cyberslop is a cyberpunk-dystopian side-scrolling roguelite for the browser. The player crosses ten
 procedurally generated maps of rising difficulty, left to right, fighting a mini-boss at each
-midpoint and a main boss at each end. Four keys, one weapon that fires by itself, a build of
-powerups collected by walking over them, and permadeath with persistent unlocks.
+midpoint and a main boss at each end. Four movement actions, one weapon that fires by itself, a
+build of powerups collected by walking over them, and permadeath with persistent unlocks.
 
 ## Runtime
 
@@ -22,21 +22,33 @@ powerups collected by walking over them, and permadeath with persistent unlocks.
 - **PROD-010:** Opening the game URL must show the title `Cyberslop` and a button named `New game`.
   A button named `Continue game` must be present exactly when a valid in-progress save exists.
 - **PROD-031:** Death must end the run and return the player to the first map with the starting
-  weapon. Scrap earned during a run must persist and expand the pool of weapons and powerups
-  available to later runs.
+  weapon. Scrap earned during a run must be banked when the run ends: it increases both a spendable
+  balance and a lifetime total. The lifetime total expands the pool of weapons available to later
+  runs; spending the balance must never shrink that pool or erase an unlock.
 - **PROD-032:** `Continue game` must resume an in-progress run only — never a run that has ended,
   and never a save the current build cannot read. Saves carry a format version and are refused
   rather than partially applied.
 - **PROD-048:** The title screen and the run-ended screens must share the in-game visual identity.
+- **PROD-081:** The title screen must always offer a keyboard-operable button named `Shop`. The
+  shop must show the player's spendable Scrap, every permanent upgrade and its current rank,
+  effect and next-rank price, and a `Back` button that returns to the same title screen without
+  discarding a valid in-progress run. Every run-ended screen must offer `Return to title`, so Scrap
+  banked by that run can be spent without reloading the page.
+- **PROD-082:** Scrap spent in the shop must buy permanent character upgrades which apply to every
+  later new or continued run. A purchase must be immediate, persistent and all-or-nothing; an
+  unaffordable or maximum-rank purchase changes nothing. The catalog, prices, effects, unlock
+  accounting and save migration are specified in [progression.md](progression.md).
 
 ## Controls and gameplay
 
 - **PROD-020:** A run must consist of ten procedurally generated maps of increasing difficulty. The
   player progresses by moving right; each map contains a mini-boss at its midpoint and a main boss
   at its end, and the main boss gates the map exit.
-- **PROD-021:** The only controls must be left, right, crouch and jump on the arrow keys. The
-  equipped weapon fires automatically on its own cooldown at the nearest valid target. There is no
-  attack input.
+- **PROD-021:** Gameplay must expose exactly four actions: left on `ArrowLeft` or `A`, right on
+  `ArrowRight` or `D`, crouch on `ArrowDown` or `S`, and jump on `ArrowUp`, `W` or `Space`. Either
+  binding for an action must have identical press, hold, release, buffering and focus-loss
+  semantics. The equipped weapon fires automatically on its own cooldown at the nearest valid
+  target. There is no attack input.
 - **PROD-022:** Aiming must require no player input and no configuration.
 - **PROD-023:** A run must begin with a broken bottle melee weapon that swings every two seconds.
 - **PROD-024:** Every map presented must be completable: the generator holds a witness — an input
@@ -123,6 +135,13 @@ powerups collected by walking over them, and permadeath with persistent unlocks.
   activation is already a single round (the Minigun) satisfies this by its cadence, and any
   extra round a powerup adds to it leaves along the same line. Spread stays the mechanic of
   weapons that are spread weapons by nature (a shotgun, a nailgun).
+- **PROD-083:** The first time a browser profile collects each weapon or powerup, the collection
+  must complete and then gameplay must pause for three seconds of active foreground time. A card
+  centred over the game must show that item's usual picture, name and a brief, mechanically
+  accurate description. The discovery must persist before the card is shown; collecting the same
+  item in any later run must neither pause nor show the card. Several first discoveries from one
+  pickup are shown one at a time in weapon-then-powerup order. See
+  [progression.md](progression.md).
 - **PROD-046:** One slain rank-and-file enemy in five drops something at every map index, three in
   ten of those a weapon. Mini-bosses and main bosses award loot on every death and are outside this
   rate.
@@ -179,6 +198,13 @@ powerups collected by walking over them, and permadeath with persistent unlocks.
   tracer, in a colour that tells the player what fired it: a ranged weapon's shot is hot
   brass-orange, a psychic weapon's violet, and an enemy's shot stays in the map's hazard colour
   with its own brighter core.
+- **PROD-084:** A held weapon aimed left must be the horizontal mirror of its corresponding
+  right-aimed appearance, not a 180-degree rotation: its top remains its top while its damaging end
+  still follows the aim. The same rule applies at upward and downward angles on the left side.
+- **PROD-085:** An acid pool must read as toxic liquid rather than a static block: every visible
+  exposed surface must retain its bright liquid edge and show several differently phased bubbles
+  rising and bursting. The animation is presentational only and changes no hazard geometry,
+  timing or lethality.
 - **PROD-051:** An icon stays legible on every sub-theme: for every material colour and both ring
   colours, the drawn halo-and-line pair separates in Rec. 709 luminance from that palette's sky,
   backdrop and tile colours by at least 40 of 255, and no colour used for an item is used in the

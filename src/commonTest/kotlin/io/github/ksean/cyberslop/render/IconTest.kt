@@ -47,6 +47,59 @@ class IconTest {
     }
 
     @Test
+    fun `left handed placement is a pointwise horizontal mirror`() {
+        val icon = Icon(
+            listOf(
+                IconOp.Stroke(-0.8, -0.45, 0.9, 0.2, StrokeWeight.Slab, Material.Wood),
+                IconOp.Dot(0.35, -0.25, 0.1, Material.Energy),
+            ),
+        )
+
+        listOf(
+            Vec2.Right to Vec2(-1.0, 0.0),
+            Vec2(4.0, -3.0) to Vec2(-4.0, -3.0),
+            Vec2(4.0, 3.0) to Vec2(-4.0, 3.0),
+        )
+            .forEach { (rightAim, leftAim) ->
+                val right = RecordingIconSink().also {
+                    icon.paint(
+                        0.0, 0.0, 1.0, rightAim.normalisedOr(Vec2.Right), it,
+                        handedness = IconHandedness.Right,
+                    )
+                }
+                val left = RecordingIconSink().also {
+                    icon.paint(
+                        0.0, 0.0, 1.0, leftAim.normalisedOr(Vec2.Right), it,
+                        handedness = IconHandedness.Left,
+                    )
+                }
+
+                right.strokes.indices.forEach { index ->
+                    val expected = right.strokes[index]
+                    val actual = left.strokes[index]
+                    assertEquals(-expected.x1, actual.x1, TOLERANCE)
+                    assertEquals(expected.y1, actual.y1, TOLERANCE)
+                    assertEquals(-expected.x2, actual.x2, TOLERANCE)
+                    assertEquals(expected.y2, actual.y2, TOLERANCE)
+                    assertEquals(expected.weight, actual.weight)
+                }
+                right.dots.indices.forEach { index ->
+                    val expected = right.dots[index]
+                    val actual = left.dots[index]
+                    assertEquals(-expected.x, actual.x, TOLERANCE)
+                    assertEquals(expected.y, actual.y, TOLERANCE)
+                    assertEquals(expected.radius, actual.radius, TOLERANCE)
+                }
+            }
+    }
+
+    @Test
+    fun `a vertical held aim falls back to actor facing`() {
+        assertEquals(IconHandedness.Left, IconHandedness.forHeldAim(Vec2(0.0, -1.0), facing = -1))
+        assertEquals(IconHandedness.Right, IconHandedness.forHeldAim(Vec2(0.0, 1.0), facing = 1))
+    }
+
+    @Test
     fun `orienting an icon is a rigid motion`() {
         val icon = Icon(
             listOf(

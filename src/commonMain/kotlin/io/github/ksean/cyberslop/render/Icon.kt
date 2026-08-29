@@ -93,6 +93,23 @@ interface IconSink {
     fun dot(x: Double, y: Double, radius: Double, material: Material)
 }
 
+/** Whether local icon y is preserved or reflected when its positive x axis follows an aim. */
+enum class IconHandedness(internal val sign: Double) {
+    Right(1.0),
+    Left(-1.0),
+    ;
+
+    companion object {
+        /** Held icons follow horizontal aim, retaining the actor's side for a perfectly vertical aim. */
+        fun forHeldAim(aim: Vec2, facing: Int): IconHandedness = when {
+            aim.x < 0.0 -> Left
+            aim.x > 0.0 -> Right
+            facing < 0 -> Left
+            else -> Right
+        }
+    }
+}
+
 /**
  * The shape of one weapon or one powerup (PROD-049).
  *
@@ -154,26 +171,28 @@ class Icon(val ops: List<IconOp>) {
         scale: Double,
         aim: Vec2,
         sink: IconSink,
+        handedness: IconHandedness = IconHandedness.Right,
     ) {
         // The icon's local +x axis is laid along `aim`, and its +y along the perpendicular. No
         // angle is ever formed, so `TrigTable` is not consulted and ENG-054 has nothing to say:
         // the direction arrives as a unit vector and stays one. Four multiplies and two adds.
         val ax = aim.x
         val ay = aim.y
+        val sign = handedness.sign
         ops.forEach { op ->
             when (op) {
                 is IconOp.Stroke -> sink.stroke(
-                    originX + (op.x1 * ax - op.y1 * ay) * scale,
-                    originY + (op.x1 * ay + op.y1 * ax) * scale,
-                    originX + (op.x2 * ax - op.y2 * ay) * scale,
-                    originY + (op.x2 * ay + op.y2 * ax) * scale,
+                    originX + (op.x1 * ax - sign * op.y1 * ay) * scale,
+                    originY + (op.x1 * ay + sign * op.y1 * ax) * scale,
+                    originX + (op.x2 * ax - sign * op.y2 * ay) * scale,
+                    originY + (op.x2 * ay + sign * op.y2 * ax) * scale,
                     op.weight,
                     op.material,
                 )
 
                 is IconOp.Dot -> sink.dot(
-                    originX + (op.x * ax - op.y * ay) * scale,
-                    originY + (op.x * ay + op.y * ax) * scale,
+                    originX + (op.x * ax - sign * op.y * ay) * scale,
+                    originY + (op.x * ay + sign * op.y * ax) * scale,
                     op.radius * scale,
                     op.material,
                 )

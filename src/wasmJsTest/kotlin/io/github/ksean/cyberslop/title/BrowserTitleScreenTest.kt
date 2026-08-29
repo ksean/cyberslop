@@ -28,14 +28,14 @@ class BrowserTitleScreenTest {
         renderTitleScreen(root, stateWithSavedGame(available = false))
 
         assertEquals("Cyberslop", root.querySelector("h1")?.textContent)
-        assertEquals(listOf("New game"), buttonNames())
+        assertEquals(listOf("New game", "Shop"), buttonNames())
     }
 
     @Test
     fun `renders continue game before new game when a saved game exists`() {
         renderTitleScreen(root, stateWithSavedGame(available = true))
 
-        assertEquals(listOf("Continue game", "New game"), buttonNames())
+        assertEquals(listOf("Continue game", "New game", "Shop"), buttonNames())
     }
 
     @Test
@@ -61,7 +61,10 @@ class BrowserTitleScreenTest {
 
         buttons().forEach { it.click() }
 
-        assertEquals(listOf(TitleScreenAction.ContinueGame, TitleScreenAction.NewGame), chosen)
+        assertEquals(
+            listOf(TitleScreenAction.ContinueGame, TitleScreenAction.NewGame, TitleScreenAction.Shop),
+            chosen,
+        )
     }
 
     /**
@@ -80,7 +83,7 @@ class BrowserTitleScreenTest {
             "the tagline is focusable, so it sits between the title and the first action",
         )
         assertEquals(
-            listOf("Continue game", "New game"),
+            listOf("Continue game", "New game", "Shop"),
             buttonNames(),
             "the restyle changed what the actions are called",
         )

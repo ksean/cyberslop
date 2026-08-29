@@ -20,6 +20,8 @@ enum class Layer {
     Haze,
     Terrain,
     Hazard,
+    /** Acid bubble bodies, structurally over their glow dots on [Hazard]. */
+    HazardSurface,
 
     /*
      * An icon is drawn twice — a dark halo, then the coloured line over it — and which of those two

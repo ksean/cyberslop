@@ -10,6 +10,7 @@ internal fun renderTitleScreen(
     onAction: (TitleScreenAction) -> Unit = {},
 ) {
     root.textContent = ""
+    root.className = ""
     root.appendChild(titleElement(state.title))
     root.appendChild(tagline())
     state.actions.forEach { action ->

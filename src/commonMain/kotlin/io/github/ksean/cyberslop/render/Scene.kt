@@ -7,6 +7,7 @@ import io.github.ksean.cyberslop.core.Vec2
 import io.github.ksean.cyberslop.entity.AttackVisual
 import io.github.ksean.cyberslop.physics.Physics
 import io.github.ksean.cyberslop.physics.TICK_SECONDS
+import io.github.ksean.cyberslop.progression.DiscoveryEntry
 import io.github.ksean.cyberslop.sim.GameSimulation
 import io.github.ksean.cyberslop.sim.HitShape
 import io.github.ksean.cyberslop.sim.LiveBoss
@@ -98,6 +99,8 @@ object Scene {
         alpha: Double = 1.0,
         /** Draws the corridor mask over the world. Development only. */
         debugMasks: Boolean = false,
+        /** First-pickup overlay; when present it replaces the ordinary HUD for this frame. */
+        discovery: DiscoveryEntry? = null,
     ): DrawList {
         builder.begin()
         val palette = Palettes.of(sim.level.theme)
@@ -106,10 +109,11 @@ object Scene {
 
         sky(builder, palette, width, height)
         skyline(builder, palette, backdrop, camera, width, height)
-        tiles(builder, palette, sim.level, camera)
+        val presentationTime = presentationTime(timeSeconds, alpha)
+        tiles(builder, palette, sim.level, camera, presentationTime)
         arenas(builder, palette, sim.level, camera)
         jets(builder, palette, sim.level, camera, timeSeconds)
-        pickups(builder, sim, camera, presentationTime(timeSeconds, alpha))
+        pickups(builder, sim, camera, presentationTime)
         enemies(builder, palette, sim, camera, timeSeconds)
         bosses(builder, palette, sim, camera)
         projectiles(builder, palette, sim, camera)
@@ -120,7 +124,11 @@ object Scene {
         swing(builder, palette, sim, camera, muzzle)
         player(builder, palette, sim, camera, muzzle)
         if (debugMasks) masks(builder, sim.level, camera)
-        hud(builder, palette, hud, width, height)
+        if (discovery == null) {
+            hud(builder, palette, hud, width, height)
+        } else {
+            discoveryCard(builder, palette, discovery, width, height)
+        }
 
         return builder.build()
     }
@@ -206,7 +214,13 @@ object Scene {
      * Solid tiles get a lit top edge wherever nothing sits above them. That single extra rectangle
      * is what turns a grid of squares into surfaces with a light direction.
      */
-    private fun tiles(builder: SceneBuilder, palette: Palette, level: Level, camera: Camera) {
+    private fun tiles(
+        builder: SceneBuilder,
+        palette: Palette,
+        level: Level,
+        camera: Camera,
+        timeSeconds: Double,
+    ) {
         val first = (TileMap.toTile(camera.x) - 1).coerceAtLeast(0)
         val last = (TileMap.toTile(camera.x + camera.viewWidth) + 1)
             .coerceAtMost(level.widthTiles - 1)
@@ -219,6 +233,8 @@ object Scene {
         val edge = builder.batch(Layer.Terrain, palette.tileEdge, Primitive.Rect)
         val hazard = builder.batch(Layer.Hazard, palette.hazard, Primitive.Rect)
         val hazardGlow = builder.batch(Layer.Hazard, palette.hazardGlow, Primitive.Rect)
+        val bubbleGlow = builder.batch(Layer.Hazard, palette.hazardGlow, Primitive.Dot)
+        val bubbleBody = builder.batch(Layer.HazardSurface, palette.hazard, Primitive.Dot)
         val spikes = builder.batch(Layer.Hazard, palette.hazardGlow, Primitive.Segment, strokeWidth(STRIP_WIDTH))
         val size = TILE_SIZE * ZOOM
 
@@ -239,6 +255,7 @@ object Scene {
                         hazard.rect(screenX, screenY, size, size)
                         if (level.tiles[x, y - 1] != TileKind.Acid) {
                             hazardGlow.rect(screenX, screenY, size, EDGE_PX)
+                            acidBubbles(bubbleGlow, bubbleBody, screenX, screenY, size, x, y, timeSeconds)
                         }
                     }
 
@@ -261,6 +278,37 @@ object Scene {
             }
         }
         barrels(builder, palette, level, camera, first..last)
+    }
+
+    /** Three deterministic rings rising through an exposed acid tile (P-58). */
+    private fun acidBubbles(
+        glow: DrawBatch,
+        body: DrawBatch,
+        screenX: Double,
+        screenY: Double,
+        size: Double,
+        tileX: Int,
+        tileY: Int,
+        timeSeconds: Double,
+    ) {
+        for (index in BUBBLE_X.indices) {
+            val phase = positiveRemainder(
+                timeSeconds / BUBBLE_CYCLE +
+                    (tileX * BUBBLE_PHASE_X + tileY * BUBBLE_PHASE_Y + index * BUBBLE_PHASE_INDEX)
+                        .toDouble() / BUBBLE_PHASE_STEPS,
+                1.0,
+            )
+            val x = screenX + size * BUBBLE_X[index]
+            val y = screenY + size * BUBBLE_RISE * (1.0 - phase)
+            val radius = BUBBLE_MIN_RADIUS + (BUBBLE_MAX_RADIUS - BUBBLE_MIN_RADIUS) * phase
+            glow.dot(x, y, radius)
+            body.dot(x, y, (radius - BUBBLE_RING).coerceAtLeast(BUBBLE_INNER_MIN))
+        }
+    }
+
+    private fun positiveRemainder(value: Double, modulus: Double): Double {
+        val remainder = value % modulus
+        return if (remainder < 0.0) remainder + modulus else remainder
     }
 
     /** A burning barrel: a body in its floor cell and a flame licking up through the cell above. */
@@ -690,6 +738,8 @@ object Scene {
          * (ENG-022).
          */
         heldIcon: Icon? = null,
+        /** Actor-side fallback when a held icon points exactly vertically. */
+        heldFacing: Int = 1,
     ) {
         val bulk = look?.bulk ?: 1.0
         val thickness = pose.height * ZOOM * LIMB * bulk
@@ -770,6 +820,7 @@ object Scene {
                     outlineLayer = Layer.ActorTrim,
                     wearLayer = Layer.ActorWear,
                     aim = pose.weaponAim,
+                    handedness = IconHandedness.forHeldAim(pose.weaponAim, heldFacing),
                 )
             }
         }
@@ -1207,6 +1258,7 @@ object Scene {
             // The same geometry the drop was drawn with, so picking a weapon up teaches the player
             // what that shape means on the floor of the next map (PROD-049).
             heldIcon = WeaponIcons.of(sim.run.loadout.weapon.id),
+            heldFacing = sim.facing,
             // Fixed rather than themed. The player has to be the one figure on screen that is never
             // in doubt, and against a dark map full of enemies in the same faction colours a themed
             // eye put them in the same read as everything trying to kill them.
@@ -1400,6 +1452,94 @@ object Scene {
         }
     }
 
+    private fun discoveryCard(
+        builder: SceneBuilder,
+        palette: Palette,
+        entry: DiscoveryEntry,
+        width: Double,
+        height: Double,
+    ) {
+        val cardWidth = minOf(width * DISCOVERY_WIDTH_FRACTION, DISCOVERY_MAX_WIDTH)
+        val cardHeight = minOf(height * DISCOVERY_HEIGHT_FRACTION, DISCOVERY_MAX_HEIGHT)
+        val left = (width - cardWidth) / 2.0
+        val top = (height - cardHeight) / 2.0
+        val panel = builder.batch(Layer.Hud, DISCOVERY_DIM, Primitive.Rect)
+        panel.rect(0.0, 0.0, width, height)
+        builder.batch(Layer.Hud, palette.accent, Primitive.Rect)
+            .rect(left, top, cardWidth, cardHeight)
+        builder.batch(Layer.Hud, DISCOVERY_BACK, Primitive.Rect).rect(
+            left + DISCOVERY_BORDER,
+            top + DISCOVERY_BORDER,
+            cardWidth - DISCOVERY_BORDER * 2.0,
+            cardHeight - DISCOVERY_BORDER * 2.0,
+        )
+
+        val centreX = width / 2.0
+        val iconY = top + cardHeight * DISCOVERY_ICON_Y
+        val iconScale = minOf(cardWidth, cardHeight) * DISCOVERY_ICON_SCALE
+        IconPainter.paint(
+            builder,
+            entry.icon,
+            centreX,
+            iconY,
+            iconScale,
+            haloLayer = Layer.Hud,
+            outlineLayer = Layer.HudOverlay,
+            wearLayer = Layer.HudWear,
+        )
+
+        builder.text(
+            TextItem(
+                "NEW DISCOVERY",
+                centreX,
+                top + DISCOVERY_LABEL_TOP,
+                DISCOVERY_LABEL_SIZE,
+                palette.glow.last(),
+                TextAlign.Centre,
+                bold = true,
+            ),
+        )
+        builder.text(
+            TextItem(
+                entry.name,
+                centreX,
+                top + cardHeight * DISCOVERY_NAME_Y,
+                DISCOVERY_NAME_SIZE,
+                palette.accent,
+                TextAlign.Centre,
+                bold = true,
+            ),
+        )
+        wrapDiscoveryCopy(entry.description).forEachIndexed { index, line ->
+            builder.text(
+                TextItem(
+                    line,
+                    centreX,
+                    top + cardHeight * DISCOVERY_COPY_Y + index * DISCOVERY_COPY_LINE,
+                    DISCOVERY_COPY_SIZE,
+                    HUD_TEXT,
+                    TextAlign.Centre,
+                ),
+            )
+        }
+    }
+
+    private fun wrapDiscoveryCopy(text: String): List<String> {
+        val lines = mutableListOf<String>()
+        var line = ""
+        text.split(' ').forEach { word ->
+            val candidate = if (line.isEmpty()) word else "$line $word"
+            if (candidate.length <= DISCOVERY_COPY_COLUMNS || line.isEmpty()) {
+                line = candidate
+            } else {
+                lines += line
+                line = word
+            }
+        }
+        if (line.isNotEmpty()) lines += line
+        return lines
+    }
+
     private val STROKE_LADDER = doubleArrayOf(
         1.5, 2.0, 2.75, 3.5, 4.5, 6.0, 8.0, 10.5, 14.0, 18.0, 24.0, 32.0, 42.0, 56.0,
     )
@@ -1421,6 +1561,17 @@ object Scene {
     private const val HAZE_PX = 6.0
     private const val EDGE_PX = 4.0
     private const val SEAM_PX = 2.0
+    private const val BUBBLE_CYCLE = 1.2
+    private const val BUBBLE_RISE = 0.70
+    private const val BUBBLE_MIN_RADIUS = 1.5
+    private const val BUBBLE_MAX_RADIUS = 4.0
+    private const val BUBBLE_RING = 0.9
+    private const val BUBBLE_INNER_MIN = 0.5
+    private const val BUBBLE_PHASE_STEPS = 17.0
+    private const val BUBBLE_PHASE_X = 7
+    private const val BUBBLE_PHASE_Y = 11
+    private const val BUBBLE_PHASE_INDEX = 5
+    private val BUBBLE_X = doubleArrayOf(0.2, 0.5, 0.8)
     private const val ARENA_PX = 3.0
     private const val JET_OUTER = 0.75
     private const val JET_CORE = 0.3
@@ -1580,5 +1731,22 @@ object Scene {
     private const val HUD_PIP_X = 132.0
     private const val HUD_PIP = 7.0
     private const val HUD_PIP_GAP = 3.0
+    private const val DISCOVERY_DIM = "rgba(3, 5, 10, 0.82)"
+    private const val DISCOVERY_BACK = "#111827"
+    private const val DISCOVERY_WIDTH_FRACTION = 0.72
+    private const val DISCOVERY_HEIGHT_FRACTION = 0.58
+    private const val DISCOVERY_MAX_WIDTH = 620.0
+    private const val DISCOVERY_MAX_HEIGHT = 360.0
+    private const val DISCOVERY_BORDER = 4.0
+    private const val DISCOVERY_LABEL_TOP = 30.0
+    private const val DISCOVERY_LABEL_SIZE = 13.0
+    private const val DISCOVERY_ICON_Y = 0.36
+    private const val DISCOVERY_ICON_SCALE = 0.14
+    private const val DISCOVERY_NAME_Y = 0.66
+    private const val DISCOVERY_NAME_SIZE = 24.0
+    private const val DISCOVERY_COPY_Y = 0.78
+    private const val DISCOVERY_COPY_SIZE = 15.0
+    private const val DISCOVERY_COPY_LINE = 21.0
+    private const val DISCOVERY_COPY_COLUMNS = 58
 
 }

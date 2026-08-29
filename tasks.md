@@ -11,6 +11,165 @@ that plan)" — with adversarial review directed for both the plan and the imple
 
 ## Open
 
+### QOL — Alternate controls, permanent shop, first-pickup cards and liquid presentation
+
+**Request (verbatim):** "Aiming to the left should not make weapons appear upside down, just a
+mirrored \"flip\" of the appearance when pointing to the right. Also make the game playable using
+the \"wasd\" keys as well. The space bar should also make the character jump. On the title screen,
+there should be a \"Shop\" option to spend accumulated scrap on permanent upgrades to the character.
+When a player picks up a weapon or weapon powerup for the very first time, the game should pause for
+a few seconds, and a popup in the middle of the screen should show the weapon/weapon powerup picture,
+with a brief description of what it does, for example, \"Riotbreaker Shotgun picture + The
+Riotbreaker Shotgun shoots 3 projectiles in spread pattern\" or \"Red Market Siphon picture + The
+Red Market Siphone heals on every hit\". If the player picks up the weapon or weapon powerup in new
+game, it should not display the popup message anymore. The toxic poison pools should look more
+\"bubbly\" to visually show that it is a pool of liquid, rather than just a static visual. Ask the
+user any clarifying questions if needed."
+
+**Phase one:** complete. PROD-021 and PROD-031 amended; PROD-081..085 added in `product.md`;
+`progression.md` added for the profile, Scrap economy, shop catalog, migration and discovery-pause
+contract (P-56..P-57); `simulation.md` adds alias semantics and P-54; `presentation.md` defines the
+handed icon transform, discovery-card presentation and bubbly acid (P-55, P-58); `hazards.md` ties
+the poison-pool look to unchanged lethal contact; the architecture index and specification index
+are updated.
+
+**Implementation approval:** given by the user after reviewing phase one — "approve and proceed".
+
+Defaults taken in the specification, each reversible during review:
+
+1. The shop has three five-rank tracks: +10 % maximum health per rank, +5 % weapon damage per rank,
+   and −5 % incoming non-lethal damage per rank. Their shared rank prices are 100, 250, 500, 1,000
+   and 2,000 Scrap.
+2. Spendable Scrap and lifetime Scrap are separate. Spending never relocks weapons; the existing
+   one-weapon-per-400 lifetime-Scrap progression remains.
+3. A discovery card lasts 3.0 seconds of visible, focused time, cannot be skipped, and multiple new
+   items queue weapon first. The Broken Bottle starts discovered.
+4. Existing integer metadata and version-2 in-progress saves migrate, preserving the larger Scrap
+   value; new upgrade and discovery fields take safe defaults.
+5. Discovery pictures reuse the code-native item icon without the ground ring or rarity pips. Copy
+   reflects the actual registry, so the current Riotbreaker description says five projectiles in
+   a 30° spread rather than the illustrative three.
+
+After approval, one owner completes these in order. Every item begins with the smallest named test,
+records its expected red failure here, makes the smallest production change, then records the
+focused green run; no item starts while the preceding one is red.
+
+- [x] **QOL-1 — Input aliases (PROD-004, PROD-021, P-54).** Extended `BrowserInputTest` first for
+      A/D/S/W, Space, value fallbacks, default prevention, simultaneous aliases and focus-loss
+      clearing, and `CanvasAccessibilityTest` for complete control instructions; then implement
+      source-aware canonical bindings without changing `InputFrame` or movement.
+      **Red:** `wasmJsBrowserTest --tests …BrowserInputTest` failed as expected: KeyA and fallback A
+      produced empty input, KeyA did not prevent default, and releasing ArrowLeft while A remained
+      down released Left. The pre-existing canvas-blur case exposed a headless-fixture weakness:
+      `canvas.focus()` had not made the synthetic canvas active, so the case now dispatches the
+      blur event it is intended to verify directly.
+      `CanvasAccessibilityTest` then failed to compile on the deliberately missing
+      `configureGameplayCanvas`, proving the control-copy boundary was absent.
+      **Green:** `wasmJsBrowserTest --tests …CanvasAccessibilityTest --tests …BrowserInputTest`
+      passes (14 cases). Browser input now canonicalizes physical-code and value fallbacks,
+      reference-counts simultaneous aliases, prevents scrolling, clears every active source at
+      the existing lifecycle boundaries, and announces Arrow keys, WASD and Space.
+- [x] **QOL-2 — Mirrored held icons (PROD-084, P-28, P-55).** Added pointwise horizontal and
+      angled mirror cases to `IconTest` and `HeldWeaponTest`; explicit `IconHandedness` now changes
+      only held placement, while every default call remains right-facing.
+      **Red:** the focused JVM compile rejected the deliberately absent `IconHandedness` and paint
+      overload; the held-scene fixture also established that simulation aim/facing are intentionally
+      write-protected, so it was corrected to acquire both through a live target and movement tick.
+      **Green:** `jvmTest --tests …IconTest --tests …HeldWeaponTest` passes (16 cases), including
+      horizontal, up-left, down-left and exactly-vertical fallback geometry. `IconSheetTest` passes
+      and regenerated `build/icon-sheets/icon-sheet-orientation.svg` with the left-hand transform;
+      the pointwise sheet geometry and asymmetric Riotbreaker integration were inspected in both
+      directions.
+- [x] **QOL-3 — Bubbly acid (PROD-085, P-58).** `AcidPresentationTest` covers three phased rings,
+      motion, periodicity, determinism, batch constancy and unchanged digest/contact. Acid now draws
+      three coordinate-phased glow/body rings per exposed tile from interpolated presentation time,
+      with `HazardSurface` structurally above `Hazard`.
+      **Red:** the focused JVM compile rejected the missing `Layer.HazardSurface`, establishing that
+      no ordered liquid-surface path existed.
+      **Green:** `jvmTest --tests …AcidPresentationTest` passes (4 cases), and the existing
+      `SceneTest`/`PickupIconTest` suites remain green. `AcidFrameSheetTest` generated seven-tile
+      pool frames at 0.0 s and 0.4 s; both raster inspections show distinct hollow rings moving and
+      growing across the bright liquid surface without synchronized pulsing.
+- [x] **QOL-4 — Profile, economy and migration (PROD-031, PROD-082, P-56).** Added
+      `PlayerProfileTest`, `UpgradeCatalogTest`, `ProfileCodecTest`, current/legacy `SaveCodecTest`
+      cases and `LocalStorageSaveStoreTest`. The canonical profile now owns separate spendable and
+      lifetime Scrap, ranks and discovery sets; run saves are version 3 and contain no profile copy.
+      **Red:** profile/catalog tests failed to compile on the absent types; codec tests failed on the
+      absent canonical codec/version-3 run boundary; browser compilation then exposed the old
+      store's coupled `(run, meta)` API. After implementation, the first browser assertion exposed
+      reference equality in the old non-data `PowerupSlots` fixture and was corrected to compare
+      canonical run bytes.
+      **Green:** the four focused common suites pass (15 cases) and
+      `wasmJsBrowserTest --tests …LocalStorageSaveStoreTest` passes (4 cases). Version-2 runs remain
+      resumable, the greater nonnegative legacy Scrap source migrates to both counters, a valid
+      current profile wins thereafter, profile writes preserve run bytes, and spending never lowers
+      lifetime unlocks. A transient Kotlin/Wasm incremental-linker ICE cleared with a clean rebuild.
+- [x] **QOL-5 — Title shop (PROD-004, PROD-081).** Extended `TitleScreenStateTest`,
+      `ScreenRouterTest`, `BrowserTitleScreenTest` and browser persistence cases; added
+      `ShopScreenStateTest`, `BrowserShopScreenTest` and `BrowserRunEndedScreenTest`. Shop is always
+      the final title action; rows expose balance, rank, total effect and price in text; available
+      purchases and Back are ordered real buttons; end screens lead with Return to title.
+      **Red:** common tests failed to compile on missing Shop action/state/model, browser compilation
+      then stopped at the deliberately unhandled `Shop` action, and the end-screen test failed to
+      compile on its missing adapter boundary.
+      **Green:** all three focused common suites and the four focused browser suites pass. Purchases
+      persist synchronously with an expected-rank guard against stale double activation, refresh the
+      row and balance, preserve current run bytes/Continue availability, and Back/Return route to a
+      freshly rendered title without starting a replacement run.
+- [x] **QOL-6 — Permanent effects (PROD-082, P-56).** `PermanentUpgradeEffectTest` covers upgraded
+      new/advanced maximum health with current-health-preserving profile refresh, every registered
+      weapon, fixed Bleed, real melee, projectiles, swings, contact, spikes/barrels, boss attacks,
+      and unchanged acid/void/fire-jet lethality. An immutable rank snapshot now enters each run;
+      chassis applies at health boundaries, firmware in weapon resolution, and weave only in the
+      shared non-lethal damage sink.
+      **Red:** the test first failed to compile on the absent run snapshot, damage multiplier and
+      resolved-weapon provenance. After the focused cases went green, the existing cross-target
+      golden caught a rank-zero digest regression.
+      **Green:** the focused suite passes (6 cases); eight existing determinism, hazard, enemy,
+      boss, lifesteal and loot-floor suites pass (72 cases). Default ranks preserve the committed
+      digest while a tagged non-default rank family remains future-state-sensitive.
+- [x] **QOL-7 — Discovery events and copy (PROD-083, P-57).** The typed catalog has one entry for
+      every 26-weapon and 18-powerup registry id, canonical names/icons and authored mechanic copy
+      bounded to 140 characters. A tick reports fully resolved contacts in weapon-then-powerup
+      order; the pure profile recorder filters already-known ids and duplicates, while the browser
+      store saves a changed profile before returning entries for presentation.
+      **Red:** the two focused common suites first failed to compile on the absent catalog,
+      recorder, discovery id and tick-report field. The browser persistence case then failed on the
+      absent `recordDiscoveries` transaction.
+      **Green:** `DiscoveryCatalogTest` and `WeaponPickupTest` pass (8 cases), including first and
+      fresh-run repeat, paired order, and applied/displaced/scrapped powerups;
+      `LocalStorageSaveStoreTest` passes (6 cases), including synchronous persistence, deduplication
+      and byte-for-byte run preservation. The recurring Wasm incremental-linker ICE cleared with a
+      clean compile.
+- [x] **QOL-8 — Discovery pause and card (PROD-004, PROD-083, P-57).** A common coordinator gives
+      each deduplicated card three seconds of visible, focused time with no excess carried into the
+      next. The host persists first, clears raw and assisted input at both queue boundaries, announces
+      each entry, pauses the fixed-step accumulator on the pickup tick, ignores the opening frame's
+      pre-pickup delta and defers same-tick map/death transitions until the queue closes. The scene
+      replaces its HUD with a centred bordered card, dimmed live frame, canonical large icon and
+      wrapped name/copy.
+      **Red:** common compilation rejected the missing coordinator and scene parameter; browser
+      compilation rejected the missing session and explicit input clear. A catch-up integration
+      test then rejected the absent testable accumulator boundary, and the first host-timing run
+      proved that the opening frame would otherwise shorten the interval.
+      **Green:** `DiscoveryPauseTest` (2), `DiscoveryCardSceneTest` (1), `DiscoverySessionTest` (1),
+      `DiscoveryLoopTest` (1) and `BrowserInputTest` (12) pass. The wider focused JVM rendering,
+      simulation and determinism set and the seven related browser suites pass. A real Riotbreaker
+      frame was generated as `build/icon-sheets/discovery-card.svg`, rasterized and inspected: card,
+      copy and unadorned canonical icon are centred and legible.
+- [x] **QOL-gate.** Every focused common/JVM and Wasm browser suite is green. The complete
+      `./scripts/check.sh` gate passed against the installed pinned Binaryen distribution (JVM and
+      Wasm tests, optimized production distribution and title-screen smoke; 30 tasks, 5m17s), and
+      `git diff --check` is clean. A Firefox 154 playthrough of the optimized bundle exercised
+      `Shop` → Chassis purchase (500 → 400 Scrap) → `Back` → `New game`, confirmed all A/D/S/W and
+      Space events are handled, showed the upgraded 110/110 health, reached a first Static Lash
+      pickup, observed its already-persisted centred discovery card, reloaded and continued the
+      identical run, and reached the pickup again with no second card. The start, card and repeat
+      frames were captured and inspected. Exact left, up-left, down-left and vertical-fallback
+      weapon geometry was additionally inspected in the generated orientation sheet; the two
+      generated acid frames show three independently phased rings rising and growing on every
+      exposed liquid tile.
+
 ### DIFF-1 — Specify the difficulty changes and review the plan
 
 - [x] Amend the specs with plan decisions 1–8 (PROD-036, PROD-060..068, P-32..P-40).

@@ -1,5 +1,6 @@
 package io.github.ksean.cyberslop.title
 
+import io.github.ksean.cyberslop.configureGameplayCanvas
 import kotlinx.browser.document
 import org.w3c.dom.HTMLCanvasElement
 import org.w3c.dom.HTMLElement
@@ -23,10 +24,7 @@ class CanvasAccessibilityTest {
     fun mount() {
         canvas = document.createElement("canvas") as HTMLCanvasElement
         canvas.setAttribute("id", "game-canvas")
-        canvas.setAttribute("tabindex", "0")
-        canvas.setAttribute("role", "application")
-        canvas.setAttribute("aria-label", "Cyberslop gameplay")
-        canvas.setAttribute("aria-describedby", "game-status")
+        configureGameplayCanvas(canvas)
 
         status = document.createElement("p") as HTMLElement
         status.setAttribute("id", "game-status")
@@ -53,7 +51,11 @@ class CanvasAccessibilityTest {
     @Test
     fun `the canvas carries a role and an accessible name`() {
         assertEquals("application", canvas.getAttribute("role"))
-        assertTrue(canvas.getAttribute("aria-label").orEmpty().isNotBlank())
+        val accessibleName = canvas.getAttribute("aria-label").orEmpty()
+        assertTrue(accessibleName.contains("Arrow"))
+        assertTrue(accessibleName.contains("WASD"))
+        assertTrue(accessibleName.contains("Space"))
+        assertTrue(accessibleName.contains("automatically"))
     }
 
     @Test

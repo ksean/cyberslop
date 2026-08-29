@@ -19,8 +19,12 @@ data class Shot(
  * published 8.33/s. Subtracting the cooldown instead keeps the remainder and the long-run rate
  * exact.
  */
-class AutoFire(spec: WeaponSpec, slots: PowerupSlots) {
-    var weapon: ResolvedWeapon = DamagePipeline.resolve(spec, slots)
+class AutoFire(
+    spec: WeaponSpec,
+    slots: PowerupSlots,
+    private val permanentDamageMultiplier: Double = 1.0,
+) {
+    var weapon: ResolvedWeapon = DamagePipeline.resolve(spec, slots, permanentDamageMultiplier)
         private set
 
     /** Seconds left on the cooldown; visible to the simulation's digest and its tests. */
@@ -28,7 +32,7 @@ class AutoFire(spec: WeaponSpec, slots: PowerupSlots) {
 
     /** Re-resolves the weapon against a changed build, keeping the cooldown already served. */
     fun rebuild(spec: WeaponSpec, slots: PowerupSlots) {
-        weapon = DamagePipeline.resolve(spec, slots)
+        weapon = DamagePipeline.resolve(spec, slots, permanentDamageMultiplier)
         remaining = remaining.coerceAtMost(weapon.cooldown)
     }
 
