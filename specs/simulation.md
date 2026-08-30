@@ -24,6 +24,12 @@ Derived quantities are read from the integrator, never from the closed forms: a 
 whole tick of gravity, so the discrete apex is 90.67 px (5.67 tiles) against a continuous 96.33 px.
 Stopping distance is 10 px discrete; runway to full speed is 9 ticks / 20 px.
 
+The death-drop rail is a consumer of this movement contract, not a new movement rule. Its fixed
+two-tile rise is a design distance; P-64 runs the normal jump through this integrator to prove the
+drop remains reachable and runs grounded poses to prove contact still requires that jump. A physics
+change that breaks either side must deliberately revise the drop height or the physics rather than
+trust a closed-form apex.
+
 **Crouch semantics.** A crouched player cannot jump. Standing up requires two tiles of clearance.
 
 ## Assists sit above the integrator
@@ -115,6 +121,6 @@ Kotlin/Wasm and the JVM agree bit-for-bit on IEEE-754 `+ − × ÷ √`; they ma
 - **P-40** Simulation determinism: a digest of the whole rule-bearing simulation state after N
   ticks of a fixed tape on a fixed seed matches a committed golden value on both targets
   (enemies.md lists the fields). Enemy/boss leap state, selected boss profiles, scheduled multi-hit
-  events, boss-projectile ownership and the player's active `ArcSwing` are rule-bearing and
-  included. Floating Scrap labels, enemy swing/flash visuals and other presentation-only fields
-  are excluded.
+  events, boss-projectile ownership, deterministic death-drop positions and the player's active
+  `ArcSwing` are rule-bearing and included. Floating Scrap labels, enemy swing/flash visuals and
+  other presentation-only fields are excluded.

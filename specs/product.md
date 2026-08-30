@@ -5,7 +5,7 @@
 Cyberslop is a cyberpunk-dystopian side-scrolling roguelite for the browser. The player crosses ten
 procedurally generated maps of rising difficulty, left to right, fighting a mini-boss at each
 midpoint and a main boss at each end. Four movement actions, one weapon that fires by itself, a
-build of powerups collected by walking over them, and permadeath with persistent unlocks.
+build of powerups collected on contact, and permadeath with persistent unlocks.
 
 ## Runtime
 
@@ -164,6 +164,12 @@ build of powerups collected by walking over them, and permadeath with persistent
   each on a cell the map's own verified witness stood on, outside both arenas and outside any
   committed span, no two within twelve tiles where the map allows it. Each rolls its rarity twice
   keeping the better result. Map one's starter cache is a separate guaranteed award.
+- **PROD-090:** Every weapon or powerup created by a rank-and-file, mini-boss or main-boss death
+  must rest above safe standable ground at a height no grounded standing, running or crouching pose
+  can contact, while the normal unassisted jump can. An airborne or over-hazard death must choose a
+  deterministic nearby safe collection site; guaranteed loot must never become unreachable. Static
+  map pickups and map one's starter cache remain walk-over pickups. Exact placement and contact are
+  specified in [combat.md](combat.md).
 
 ## Presentation
 

@@ -291,7 +291,9 @@ follows the target without turning the stock, blade teeth, magazine or sight ups
   `t_tick − (1 − alpha) × TICK_SECONDS`, clamped at zero, the same `alpha` the player and camera
   are interpolated by (ENG-062) — and `φ = x_world / 40` so neighbouring drops, and the two halves
   of a paired award, are out of step. The ring and the
-  pips hover with the icon. The simulation's item position, and so the pickup overlap, never moves.
+  pips hover with the icon. A death drop's resting origin is its jump-required simulation site
+  (PROD-090), not the corpse or the floor. The simulation's item position, and so the pickup
+  overlap, never moves.
 - **Rarity** — `PickupLook.scale` 1.0 → 1.9 across the five tiers over `PICKUP_PX = 14` screen px
   (28 px at Street to 53 px at Ascended), plus a row of `tier + 1` pips in the kind's colour under
   the ring.
@@ -416,7 +418,8 @@ Window focus loss and a hidden page clear held keys and pause; canvas focus loss
   its extremes differ by `2 × HOVER_PX`; the ring and pips move with it; both halves of a paired
   award hover and peak at different times; a frame at `alpha = 0.5` is drawn at the time a frame
   half a tick earlier at `alpha = 1` is; the simulation's item positions, the pickup overlap and
-  the digest (P-40) are unchanged by the frame time.
+  the digest (P-40) are unchanged by the frame time; a death drop oscillates about, and is tested
+  for contact at, the same raised resting position selected by P-64.
 - **P-53** Shot looks: a live player's projectile fired by a ranged build draws glow, body and
   core dots at `1.8 ×`, `1 ×` and `0.45 ×` its hit radius in the ranged look's three colours and a
   two-tone tracer (bloom then core) of `speed × TRACER_SECONDS`; a psychic build's shot in the

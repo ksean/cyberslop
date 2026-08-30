@@ -1045,6 +1045,64 @@ focused green run; no later item starts while an earlier one is red.
       focused combat/render suites followed by `./scripts/check.sh` and `git diff --check`; record
       the exact red/green and full-gate evidence here.
 
+### DROP — Jump-required enemy-death loot
+
+**Request (verbatim):** "Update the height where the weapons and weapon/powerups drop after an
+enemy dies so that a player must jump in order to collect them. For example, a player simply
+running on the group would not accidentally collect a powerup after killing an enemy"
+
+**Phase one:** complete. PROD-090 distinguishes death-created loot from existing walk-over map
+pickups; `combat.md` fixes the resting height at two tiles above safe support, defines the unchanged
+one-tile contact radius, deterministic safe-site fallback and real-jump invariant (P-64);
+`presentation.md` keeps hover centred on that raised simulation position; `simulation.md` binds
+reachability to the shipping integrator; and `enemies.md` requires loot-floor harnesses to collect
+guaranteed awards through the same jump/contact path as a player.
+
+**Implementation approval:** not yet given. Stop after phase one and wait for the user to review
+these defaults and explicitly approve implementation.
+
+Defaults taken in the specification, each reversible during review:
+
+1. Scope is every item created by a rank-and-file, mini-boss or main-boss death. Statically placed
+   map pickups and map one's starter cache keep their current positions and walk-over collection.
+2. A death drop rests exactly two tiles (32 px) above safe support. The existing strict one-tile
+   radial pickup reach is unchanged; the default standing centre is therefore 19 px below the
+   item's centre, while the measured 90.67 px normal jump reaches it comfortably.
+3. The item preserves the slain actor's x when that produces a valid jump-only site. An airborne,
+   over-hazard, low-ceiling or walk-collectable projection falls back to the nearest safe site in a
+   fixed horizontal-distance, vertical-distance, column, row order. Placement consumes no RNG and
+   guaranteed loot is never discarded.
+4. Both icons of a paired weapon/powerup award rest at the raised y, one tile apart; jumping into
+   either still resolves the pair weapon-first. Height is assigned immediately, with no new falling
+   animation or item physics, and the existing visual hover remains collision-neutral.
+5. Drop rate, split, rarity, contents, Scrap and discovery semantics remain unchanged. Reference
+   harnesses may pin guaranteed contents but must perform the real collecting jump rather than
+   injecting a loadout.
+
+After approval, complete these in order. Each behavior item starts with the smallest named test,
+records its expected red failure here, makes the smallest production change, then records the
+focused green run; no later item starts while an earlier one is red.
+
+- [ ] **DROP-1 — Pure safe-site geometry (PROD-090, P-64).** Add `DeathDropPlacementTest`
+      red-first for the exact two-tile rise, preserved death x, paired-icon clearance, grounded
+      standing/crouching exclusion and a collecting jump stepped through `MovementModel`. Cover an
+      adjacent raised surface, low ceiling, sealed nearer platform, lethal gap, airborne Flyer and
+      equal-distance tie. Introduce one immutable commonMain death-drop site selector with a
+      bounded, stable candidate order and no dependency on rendering or RNG.
+- [ ] **DROP-2 — Wire every death source and contact path (PROD-030, PROD-090, P-42, P-64).** Add
+      `DeathDropPickupTest` red-first for rank-and-file weapon and powerup outcomes: running under
+      each rest point does not collect, while a normal jump does. Extend `BossAwardTest` for mini-
+      and main-boss paired awards, including a boss killed during a leap. Route all three death
+      paths through the selector while leaving generic `GroundItem` contact and weapon-first pair
+      resolution unchanged.
+- [ ] **DROP-3 — Non-death regressions, harness and full gate (P-25, P-40, P-52, P-64).** Add
+      grounded-collection regressions for generated static drops and the starter cache; update
+      `PressureHarnessTest` so its reference player jumps into a pinned award before continuing;
+      cover the raised mean origin in `PickupIconTest`; and re-pin the determinism golden only after
+      seeded occurrence/content/RNG comparisons show position is the sole loot-stream change. Run
+      the focused simulation, physics, generation and render suites, then `./scripts/check.sh` and
+      `git diff --check`, recording exact red/green and full-gate evidence here.
+
 ## Deferred
 
 Not scheduled by the current plan; kept so they are not forgotten.

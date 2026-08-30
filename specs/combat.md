@@ -225,6 +225,37 @@ the same weights apply to weapons and powerups.
 | Mini-boss | 100 % | weapon (tier ≥ T2); plus a powerup from map 4 |
 | Main boss | 100 % | weapon (tier ≥ T3, +2 tier shifts) + powerup (tier ≥ T2) + Scrap |
 
+### Jump-required death drops (PROD-090)
+
+Loot created by any death — an optional rank-and-file weapon or powerup and every guaranteed
+mini-boss or main-boss award — uses a death-drop site. Its resting height is
+`DEATH_DROP_RISE = 2 × TILE_SIZE = 32 px` above the top of its collection surface. Contact keeps
+the existing strict radial test: the player's centre must be less than
+`PICKUP_REACH = TILE_SIZE = 16 px` from either icon's **simulation resting position**. On flat
+ground a standing player's centre is 13 px above the surface, leaving a 19 px vertical separation
+even at exact horizontal alignment; running or crouching under the item therefore cannot take it.
+A normal held jump from rest, stepped through the shipping `MovementModel`, must bring the player
+within reach before landing. No airborne-state or jump-input flag gates collection: the geometry
+alone creates the requirement.
+
+The primary candidate preserves the slain actor's centre x and projects it onto the nearest safe
+standable surface below. A site is valid only when its supporting pose is player-reachable without
+lethal contact, both resting icon centres (the powerup remains one tile right of the weapon in a
+paired award) are clear of blocking and lethal terrain, every collision-free grounded standing or
+crouching pose near either icon remains outside pickup reach, and a normal jump from that support
+reaches at least one icon without touching blocking or lethal terrain. If the projection is invalid
+— including a Flyer over a pit, a ground enemy over a hazard, a boss killed during a leap, a low
+ceiling, a sealed platform or adjacent raised ground that would turn the drop back into a walk-over
+— player-reachable safe standable candidates are ordered by horizontal distance from the death,
+then vertical distance, column and row; the first valid candidate wins. This search consumes no
+randomness. A valid generated map must supply a candidate; loot is never discarded for lack of one.
+
+The position is chosen once when the death is resolved. The item has no falling physics, and the
+visual hover remains presentation-only around that resting position (P-52). Static map pickups and
+the map-one starter cache do not use this placement rule, so their positions and grounded contact
+remain unchanged. Drop chance, weapon/powerup split, rarity, guaranteed contents, collection order
+and loot RNG draws are also unchanged.
+
 Scrap per displaced item by tier: 8, 20, 45, 100, 240.
 
 ## Verified properties
@@ -284,6 +315,20 @@ Scrap per displaced item by tier: 8, 20, 45, 100, 240.
   origin, angular bounds and outer reach, every boundary stroke lies inside it, the held-weapon
   pose follows its leading angle, and every damaging body primitive lies inside that target's
   combat disc; changing actor count does not change the fan's batch count.
+- **P-64** Jump-required death loot: on a flat fixture, rank-and-file weapon and powerup drops and
+  mini-boss/main-boss awards all rest exactly two tiles above the safe surface, with paired icons at
+  the same y. Exhaustive grounded standing, running and crouching approaches under both icon
+  positions collect nothing, while a normal held jump from rest through `MovementModel` collects
+  the item. Fixtures with adjacent raised ground, a low ceiling and a sealed nearer platform reject
+  sites that permit grounded contact, block the collecting jump or are player-inaccessible; an
+  airborne Flyer over a lethal gap and a boss killed during a leap select the nearest valid site in
+  the specified stable order, outside solid and lethal cells, and the same death state always
+  selects the same position. Static drops and the starter cache retain their generated positions
+  and grounded collection. A pressure-harness
+  reference player takes a guaranteed award through that real jump/contact path before using its
+  loadout, never by inventory injection. Seeded drop occurrence, contents and RNG state are
+  unchanged apart from the new positions; those positions remain covered by P-40's ground-item
+  digest, and P-52's hover changes neither them nor contact.
 
 ## Known gaps
 

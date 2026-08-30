@@ -117,7 +117,8 @@ on the player.
   invariant and holds however enemies move.
 - **Status.** Slows floor at 40 % and take the strongest; a stunned enemy neither moves nor attacks
   for 0.5 s and a wind-up in progress is cancelled; burn and bleed drain per tick.
-- **Reward.** A kill yields 2 Scrap and rolls the drop table (combat.md).
+- **Reward.** A kill yields 2 Scrap and rolls the drop table; any resulting item uses combat.md's
+  jump-required death-drop site (PROD-090).
 
 ## Mini-boss and main boss (PROD-087)
 
@@ -273,6 +274,11 @@ the arriving loadout from the map's start through the mini-boss fight, the mini-
 weakest from the moment it is taken, and that held loadout at the main boss. The floor is honest
 about that: a forced pickup can be a downgrade, and the floor says so rather than assuming the
 player kept the better weapon. Optional loot is genuinely required past the early maps; the floor's claims are:
+
+Any simulation harness claiming this floor must take a death award through PROD-090's normal
+jump/contact path before using its loadout or resuming the route. It may replace the roll with the
+floor's declared weakest contents before contact, but may neither teleport the item nor equip the
+inventory directly.
 
 - it carries the opening maps unaided: a map counts as *covered* only if its main boss falls
   inside the kill-time band to the loadout **held at that boss** (`weaponAt`, `slotsAt` — the
