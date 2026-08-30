@@ -985,6 +985,66 @@ Sub-steps, one owner, each red then green (`./gradlew jvmTest --tests` on the na
   with `close-agents.sh`); findings dispositioned here; spec corrected where a finding is
   confirmed; `./scripts/check.sh` after every fix round.
 
+### SWING — Hitbox-faithful player melee swooshes
+
+**Request (verbatim):** "The visual animation when swinging a melee weapon should be an accurate
+representation of it's hitbox. For example, a player should not see the \"swoosh\" animation
+overlap an enemy, and not actually hit that enemy."
+
+**Phase one:** complete. PROD-033 and PROD-066 now require a player's `ArcSwing` visual and direct
+hit test to use one live swept region; `combat.md` defines its geometry, timing, target combat
+bodies, multi-target semantics and digest ownership (P-63); `presentation.md` defines the closed
+fan and binds the arm pose and damaging body silhouettes to that same geometry; `simulation.md`
+and `enemies.md` include the newly rule-bearing active swing in P-40 while retaining enemy attack
+effects as presentation-only state.
+
+**Implementation approval:** not yet given. Stop after phase one and wait for the user to review
+these defaults and explicitly approve implementation.
+
+Defaults taken in the specification, each reversible during review:
+
+1. Scope is the player's eight `ArcSwing` weapons. Meatgrinder Halo's ring and enemy/boss attacks
+   retain their separately specified behavior.
+2. The swoosh is a live, cumulative sector over the pattern's existing 0.10 s `lingerSeconds`, not
+   a harmless 0.16 s afterimage. Its direction locks at activation and its origin follows the
+   moving player, so the effect stays attached without drifting away from its hitbox.
+3. Enemies and bosses expose circular combat bodies that contain their damaging drawn body, while
+   excluding glow, bars, held equipment and attack effects. Boundary contact counts as overlap.
+4. Every eligible body overlapped by the swoosh takes one direct hit per activation. Player
+   `ArcSwing`s therefore have no invisible pierce/target cap; Spike Driver remains useful to
+   projectile patterns but has no direct effect on these swings.
+5. The existing nested-arc identity remains, enclosed by radial edges/ribs so the complete active
+   fan is readable. The actor's arm uses the weapon's actual arc and progress instead of the
+   current generic 150° sweep.
+
+After approval, complete these in order. Each behavior item starts with the smallest named test,
+records its expected red failure here, makes the smallest production change, then records the
+focused green run; no later item starts while an earlier one is red.
+
+- [ ] **SWING-1 — Shared sector and combat-body geometry (PROD-033, P-63).** Add
+      `MeleeSectorTest` first for inside, radial tangency, both angular tangencies and epsilon-outside
+      cases, including a body whose centre is outside but radius overlaps. Introduce immutable
+      commonMain sector/body geometry and canonical enemy/boss combat radii; add render-envelope
+      cases proving every damaging body primitive is contained without making simulation depend on
+      `render`.
+- [ ] **SWING-2 — Gameplay-owned active swings (PROD-033, P-63).** Add `MeleeSwingTest` red-first
+      for locked aim, moving origin, monotone progress over `lingerSeconds`, movement-before-hit
+      ordering, scaled reach, later entry, early exit, once-per-target damage, three simultaneous
+      direct hits and Spike Driver neutrality. Replace the instant presentation-only player swing
+      with future-affecting active state; retain the triggering build for all hit consequences and
+      keep Halo, enemy and boss paths unchanged.
+- [ ] **SWING-3 — Faithful fan and pose (PROD-066, P-38, P-63).** Add
+      `MeleeSwooshSceneTest` red-first at opening, midpoint and final progress for the exact origin,
+      angular interval and reach, strokes contained by the sector, constant batches, no post-window
+      effect, and the held arm/weapon at the shared leading angle. Draw the closed fan from active
+      state and remove the renderer's independent 150° player-swing geometry. Generate a compact
+      boundary/entry frame sheet and inspect it before recording green.
+- [ ] **SWING-4 — Determinism and full gate (P-40, P-63).** Extend
+      `SimulationDeterminismTest` mutation coverage to active geometry, progress and hit identities,
+      then re-pin the cross-target golden only after all new future state is covered. Run the
+      focused combat/render suites followed by `./scripts/check.sh` and `git diff --check`; record
+      the exact red/green and full-gate evidence here.
+
 ## Deferred
 
 Not scheduled by the current plan; kept so they are not forgotten.

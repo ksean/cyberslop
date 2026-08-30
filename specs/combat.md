@@ -40,8 +40,10 @@ never carry a stale build. The pending burst is simulation state and is in the d
 
 Class is load-bearing:
 
-- **Melee** resolves an arc swing immediately: targets within reach and inside the arc, up to its
-  pierce count; Mass Driver widens the arc's hitbox.
+- **Melee** `ArcSwing` weapons sweep a live sector over their declared linger window: every target
+  body the visible sector covers takes one direct hit from that activation; Mass Driver widens the
+  sector and Ranger Optics extends its reach. Meatgrinder Halo keeps its separately specified ring
+  pattern.
 - **Ranged** spawns travelling projectiles that stop at terrain and obey falloff; the Railgun and
   Minigun declare a wind-up.
 - **Psychic** projectiles and blasts pass through terrain.
@@ -51,6 +53,38 @@ one `ResolvedWeapon` (damage, cooldown, projectile count, pierce, crit, chain, r
 hitbox and reach scale, knockback, stun, slow, blast, ignite, lifesteal, kill refund). Every
 powerup resolves for every weapon; a field a pattern cannot use (extra projectiles on a blast)
 simply has no effect there.
+
+## Hitbox-faithful player arc swings (PROD-033, PROD-066)
+
+An `ArcSwing` activation creates one gameplay-owned active swing. Its aim direction is locked when
+the weapon triggers; its resolved reach, arc and `lingerSeconds` are likewise snapshotted from the
+build that triggered it. During each simulation tick of that window, the origin follows the
+player's combat centre and progress advances monotonically from zero to one. At progress `p`, the
+active and visible footprint is the closed circular sector from the trailing angular edge
+`−arc / 2` through `−arc / 2 + p × arc`, from the origin through the resolved reach. Boundaries are
+inside. Actor movement is resolved before the active sector is tested, and that test completes
+before the same state may be composed into a frame.
+
+Targets are areas, not aim points. Every enemy and boss exposes one canonical **combat body** used
+by both direct melee collision and presentation: a closed disc centred on its combat centre and
+large enough to contain its damaging body silhouette. Glow, a health bar, a held implement and an
+attack effect are not body. A direct hit occurs when that disc intersects the current sector. This
+includes tangency at the reach or either angular edge. A target that enters any still-visible part
+of the sector later in the window is hit then; one that never intersects it is not. The swing keeps
+the set of targets it has directly hit, so no target takes its direct damage more than once per
+activation. Secondary shock, chain and blast effects remain separate hits with their own geometry.
+
+Every eligible target whose combat body intersects the visible sector is hit: an `ArcSwing` has no
+direct-target or pierce limit. `pierce` remains a projectile capacity, so Spike Driver has no direct
+effect on an `ArcSwing`; this is preferable to drawing a swoosh through a second target after an
+invisible target budget was spent. Every registered `ArcSwing.lingerSeconds` remains below that
+weapon's resolved cooldown floor, so two active swings from the same weapon cannot overlap.
+
+The active swing is future-affecting simulation state — locked geometry, progress and already-hit
+targets — and therefore participates in the determinism digest. It ends exactly when its visible
+window ends: there is no cosmetic swoosh afterimage with no matching hit region. Meatgrinder Halo's
+`Orbit`, enemy strikes and boss attack modules are outside this player-weapon rule and retain their
+own geometry and timing.
 
 ## Weapon pickup
 
@@ -235,6 +269,21 @@ Scrap per displaced item by tier: 8, 20, 45, 100, 240.
   paid; the slots are empty afterwards; a powerup collected next lands in the emptied build; a
   boss award's powerup is held after the award and its weapon is the one equipped; collecting a
   weapon while holding none of the five slots pays only the weapon's Scrap.
+- **P-63** Hitbox-faithful player arc swings: pure sector/body fixtures include a body wholly
+  inside, tangent to the resolved reach, tangent to both angular edges, and one epsilon outside
+  each boundary; the first four intersect and the outside fixtures do not. For every registered
+  `ArcSwing`, with Ranger Optics and Mass Driver at zero and three stacks, collision and the active
+  swing state use the same origin, locked direction, scaled reach, arc and progress, and its linger
+  window is shorter than the cooldown floor. Integration fixtures prove that a stationary target,
+  a target entering an already visible portion on a later tick and three simultaneously
+  overlapping targets each take one direct hit; remaining in the sector never deals a second
+  direct hit; leaving before the sweep reaches the body deals none; Spike Driver neither limits nor
+  enlarges the sector. Movement, collision and composition use the same tick snapshot. Mutating
+  active progress, geometry or any already-hit identity changes the digest; presentation-only
+  styling does not. At opening, midpoint and final progress, the composed fan has the state's exact
+  origin, angular bounds and outer reach, every boundary stroke lies inside it, the held-weapon
+  pose follows its leading angle, and every damaging body primitive lies inside that target's
+  combat disc; changing actor count does not change the fan's batch count.
 
 ## Known gaps
 

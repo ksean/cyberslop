@@ -104,9 +104,19 @@ highest point stays within the physics' crouch height; nothing is scaled.
 
 ## Weapon effects (PROD-033, PROD-066)
 
-- A melee swing is a **swoosh**: three nested arcs along the swing at decreasing radius and width,
-  drawn from the weapon's tip inward, with spark dots at the leading edge, fading over the swing
-  window. The outer arc is the reach the hit test used.
+- A player's `ArcSwing` is a **swoosh** drawn as one closed, swept fan: the outer boundary is the
+  resolved reach, the radial boundaries are the angular interval swept so far, and two nested arcs
+  plus sparse radial ribs make the enclosed region read at a glance. Its origin, locked direction,
+  arc, reach and progress come from the gameplay-owned active swing (combat.md), never parallel
+  renderer constants. Boundary strokes sit inside the footprint they describe. The fan may thin
+  or dim during its window but never moves or draws outside the active region, and it disappears
+  with that region rather than leaving a harmless afterimage. The player's swing pose uses the same
+  locked direction, arc and progress, so the arm and held weapon do not sweep a generic angle.
+- Every damageable enemy and boss is drawn with its damaging body silhouette inside the canonical
+  combat body used by player-melee collision. Glow, health bars, held hardware and attack effects
+  may extend outside it. A frame is composed only after the active swing has tested the combat
+  bodies at the positions that frame draws, so a visible swoosh/body overlap has a direct hit from
+  that swing (PROD-033, P-63).
 - A ranged shot draws a **muzzle flash** at the barrel: a bright core dot, a longer bloom segment
   along the aim and two short spikes at ±35°, fading over the flash window.
 - **Every shot shows where it went (PROD-071), and what fired it (PROD-080).** A travelling
@@ -204,7 +214,9 @@ laser lens that communicates the attack.
 
 **Hurt flash (PROD-076).** A hit — a swing, a projectile landing, a blast, a chain jump, splash;
 not a burn or bleed tick — sets `hurtSecondsLeft = HURT_FLASH_SECONDS = 0.12 s` on the enemy or
-boss, a presentation-only field decayed by the simulation like `lastSwing` and outside the digest.
+boss, a presentation-only field decayed by the simulation like an enemy's `lastSwing` visual and
+outside the digest. The player's active `ArcSwing` is rule-bearing and is not in that category
+(P-40, P-63).
 While it is positive the figure's body, limbs, head, plating and (for a boss) crown are drawn in `Palettes.HURT`
 (`#ff3b30`) instead of their own styles — every form (biped, hover, crawler) — and the eye glow is
 unchanged. A boss's telegraph colour wins over the flash: a telegraphing boss stays in the
@@ -343,8 +355,10 @@ Window focus loss and a hidden page clear held keys and pause; canvas focus loss
   `Swing`, after a shot `Fire`, each leaving the legs untouched; a shot draws its flash at the
   posed barrel; the crouch pose's limb segment lengths equal the standing pose's, its knees sit
   forward of the hip–ankle line, and its highest point is within the crouch height; the swoosh's
-  outer arc radius equals the swing's reach. Each scheduled Flurry swing and Burst round selects a
-  distinct action pulse on its own event tick rather than one visual for the whole active window.
+  outer arc radius equals the swing's reach. A player's swing pose takes its direction, arc and
+  progress from the active `ArcSwing`, while enemy and boss poses keep their attack-owned motion.
+  Each scheduled Flurry swing and Burst round selects a distinct action pulse on its own event tick
+  rather than one visual for the whole active window.
 - **P-43** Shots show where they went: a live projectile draws a dot at its position **at its hit
   radius** and a segment from it back along its velocity of `speed × TRACER_SECONDS`, player and
   enemy shots in their own styles; a projectile spent on the tick it was fired still leaves that

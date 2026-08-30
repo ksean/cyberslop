@@ -115,5 +115,6 @@ Kotlin/Wasm and the JVM agree bit-for-bit on IEEE-754 `+ − × ÷ √`; they ma
 - **P-40** Simulation determinism: a digest of the whole rule-bearing simulation state after N
   ticks of a fixed tape on a fixed seed matches a committed golden value on both targets
   (enemies.md lists the fields). Enemy/boss leap state, selected boss profiles, scheduled multi-hit
-  events and boss-projectile ownership are rule-bearing and included. Floating Scrap labels and
-  other presentation-only fields are excluded.
+  events, boss-projectile ownership and the player's active `ArcSwing` are rule-bearing and
+  included. Floating Scrap labels, enemy swing/flash visuals and other presentation-only fields
+  are excluded.

@@ -59,8 +59,10 @@ build of powerups collected by walking over them, and permadeath with persistent
   geometry, hazard mix and enemy population rather than in decoration alone.
 - **PROD-026:** Maps must include platform traversal, acid pits and timed fire jets. A fire-jet
   crossing must always be survivable from a proven safe standing position.
-- **PROD-033:** A melee attack must be visibly indicated at the moment it resolves, showing the
-  direction and extent of the swing.
+- **PROD-033:** A player's `ArcSwing` melee attack must be visibly indicated for its whole active
+  window by the same swept region used for direct-hit testing. In every rendered frame, an
+  eligible enemy or boss whose combat body overlaps the visible swoosh has already taken that
+  swing's direct hit, once; the swoosh must not advertise damaging space the swing does not cover.
 - **PROD-034:** A boss and a mini-boss must be visibly rendered while alive, showing remaining
   health.
 - **PROD-035:** Once the main boss is defeated, nothing may obstruct the player's path from the
@@ -170,10 +172,12 @@ build of powerups collected by walking over them, and permadeath with persistent
 - **PROD-041:** The player character is animated and visibly distinguishes standing, moving
   sideways, rising, falling, crouching, moving while crouched, firing a ranged weapon and swinging a
   melee weapon. Weapon animation composes over movement animation rather than replacing it.
-- **PROD-066:** A melee swing must be drawn as a sweeping swoosh along the arc it covered, at the
-  reach the hit test used. Every ranged or psychic activation must show a firing cue at the moment
-  it happens: a muzzle flash at the barrel for a weapon that has one, an activation pulse at the
-  weapon for one that does not (the Kessler dish). Player and enemies alike.
+- **PROD-066:** A player's `ArcSwing` melee attack must be drawn as a sweeping swoosh whose origin,
+  locked direction, angular progress and resolved reach are the active direct-hit region's own;
+  neither rendering nor the arm pose may substitute independent swing geometry. Every ranged or
+  psychic activation must show a firing cue at the moment it happens: a muzzle flash at the barrel
+  for a weapon that has one, an activation pulse at the weapon for one that does not (the Kessler
+  dish). Enemy and boss attack cues remain governed by PROD-063.
 - **PROD-071:** Every ranged or psychic attack must also show where it went, not only that it
   fired: a travelling projectile is drawn as a visible body with a tracer along its motion, and an
   attack that resolves instantly draws its hit geometry — a beam onto a strike point, a chain
