@@ -15,12 +15,13 @@ import io.github.ksean.cyberslop.gen.DifficultyCurve
  * different claims. The witness proves the player can reach the arena; the floor bounds what they
  * can be carrying when they do.
  *
- * **Every weapon pickup is a reset (PROD-070).** The loadout at any point on the route is the last
+ * **A different weapon pickup is a reset (PROD-070).** Every consecutive weapon in this reference
+ * route differs because its guaranteed tiers alternate, so the loadout at any point is the last
  * guaranteed weapon before it, at its weakest, plus only the guaranteed powerups awarded after it.
  * Nothing accumulates across maps, and a forced pickup can be a downgrade: the mini-boss's Scav
- * weapon replaces the previous boss's Chromed one before the main boss is fought. The floor is
- * computed on that policy — modelling one policy and shipping another is how an earlier version of
- * this file came to claim a bound it did not have.
+ * weapon replaces the previous boss's Chromed one before the main boss is fought. The floor also
+ * verifies the same-id exception for optional routes — modelling one policy and shipping another
+ * is how an earlier version of this file came to claim a bound it did not have.
  *
  * It does **not** carry a player to the final map, and it is not meant to. The required damage rate
  * grows about 81x across a run while a worst-case loadout barely moves, so optional loot is
@@ -41,9 +42,9 @@ object LootFloor {
 
     /**
      * The weakest weapon the guaranteed awards leave a player holding at [mapIndex]'s **main
-     * boss**: the mini-boss award, which guarantees Scav. Every weapon pickup is taken (PROD-070),
-     * so the previous boss's Chromed weapon is gone by then — the floor says so rather than
-     * assuming the player kept the better one.
+     * boss**: the mini-boss award, which guarantees Scav. Its id necessarily differs from the
+     * previous boss's Chromed weapon, so that weapon is gone by then — the floor says so rather
+     * than assuming the player kept the better one.
      */
     fun weaponAt(mapIndex: Int): WeaponSpec = weakestOf(Tier.Scav, excludeStartingWeapon = true)
 

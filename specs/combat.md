@@ -1,8 +1,9 @@
 # Combat, Weapons and Powerups
 
 The player carries one weapon. Powerups are **player-owned and weapon-applied**: five slots of up
-to three stacks each, applied to the weapon held — and emptied whenever a weapon is picked up
-(PROD-070): a build is made around one weapon and does not survive it.
+to three stacks each, applied to the weapon held — and emptied whenever a pickup equips a
+different weapon (PROD-070). A build is made around one weapon identity and survives picking up
+another copy of that same weapon.
 
 ## The firing tick
 
@@ -88,14 +89,19 @@ own geometry and timing.
 
 ## Weapon pickup
 
-Contact always resolves (PROD-030, PROD-070). A weapon on the ground is **always taken**: it
-becomes the held weapon, the previous weapon converts to Scrap at its tier value, and every powerup
-slot is cleared, each converting to Scrap at its tier value. There is no comparison and no refusal;
-tier governs drop rarity and Scrap value, never whether a pickup is taken. A player's shot carries
-the build that fired it: a pickup while it is in flight changes nothing about where it lands or
-what landing does. A guaranteed award that carries both a weapon and a powerup — a
-mini-boss from map 4, every main boss — applies the weapon first and the powerup second, so the
-award leaves the player with the new weapon and one powerup on it.
+Contact always resolves (PROD-030, PROD-070). If a weapon on the ground has a different `WeaponId`
+from the held weapon, it is **always taken**: it becomes the held weapon, the previous weapon
+converts to Scrap at its tier value, and every powerup slot is cleared, each converting to Scrap at
+its tier value. If its `WeaponId` matches the held weapon, the pickup itself converts to Scrap at
+that weapon's tier value instead: the loadout, including every powerup identity and stack, remains
+unchanged and no held item pays additional Scrap. There is no score comparison or refusal; exact
+weapon identity selects between these two resolutions, while tier supplies the Scrap value. A
+player's shot carries the build that fired it: a pickup while it is in flight changes nothing about
+where it lands or what landing does. A guaranteed award that carries both a weapon and a powerup —
+a mini-boss from map 4, every main boss — resolves the weapon first and the powerup second. A
+different weapon therefore empties the build before the guaranteed powerup lands; a matching
+weapon converts to Scrap and the guaranteed powerup resolves by the normal stacking and
+displacement rules against the preserved build.
 
 `WeaponScore` still decides powerup displacement (below) and still resolves conditional terms
 against a **reference target**: one enemy at 60 % of the current map's trash health, 4 m away,
@@ -256,7 +262,8 @@ the map-one starter cache do not use this placement rule, so their positions and
 remain unchanged. Drop chance, weapon/powerup split, rarity, guaranteed contents, collection order
 and loot RNG draws are also unchanged.
 
-Scrap per displaced item by tier: 8, 20, 45, 100, 240.
+Scrap per converted weapon or powerup slot by the converted item's tier: 8, 20, 45, 100, 240. A
+same-weapon pickup pays exactly one weapon value and no values for the powerups it preserves.
 
 ## Verified properties
 
@@ -295,11 +302,14 @@ Scrap per displaced item by tier: 8, 20, 45, 100, 240.
   `interval × (count + 3 − 1) < 0.35 × cooldown`; a burst pending at the next trigger is
   discarded, a round of it due on the trigger tick included; the pending burst is in the digest;
   the registry DPS column is unchanged.
-- **P-42** Weapon pickup: collecting any weapon — including one of lower tier and lower score than
-  the held one — equips it; the previous weapon's Scrap and the Scrap of every cleared slot are
-  paid; the slots are empty afterwards; a powerup collected next lands in the emptied build; a
-  boss award's powerup is held after the award and its weapon is the one equipped; collecting a
-  weapon while holding none of the five slots pays only the weapon's Scrap.
+- **P-42** Weapon pickup: collecting a weapon with a different `WeaponId` — including one of lower
+  tier and lower score than the held one — equips it; the previous weapon's Scrap and the Scrap of
+  every cleared slot are paid; the slots are empty afterwards; and a powerup collected next lands
+  in the emptied build. Collecting the same `WeaponId` leaves the weapon and every slot and stack
+  unchanged, removes the pickup, and pays exactly the pickup weapon's tier value. A paired boss
+  award resolves in weapon-then-powerup order: its different weapon is equipped before its powerup,
+  while its matching weapon is scrapped before its guaranteed powerup resolves against the
+  preserved build. Both weapon outcomes are reported as collections for discovery.
 - **P-63** Hitbox-faithful player arc swings: pure sector/body fixtures include a body wholly
   inside, tangent to the resolved reach, tangent to both angular edges, and one epsilon outside
   each boundary; the first four intersect and the outside fixtures do not. For every registered
@@ -332,10 +342,10 @@ Scrap per displaced item by tier: 8, 20, 45, 100, 240.
 
 ## Known gaps
 
-- Every weapon pickup is taken (PROD-070), so an optional pickup can lower the player's damage
-  and wipes their build; the loot floor accounts for guaranteed pickups but no test bounds how far
-  an optional one can set a player back. Whether the drop table should stop rolling weapons below
-  the held tier is a balance decision not yet taken.
+- Every different-weapon pickup is taken (PROD-070), so an optional pickup can lower the player's
+  damage and wipe their build; the loot floor accounts for guaranteed pickups but no test bounds
+  how far an optional one can set a player back. Whether the drop table should stop rolling weapons
+  below the held tier is a balance decision not yet taken.
 - `WeaponScore` does not weigh lifesteal, bounce, seeking, slowing, reach, knockback, stun or kill
   refunds, so a guaranteed award can displace a slot whose unmeasured effect was worth keeping.
 - A projectile landing applies neither crit, falloff nor Thermite Payload's on-hit blast (only

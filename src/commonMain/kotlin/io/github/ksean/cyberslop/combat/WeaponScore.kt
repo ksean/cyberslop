@@ -5,7 +5,7 @@ import io.github.ksean.cyberslop.loot.PowerupSlots
 /**
  * What a build is worth: the held weapon under a candidate set of powerups. It decides which slot
  * a powerup displaces (`Loadout.collect(powerup)`); it decides nothing about weapon pickup, which
- * always equips (PROD-070).
+ * resolves solely by exact weapon identity (PROD-070).
  *
  * Comparison happens against a **declared reference target**, because half the registry's damage is
  * conditional — execute thresholds, falloff, chain decay, damage-over-time — and without a target to

@@ -21,10 +21,7 @@ import kotlin.test.assertTrue
  * is high enough for the last one.
  */
 class LootFloorTest {
-    /**
-     * PROD-070 makes every weapon pickup a reset, so the loadout at any point is the last
-     * guaranteed weapon plus only the powerups awarded after it — never an accumulation.
-     */
+    /** The reference route's consecutive guaranteed weapon tiers differ, so each is still a reset. */
     @Test
     fun `the slots arriving at a map are exactly the previous boss's powerup`() {
         assertEquals(0, LootFloor.slotsArrivingAt(1).totalStacks, "map 1 is entered with a powerup nobody has awarded")
@@ -176,9 +173,9 @@ class LootFloorTest {
     }
 
     /**
-     * The guarantee itself: **no optional route can leave a player below the floor.** Under
-     * PROD-070 the guaranteed weapon pickup resets whatever the route collected, so the end of
-     * every route is the weapon plus the powerups awarded after it — the floor exactly.
+     * The guarantee itself: **no optional route can leave a player below the floor.** This checks
+     * both PROD-070 branches: a different guaranteed weapon resets the route, while a matching one
+     * preserves a build which must remain at least as strong as the declared floor.
      */
     @Test
     fun `no optional route can put a player below the floor`() {
@@ -187,20 +184,26 @@ class LootFloorTest {
             val weapon = LootFloor.weaponAt(map)
             val guaranteed = guaranteedRoute(map)
 
-            optionalRoutes().forEach { optional ->
-                var loadout = Loadout(LootFloor.weaponArrivingAt(map), PowerupSlots.empty())
-                optional.forEach { loadout = loadout.collect(it, map).first }
-                loadout = loadout.collect(weapon).first
-                guaranteed.forEach {
-                    loadout = loadout.collect(it, map, guaranteed = true).first
-                }
+            val starts = listOf(
+                "different-id" to Loadout(LootFloor.weaponArrivingAt(map), PowerupSlots.empty()),
+                "same-id" to Loadout(weapon, PowerupSlots.empty()),
+            )
+            starts.forEach { (resolution, start) ->
+                optionalRoutes().forEach { optional ->
+                    var loadout = start
+                    optional.forEach { loadout = loadout.collect(it, map).first }
+                    loadout = loadout.collect(weapon).first
+                    guaranteed.forEach {
+                        loadout = loadout.collect(it, map, guaranteed = true).first
+                    }
 
-                val dps = DamagePipeline.resolve(loadout.weapon, loadout.slots).expectedDps
-                assertTrue(
-                    dps >= floor - TOLERANCE,
-                    "map $map: optional $optional then the guaranteed awards ends at $dps, " +
-                        "below the $floor the floor promises",
-                )
+                    val dps = DamagePipeline.resolve(loadout.weapon, loadout.slots).expectedDps
+                    assertTrue(
+                        dps >= floor - TOLERANCE,
+                        "map $map: $resolution optional $optional then the guaranteed awards " +
+                            "ends at $dps, below the $floor the floor promises",
+                    )
+                }
             }
         }
     }

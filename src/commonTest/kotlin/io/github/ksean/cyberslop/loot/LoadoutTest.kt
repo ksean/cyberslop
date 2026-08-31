@@ -44,17 +44,22 @@ class LoadoutTest {
     }
 
     @Test
-    fun `contact always equips, for every weapon in the registry`() {
+    fun `contact always resolves for every weapon in the registry`() {
         val loadout = Loadout.starting()
 
         Weapons.all.forEach { weapon ->
             val (after, outcome) = loadout.collect(weapon)
-            assertIs<WeaponPickup.Equipped>(outcome, "${weapon.name} did not equip on contact")
-            assertEquals(weapon.id, after.weapon.id)
+            if (weapon.id == loadout.weapon.id) {
+                assertIs<WeaponPickup.Scrapped>(outcome, "${weapon.name} did not scrap on matching contact")
+                assertEquals(loadout, after)
+            } else {
+                assertIs<WeaponPickup.Equipped>(outcome, "${weapon.name} did not equip on contact")
+                assertEquals(weapon.id, after.weapon.id)
+            }
         }
     }
 
-    /** PROD-070: a build is made around one weapon and does not survive it. */
+    /** PROD-070: a build is made around one weapon and does not survive a different one. */
     @Test
     fun `a weapon pickup empties the build and pays Scrap for the weapon and each slot`() {
         var loadout = Loadout.starting()
@@ -70,18 +75,19 @@ class LoadoutTest {
         assertEquals(8 + 20 + 45, outcome.scrap)
     }
 
-    /** Round-3 finding: "any weapon" includes another copy of the one held. */
+    /** PROD-070: another copy is sold; the build made around this weapon survives. */
     @Test
-    fun `picking up a copy of the held weapon still empties the build`() {
+    fun `picking up a copy of the held weapon scraps only the pickup and preserves the build`() {
         var loadout = Loadout.starting().collect(Weapons.of(WeaponId.SableCorpRailgun)).first
         repeat(2) { loadout = loadout.collect(PowerupId.HollowpointFirmware, MAP_FOR_SCORING).first }
         loadout = loadout.collect(PowerupId.OverclockCoil, MAP_FOR_SCORING).first
 
         val (after, outcome) = loadout.collect(Weapons.of(WeaponId.SableCorpRailgun))
 
-        assertIs<WeaponPickup.Equipped>(outcome)
-        assertEquals(0, after.slots.distinctCount, "a same-weapon pickup kept the build")
-        assertEquals(100 + 20 + 45, outcome.scrap, "the replaced railgun and both slots are sold")
+        assertIs<WeaponPickup.Scrapped>(outcome)
+        assertEquals(loadout, after, "a same-weapon pickup changed the held build")
+        assertEquals(WeaponId.SableCorpRailgun, outcome.pickup.id)
+        assertEquals(100, outcome.scrap, "a Blacksite pickup scraps for 100")
     }
 
     @Test

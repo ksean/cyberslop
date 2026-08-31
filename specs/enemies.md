@@ -270,16 +270,20 @@ every damage event before lifesteal — separately from net health.
 
 `LootFloor` models a reference player who takes only guaranteed awards — the starter cache, then
 each mini-boss and boss award at its weakest outcome — under the game's real pickup policy. That
-policy makes every weapon pickup a reset (PROD-070), so the loadout at any point on the route is
-**the last guaranteed weapon before that point, at its weakest, with only the guaranteed powerups
-awarded after it** — never an accumulation across the run. Arriving at map `N ≥ 2` the reference
-player holds map `N − 1`'s boss weapon and that boss's powerup; at map `N`'s main boss they hold
-the mini-boss's weapon (Scav at its weakest) and, from map 4, the mini-boss's powerup, because the
+policy resets a build only when the pickup's `WeaponId` differs (PROD-070). Every consecutive
+weapon in the reference route does differ: its minimum-tier sequence is Street starter cache,
+Scav mini-boss, Chromed main boss, then alternating Scav and Chromed boss awards, and a weapon id
+belongs to only one tier. The loadout at any point on the reference route is therefore still **the
+last guaranteed weapon before that point, at its weakest, with only the guaranteed powerups awarded
+after it** — never an accumulation across the run. Arriving at map `N ≥ 2` the reference player
+holds map `N − 1`'s boss weapon and that boss's powerup; at map `N`'s main boss they hold the
+mini-boss's weapon (Scav at its weakest) and, from map 4, the mini-boss's powerup, because the
 mini-boss award replaced the boss weapon and emptied the build. The timeline of a map is therefore:
 the arriving loadout from the map's start through the mini-boss fight, the mini-boss award at its
 weakest from the moment it is taken, and that held loadout at the main boss. The floor is honest
-about that: a forced pickup can be a downgrade, and the floor says so rather than assuming the
-player kept the better weapon. Optional loot is genuinely required past the early maps; the floor's claims are:
+about that: a forced different-weapon pickup can be a downgrade, and the floor says so rather than
+assuming the player kept the better weapon. Optional loot is genuinely required past the early
+maps; the floor's claims are:
 
 Any simulation harness claiming this floor must take a death award through PROD-090's normal
 jump/contact path before using its loadout or resuming the route. It may replace the roll with the

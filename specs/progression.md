@@ -83,13 +83,14 @@ actual registry rather than with a generic class description. For example:
 - **Riotbreaker Shotgun:** `Fires five projectiles at once in a 30° spread.`
 - **Red Market Siphon:** `Heals you for a fraction of the damage dealt by every weapon hit.`
 
-Pickup resolution is not delayed or undone. A contacted powerup counts as collected for discovery
-whether it is applied, displaces a slot or converts to Scrap. After a tick collects an id absent
-from the profile, the id is added and persisted, then a discovery card is queued. A paired award
-queues its weapon first and its powerup second. Duplicate ids in the same resolution queue only
-once. An id already in the profile produces no card and no pause, including after starting a new
-run or reloading the page. Clearing the browser's site data creates a new profile and therefore
-resets discoveries.
+Pickup resolution is not delayed or undone. A contacted weapon counts as collected for discovery
+whether it equips or, because its `WeaponId` is already held, converts to Scrap. A contacted
+powerup likewise counts whether it is applied, displaces a slot or converts to Scrap. After a tick
+collects an id absent from the profile, the id is added and persisted, then a discovery card is
+queued. A paired award queues its weapon first and its powerup second. Duplicate ids in the same
+resolution queue only once. An id already in the profile produces no card and no pause, including
+after starting a new run or reloading the page. Clearing the browser's site data creates a new
+profile and therefore resets discoveries.
 
 While a card is visible, the simulation executes no ticks, but rendering continues with the card
 centred above a dimmed game frame. Its name and description are also announced through the game's
@@ -110,8 +111,9 @@ direction or Space cannot move or jump on resume.
   and malformed or unknown versions are rejected without partial state.
 - **P-57** Discovery: the discovery registry is total over every weapon and powerup id, uses each
   item's icon, and has a non-blank sentence no longer than 140 characters. A first weapon pickup
-  records and queues it after equipping; applied, displaced and scrapped first powerups each record
-  and queue; the same id in a fresh run queues nothing; a first paired award queues exactly weapon
-  then powerup. During each three-second active interval simulation tick count and digest do not
-  move, background time does not expire it, the card is rendered and announced, and input held or
-  pressed during the interval is absent on the first resumed tick.
+  records and queues it after resolution whether it equips or converts to Scrap; applied,
+  displaced and scrapped first powerups each record and queue; the same id in a fresh run queues
+  nothing; a first paired award queues exactly weapon then powerup. During each three-second active
+  interval simulation tick count and digest do not move, background time does not expire it, the
+  card is rendered and announced, and input held or pressed during the interval is absent on the
+  first resumed tick.

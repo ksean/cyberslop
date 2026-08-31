@@ -13,8 +13,8 @@ sealed interface Pickup {
  * The player's build: at most [MAX_SLOTS] distinct powerups, each stacked at most
  * [Powerup.MAX_STACKS] times.
  *
- * Slots are applied to the weapon held and emptied when a weapon is picked up (PROD-070); this
- * type only holds and stacks them. [Loadout] owns the reset.
+ * Slots are applied to the weapon held and emptied when a different weapon is picked up
+ * (PROD-070); this type only holds and stacks them. [Loadout] owns the pickup resolution.
  */
 class PowerupSlots private constructor(private val stacks: Map<PowerupId, Int>) {
     val held: Map<PowerupId, Int> get() = stacks

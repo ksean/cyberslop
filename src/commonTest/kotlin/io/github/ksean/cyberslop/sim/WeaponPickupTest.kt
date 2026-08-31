@@ -15,7 +15,7 @@ import kotlin.test.Test
 import kotlin.test.assertEquals
 import kotlin.test.assertTrue
 
-/** Weapon pickup in the simulation: the reset and the paired award (PROD-070, P-42). */
+/** Weapon pickup in the simulation: replacement, same-weapon Scrap and paired awards (PROD-070, P-42). */
 class WeaponPickupTest {
     private fun atPlayer(sim: GameSimulation) = Vec2(sim.player.x + 6.0, sim.player.y + 13.0)
 
@@ -45,6 +45,64 @@ class WeaponPickupTest {
         assertEquals(0, sim.run.loadout.slots.distinctCount, "the build survived the pickup")
         // Bottle 8 + Scav 20 + Street 8 + Chromed 45.
         assertEquals(scrapBefore + 8 + 20 + 8 + 45, sim.run.scrap)
+    }
+
+    @Test
+    fun `a matching weapon pickup is removed for tier Scrap while the complete build survives`() {
+        var loadout = Loadout.starting().collect(Weapons.of(WeaponId.SableCorpRailgun)).first
+        repeat(2) { loadout = loadout.collect(PowerupId.HollowpointFirmware, 1).first }
+        loadout = loadout.collect(PowerupId.OverclockCoil, 1).first
+        val sim = GameSimulation(
+            TestLevels.flat(),
+            RunState.begin(TestLevels.SEED).copy(loadout = loadout),
+            TestLevels.SEED,
+        )
+        val scrapBefore = sim.run.scrap
+        val pickup = GroundItem(atPlayer(sim), Weapons.of(WeaponId.SableCorpRailgun), null)
+        sim.items += pickup
+
+        val report = sim.tick(InputFrame())
+
+        assertEquals(loadout, sim.run.loadout)
+        assertTrue(pickup !in sim.items, "the matching pickup remained on the ground")
+        assertEquals(scrapBefore + 100, sim.run.scrap)
+        assertEquals(listOf(100), sim.scrapGains.map { it.amount })
+        assertEquals(
+            listOf(DiscoveryId.Weapon(WeaponId.SableCorpRailgun)),
+            report.collectedDiscoveries,
+        )
+    }
+
+    @Test
+    fun `a paired matching weapon scraps before its powerup joins the preserved build`() {
+        var loadout = Loadout.starting().collect(Weapons.of(WeaponId.SableCorpRailgun)).first
+        repeat(2) { loadout = loadout.collect(PowerupId.HollowpointFirmware, 1).first }
+        loadout = loadout.collect(PowerupId.OverclockCoil, 1).first
+        val sim = GameSimulation(
+            TestLevels.flat(),
+            RunState.begin(TestLevels.SEED).copy(loadout = loadout),
+            TestLevels.SEED,
+        )
+        sim.items += GroundItem(
+            atPlayer(sim),
+            Weapons.of(WeaponId.SableCorpRailgun),
+            Powerups.of(PowerupId.HollowpointFirmware),
+            guaranteed = true,
+        )
+
+        val report = sim.tick(InputFrame())
+
+        assertEquals(WeaponId.SableCorpRailgun, sim.run.loadout.weapon.id)
+        assertEquals(3, sim.run.loadout.slots.stacksOf(PowerupId.HollowpointFirmware))
+        assertEquals(1, sim.run.loadout.slots.stacksOf(PowerupId.OverclockCoil))
+        assertEquals(100, sim.run.scrap)
+        assertEquals(
+            listOf(
+                DiscoveryId.Weapon(WeaponId.SableCorpRailgun),
+                DiscoveryId.Powerup(PowerupId.HollowpointFirmware),
+            ),
+            report.collectedDiscoveries,
+        )
     }
 
     @Test

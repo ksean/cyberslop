@@ -5,25 +5,35 @@ import io.github.ksean.cyberslop.combat.WeaponScore
 import io.github.ksean.cyberslop.combat.WeaponSpec
 import io.github.ksean.cyberslop.combat.Weapons
 
-/**
- * What happened when the player walked over a weapon: it is always equipped (PROD-070), the weapon
- * it [replaced] and every slot it [cleared] paid out as [scrap].
- */
+/** What happened when the player walked over a weapon (PROD-070). */
 sealed interface WeaponPickup {
-    data class Equipped(val replaced: WeaponSpec, val scrap: Int, val cleared: Map<PowerupId, Int>) : WeaponPickup
+    val scrap: Int
+
+    /** A different weapon was equipped; the old weapon and every cleared slot paid [scrap]. */
+    data class Equipped(
+        val replaced: WeaponSpec,
+        override val scrap: Int,
+        val cleared: Map<PowerupId, Int>,
+    ) : WeaponPickup
+
+    /** Another copy of the held weapon paid [scrap] without changing the loadout. */
+    data class Scrapped(val pickup: WeaponSpec, override val scrap: Int) : WeaponPickup
 }
 
 /**
  * What the player is carrying: one weapon, and the powerups applied to it.
  *
- * A build is made around one weapon and does not survive it (PROD-070): walking over any weapon
- * equips it, whatever it is, and empties the slots — the previous weapon and each cleared slot
- * convert to Scrap at their tier value. There is no comparison, so there is no pickup the player
- * could refuse and no input to refuse it with. `WeaponScore` still ranks powerups against the
- * weapon they feed; it no longer ranks weapons.
+ * A build is made around one weapon identity (PROD-070). Walking over a different weapon equips it
+ * and empties the slots — the previous weapon and each cleared slot convert to Scrap at their tier
+ * value. Another copy of the held weapon converts to Scrap instead and leaves the build unchanged.
+ * There is no score comparison or input to refuse either resolution. `WeaponScore` still ranks
+ * powerups against the weapon they feed; it no longer ranks weapons.
  */
 data class Loadout(val weapon: WeaponSpec, val slots: PowerupSlots) {
     fun collect(found: WeaponSpec): Pair<Loadout, WeaponPickup> {
+        if (found.id == weapon.id) {
+            return this to WeaponPickup.Scrapped(found, scrapFor(found))
+        }
         val cleared = slots.held
         val scrap = scrapFor(weapon) + cleared.keys.sumOf { scrapFor(Powerups.of(it)) }
         return Loadout(found, PowerupSlots.empty()) to WeaponPickup.Equipped(weapon, scrap, cleared)

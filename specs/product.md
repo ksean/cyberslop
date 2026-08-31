@@ -134,10 +134,12 @@ build of powerups collected on contact, and permadeath with persistent unlocks.
   rarity tier at every map index.
 - **PROD-030:** Weapons and powerups resolve on contact with no additional input, and contact always
   resolves: a powerup that is not taken converts to Scrap.
-- **PROD-070:** Walking over a weapon must always equip it, whatever it is and whatever is held:
-  the previous weapon converts to Scrap, and every powerup held is cleared and converts to Scrap.
-  A guaranteed award that pairs a weapon with a powerup applies the weapon first, so the powerup
-  lands on the new weapon.
+- **PROD-070:** Walking over a weapon with a different `WeaponId` must always equip it, whatever it
+  is and whatever is held: the previous weapon converts to Scrap, and every powerup held is cleared
+  and converts to Scrap. Walking over the same `WeaponId` already held instead converts the pickup
+  to Scrap at that weapon's tier value; the equipped weapon and all of its powerup slots and stacks
+  remain unchanged. A guaranteed award that pairs a weapon with a powerup resolves the weapon
+  first, then resolves the powerup against the resulting build.
 - **PROD-073:** A powerup must exist that steals life: every point of damage the held weapon
   deals to an enemy or boss — by swing, projectile, blast, chain or splash — heals the player by a
   fraction of it, capped per hit and by a budget that refills at a fixed rate per second, never

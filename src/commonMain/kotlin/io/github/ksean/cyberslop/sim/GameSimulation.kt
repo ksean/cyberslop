@@ -24,7 +24,6 @@ import io.github.ksean.cyberslop.loot.DropTable
 import io.github.ksean.cyberslop.loot.Loadout
 import io.github.ksean.cyberslop.loot.Pickup
 import io.github.ksean.cyberslop.loot.Powerup
-import io.github.ksean.cyberslop.loot.WeaponPickup
 import io.github.ksean.cyberslop.combat.WeaponSpec
 import io.github.ksean.cyberslop.physics.InputFrame
 import io.github.ksean.cyberslop.physics.MovementModel
@@ -1482,12 +1481,11 @@ class GameSimulation(
         val collected = mutableListOf<DiscoveryId>()
         taken.forEach { item ->
             // Weapon first, then powerup (PROD-070): a paired award is one item, so its powerup
-            // lands on its weapon whichever side the player walked in from.
+            // resolves against either its new weapon or the preserved matching-weapon build.
             item.weapon?.let { weapon ->
                 val (next, outcome) = run.loadout.collect(weapon)
-                // The weapon replaced and every slot cleared are sold.
                 run = run.copy(loadout = next)
-                gainScrap((outcome as WeaponPickup.Equipped).scrap)
+                gainScrap(outcome.scrap)
                 collected += DiscoveryId.Weapon(weapon.id)
             }
             item.powerup?.let { powerup ->

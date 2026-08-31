@@ -59,10 +59,12 @@ Settled before implementation; the specification amendments say the same thing n
    once.
 9. **Touch hurts, a weapon is a build, a shot shows where it went.** (a) A living enemy's body
    drains `1.0 × contactDamage` per second of overlap, like a hazard, under the fairness rule; not
-   bosses. (b) Every weapon pickup equips: the old weapon and every powerup slot convert to Scrap;
-   a paired boss award applies weapon then powerup. The loot floor is re-derived to that policy —
-   the arriving loadout is the last guaranteed weapon plus the powerups awarded after it — and
-   the covered-map count is re-measured, not assumed. (c) Projectiles draw a body and tracer;
+   bosses. (b) A different weapon pickup equips: the old weapon and every powerup slot convert to
+   Scrap; another copy of the held weapon converts to its tier's Scrap value and preserves the
+   build. A paired boss award applies weapon then powerup. The loot floor is derived against that
+   policy — its guaranteed weapon sequence always changes ids, so the arriving loadout is the last
+   guaranteed weapon plus the powerups awarded after it — and the covered-map count is measured,
+   not assumed. (c) Projectiles draw a body and tracer;
    instant patterns leave a hit indicator (beam, chain, ring) whose geometry is the hit test's.
    *(product.md PROD-069..071; enemies.md Contact, the loot floor; combat.md Weapon pickup;
    presentation.md Weapon effects; P-41..P-43.)*

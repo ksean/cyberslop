@@ -312,9 +312,10 @@ aged, is a human judgement made against the icon sheet, not a test.
 
 ## Scrap-gain feedback (PROD-086)
 
-All four positive in-run Scrap paths — the 2-Scrap enemy kill, the main boss's 40 Scrap, a weapon
-replacement plus its cleared powerups, and a scrapped or displaced powerup — go through one
-`gainScrap(amount)` boundary. Positive calls in one simulation tick are summed into one
+All four positive in-run Scrap paths — the 2-Scrap enemy kill, the main boss's 40 Scrap, weapon
+resolution (a replacement plus its cleared powerups or a same-weapon pickup), and a scrapped or
+displaced powerup — go through one `gainScrap(amount)` boundary. Positive calls in one simulation
+tick are summed into one
 `ScrapGain(amount, origin, secondsLeft)` after pickup and reward resolution. Its origin is the
 horizontal centre of the player's box, 6 world px above the visible head at the end of that tick.
 The origin is then fixed in world space rather than following the player; a later gain creates a
@@ -441,9 +442,10 @@ Window focus loss and a hidden page clear held keys and pause; canvas focus loss
   cycle apart the acid draw list is equal. Equal level, camera and time always give an equal frame;
   changing or drawing the bubbles changes neither tile contact, lethality nor the simulation
   digest, and the bubble styles add a constant number of batches independent of pool width.
-- **P-59** Scrap feedback: each of the kill, boss-award, weapon-reset and powerup-scrap paths raises
-  `run.scrap` by its exact amount and creates a label for that amount; two positive awards in one
-  tick create one label for their sum, while awards on different ticks remain distinct. At birth
+- **P-59** Scrap feedback: each of the kill, boss-award, different-weapon reset, same-weapon
+  conversion and powerup-scrap paths raises `run.scrap` by its exact amount and creates a label for
+  that amount; two positive awards in one tick create one label for their sum, while awards on
+  different ticks remain distinct. At birth
   the bold golden `+X` is centred 6 world px above the player's then-current head; halfway through
   its 0.90 s life it is 10 screen px higher at 0.5 opacity; at expiry it is absent. Moving the
   player after birth does not move its world anchor; interpolation produces an intermediate y and
