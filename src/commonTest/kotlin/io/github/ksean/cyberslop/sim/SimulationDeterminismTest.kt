@@ -3,6 +3,7 @@ package io.github.ksean.cyberslop.sim
 import io.github.ksean.cyberslop.core.Vec2
 import io.github.ksean.cyberslop.entity.BossModule
 import io.github.ksean.cyberslop.entity.BossRoster
+import io.github.ksean.cyberslop.entity.EnemyArchetype
 import io.github.ksean.cyberslop.gen.LevelGenerator
 import io.github.ksean.cyberslop.physics.InputFrame
 import io.github.ksean.cyberslop.run.RunState
@@ -92,6 +93,52 @@ class SimulationDeterminismTest {
             { it.projectiles += LiveProjectile(Vec2.Zero, Vec2.Right, 1.0, 0, 1.0, false, false, true, BossModule.Bolt) },
             { it.projectiles += LiveProjectile(Vec2.Zero, Vec2.Right, 1.0, 0, 1.0, false, false, true, BossModule.Scatter) },
         )
+        payloadDiffers(
+            "ground-item position",
+            { it.items += GroundItem(Vec2.Zero, it_weapon(), null) },
+            { it.items += GroundItem(Vec2.Right, it_weapon(), null) },
+        )
+    }
+
+    @Test
+    fun `safe-site geometry changes positions without changing seeded loot or its rng state`() {
+        data class Snapshot(
+            val contents: List<Pair<Int, Int>>,
+            val positions: List<Vec2>,
+            val rngState: ULong,
+        )
+
+        fun snapshot(raised: Boolean): Snapshot {
+            val level = TestLevels.flat(mapIndex = LOOT_MAP)
+            if (raised) level.tiles[LOOT_COLUMN, TestLevels.FLOOR_ROW] =
+                io.github.ksean.cyberslop.world.TileKind.Solid
+            val run = RunState.begin(LOOT_SEED).copy(mapIndex = LOOT_MAP)
+            val sim = GameSimulation(level, run, LOOT_SEED)
+
+            repeat(LOOT_KILLS) {
+                val enemy = TestLevels.enemyAt(
+                    sim,
+                    EnemyArchetype.Swarm,
+                    column = LOOT_COLUMN,
+                    health = 0.01,
+                )
+                enemy.burn.apply(seconds = 1.0, rate = 1.0)
+                sim.tick(InputFrame())
+            }
+            return Snapshot(
+                contents = sim.items.map {
+                    (it.weapon?.id?.ordinal ?: -1) to (it.powerup?.id?.ordinal ?: -1)
+                },
+                positions = sim.items.map { it.position },
+                rngState = sim.lootRng.state,
+            )
+        }
+
+        val flat = snapshot(raised = false)
+        val raised = snapshot(raised = true)
+        assertEquals(flat.contents, raised.contents)
+        assertEquals(flat.rngState, raised.rngState)
+        assertNotEquals(flat.positions, raised.positions)
     }
 
     @Test
@@ -145,7 +192,11 @@ class SimulationDeterminismTest {
         val SEED = 0xD1CE5uL
         const val TICKS = 720
         const val RUN_TICKS = 300
-        const val GOLDEN = 10020045215349456527uL
+        const val GOLDEN = 17077257187548672098uL
+        const val LOOT_MAP = 2
+        const val LOOT_COLUMN = 20
+        const val LOOT_KILLS = 80
+        const val LOOT_SEED = 0xD09uL
 
         /** Generated once: nothing the tape does writes to the tiles, and generation is the slow part. */
         val level by lazy { LevelGenerator.generate(SEED, 1).level }

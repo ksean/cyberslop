@@ -1058,8 +1058,8 @@ one-tile contact radius, deterministic safe-site fallback and real-jump invarian
 reachability to the shipping integrator; and `enemies.md` requires loot-floor harnesses to collect
 guaranteed awards through the same jump/contact path as a player.
 
-**Implementation approval:** not yet given. Stop after phase one and wait for the user to review
-these defaults and explicitly approve implementation.
+**Implementation approval:** given by the user on 2026-08-30 after reviewing phase one. Phase two
+may proceed through the red-green tasks below.
 
 Defaults taken in the specification, each reversible during review:
 
@@ -1083,25 +1083,46 @@ After approval, complete these in order. Each behavior item starts with the smal
 records its expected red failure here, makes the smallest production change, then records the
 focused green run; no later item starts while an earlier one is red.
 
-- [ ] **DROP-1 — Pure safe-site geometry (PROD-090, P-64).** Add `DeathDropPlacementTest`
+- [x] **DROP-1 — Pure safe-site geometry (PROD-090, P-64).** Add `DeathDropPlacementTest`
       red-first for the exact two-tile rise, preserved death x, paired-icon clearance, grounded
       standing/crouching exclusion and a collecting jump stepped through `MovementModel`. Cover an
       adjacent raised surface, low ceiling, sealed nearer platform, lethal gap, airborne Flyer and
       equal-distance tie. Introduce one immutable commonMain death-drop site selector with a
       bounded, stable candidate order and no dependency on rendering or RNG.
-- [ ] **DROP-2 — Wire every death source and contact path (PROD-030, PROD-090, P-42, P-64).** Add
+      - Red: `./gradlew jvmTest --tests io.github.ksean.cyberslop.sim.DeathDropPlacementTest`
+        failed at test compilation because `DeathDropPlacement` did not exist, as expected.
+      - Green: the same focused command passes all five placement fixtures after adding the
+        immutable selector and its bounded, stable fallback search.
+- [x] **DROP-2 — Wire every death source and contact path (PROD-030, PROD-090, P-42, P-64).** Add
       `DeathDropPickupTest` red-first for rank-and-file weapon and powerup outcomes: running under
       each rest point does not collect, while a normal jump does. Extend `BossAwardTest` for mini-
       and main-boss paired awards, including a boss killed during a leap. Route all three death
       paths through the selector while leaving generic `GroundItem` contact and weapon-first pair
       resolution unchanged.
-- [ ] **DROP-3 — Non-death regressions, harness and full gate (P-25, P-40, P-52, P-64).** Add
+      - Red: `./gradlew jvmTest --tests io.github.ksean.cyberslop.sim.DeathDropPickupTest`
+        failed both weapon and powerup cases because the grounded approach collected the item.
+        `./gradlew jvmTest --tests io.github.ksean.cyberslop.sim.BossAwardTest` likewise failed
+        the raised paired-award and airborne-pit cases while awards still used boss centres.
+      - Green: one focused JVM run of `DeathDropPickupTest` and `BossAwardTest` passes all five
+        cases after routing rank-and-file, mini-boss and main-boss deaths through the selector.
+- [x] **DROP-3 — Non-death regressions, harness and full gate (P-25, P-40, P-52, P-64).** Add
       grounded-collection regressions for generated static drops and the starter cache; update
       `PressureHarnessTest` so its reference player jumps into a pinned award before continuing;
       cover the raised mean origin in `PickupIconTest`; and re-pin the determinism golden only after
       seeded occurrence/content/RNG comparisons show position is the sole loot-stream change. Run
       the focused simulation, physics, generation and render suites, then `./scripts/check.sh` and
       `git diff --check`, recording exact red/green and full-gate evidence here.
+      - Red: `./gradlew jvmTest --tests io.github.ksean.cyberslop.sim.PressureHarnessTest`
+        failed because its old fixture still expected collection on the mini-boss death tick.
+        `./gradlew jvmTest --tests io.github.ksean.cyberslop.sim.SimulationDeterminismTest`
+        then failed only the committed golden: expected `10020045215349456527`, actual
+        `17077257187548672098`. The first full gate additionally exposed a pressure-harness route
+        resuming on the first airborne contact tick; the strengthened harness fixture failed until
+        the collecting jump finished and physically rejoined the witness route.
+      - Green: the focused death-drop, boss-award, pressure-cohort, determinism, pickup, physics,
+        generation and render JVM matrix passes. `./scripts/check.sh` then passes the complete JVM
+        and Wasm browser suites, production distribution and smoke test in 7m15s; `git diff --check`
+        passes.
 
 ## Deferred
 

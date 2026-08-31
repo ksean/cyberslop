@@ -190,6 +190,7 @@ class GameSimulation(
     val projectiles = mutableListOf<LiveProjectile>()
     val bossBeams = mutableListOf<LiveBossBeam>()
     val items = mutableListOf<GroundItem>()
+    private val deathDropPlacement = DeathDropPlacement(level)
     private val liveScrapGains = mutableListOf<ScrapGain>()
     val scrapGains: List<ScrapGain> get() = liveScrapGains
 
@@ -1369,7 +1370,14 @@ class GameSimulation(
         val rolled = DropTable.rollWeapon(rng, level.mapIndex, floor, shifts, unlockedWeapons)
         val pairedRoll = if (powerup) DropTable.rollPowerup(rng, level.mapIndex, runPool, floor = powerupFloor) else null
         val (weapon, paired) = awardOverride?.invoke(rolled, pairedRoll) ?: (rolled to pairedRoll)
-        items.add(GroundItem(at, weapon, paired, guaranteed = true))
+        items.add(
+            GroundItem(
+                deathDropPlacement.place(at, paired = paired != null),
+                weapon,
+                paired,
+                guaranteed = true,
+            ),
+        )
     }
 
     /**
@@ -1390,16 +1398,17 @@ class GameSimulation(
         if (rng.nextDouble() > DropTable.killDropChance(level.mapIndex)) return
         // Rolled whether or not it is kept: the loot stream also feeds crits and stuns, and a
         // guaranteed-only run has to be the same fight with the loot merely withheld.
+        val at = deathDropPlacement.place(centreOfEnemy(enemy), paired = false)
         val drop = if (rng.nextDouble() < DropTable.weaponShare()) {
-            GroundItem(centreOfEnemy(enemy), DropTable.rollWeapon(rng, level.mapIndex, unlocked = unlockedWeapons), null)
+            GroundItem(at, DropTable.rollWeapon(rng, level.mapIndex, unlocked = unlockedWeapons), null)
         } else {
-            GroundItem(centreOfEnemy(enemy), null, DropTable.rollPowerup(rng, level.mapIndex, runPool))
+            GroundItem(at, null, DropTable.rollPowerup(rng, level.mapIndex, runPool))
         }
         if (optionalLoot) items.add(drop)
     }
 
     private fun collectItems(): List<DiscoveryId> {
-        val reach = TILE_SIZE.toDouble()
+        val reach = DeathDropPlacement.PICKUP_REACH
         val centre = centreOf(player)
         val taken = items.filter { it.inReachOf(centre, reach) }
         val collected = mutableListOf<DiscoveryId>()

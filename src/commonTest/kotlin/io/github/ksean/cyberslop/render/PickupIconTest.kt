@@ -7,6 +7,7 @@ import io.github.ksean.cyberslop.gen.LevelGenerator
 import io.github.ksean.cyberslop.loot.PowerupId
 import io.github.ksean.cyberslop.loot.Powerups
 import io.github.ksean.cyberslop.run.RunState
+import io.github.ksean.cyberslop.sim.DeathDropPlacement
 import io.github.ksean.cyberslop.sim.GameSimulation
 import io.github.ksean.cyberslop.sim.GroundItem
 import io.github.ksean.cyberslop.world.ThemeId
@@ -167,7 +168,8 @@ class PickupIconTest {
     @Test
     fun `a drop hovers about its resting position and the item itself does not move`() {
         val sim = simulation().also { it.items.clear() }
-        val item = GroundItem(dropAt(sim, 0.0), Weapons.of(WeaponId.ChromeFang), null)
+        val raised = dropAt(sim, 0.0) - Vec2(0.0, DeathDropPlacement.DEATH_DROP_RISE)
+        val item = GroundItem(raised, Weapons.of(WeaponId.ChromeFang), null)
         sim.items.add(item)
         val before = item.position
 
@@ -179,6 +181,10 @@ class PickupIconTest {
         val swing = centres.max() - centres.min()
         assertTrue(abs(swing - 2 * Scene.HOVER_PX) < HOVER_TOLERANCE, "the drop swung $swing px, not ${2 * Scene.HOVER_PX}")
         assertTrue(centres.toSet().size > 2, "the drop sat still: $centres")
+        assertTrue(
+            abs(centres.average() - raised.y * Scene.ZOOM) < HOVER_TOLERANCE,
+            "the raised drop hovered about ${centres.average()}, not its resting y ${raised.y * Scene.ZOOM}",
+        )
 
         val rest = ringCentreOf(compose(sim, 0.0), IconStyles.WEAPON_RING)
         val later = ringCentreOf(compose(sim, Scene.HOVER_PERIOD), IconStyles.WEAPON_RING)

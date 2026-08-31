@@ -3,15 +3,14 @@ package io.github.ksean.cyberslop.sim
 import io.github.ksean.cyberslop.core.Vec2
 import io.github.ksean.cyberslop.loot.LootFloor
 import io.github.ksean.cyberslop.physics.InputFrame
-import io.github.ksean.cyberslop.physics.Physics
 import kotlin.test.Test
 import kotlin.test.assertEquals
 import kotlin.test.assertTrue
 
-/** Round-3 finding: an award created and collected inside one tick escaped a post-tick pin. */
+/** Guaranteed awards are pinned before creation, then taken through the player's real contact path. */
 class PressureHarnessTest {
     @Test
-    fun `a mini-boss award taken on the tick it drops is the floor's weakest`() {
+    fun `a mini-boss award is pinned before its collecting jump`() {
         val sim = TestLevels.simulation()
         val mapIndex = sim.level.mapIndex
         PressureHarness.pinAwards(sim, mapIndex)
@@ -25,7 +24,14 @@ class PressureHarnessTest {
         sim.tick(InputFrame())
 
         assertTrue(live.fight.defeated, "fixture: the mini-boss did not die")
-        assertTrue(sim.items.none { it.guaranteed }, "fixture: the award was not collected on the tick it dropped")
+        assertTrue(sim.items.any { it.guaranteed }, "fixture: the raised award was collected on the death tick")
+        val routeX = sim.player.x
+        val beforeCollection = sim.elapsedTicks
+        assertTrue(PressureHarness.collectGuaranteedAwards(sim), "the harness could not jump into the award")
+        assertTrue(sim.elapsedTicks > beforeCollection, "the harness injected the loadout without movement ticks")
+        assertTrue(sim.items.none { it.guaranteed }, "the collecting jump left the award behind")
+        assertTrue(sim.player.onGround, "the harness resumed the route before finishing the jump")
+        assertEquals(routeX, sim.player.x, 1.0, "the collecting detour did not rejoin the route")
         assertEquals(LootFloor.weaponAt(mapIndex).id, sim.run.loadout.weapon.id, "the award was not pinned before collection")
         assertEquals(LootFloor.slotsAt(mapIndex).held, sim.run.loadout.slots.held)
     }

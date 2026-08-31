@@ -10,6 +10,7 @@ import io.github.ksean.cyberslop.world.Barrel
 import io.github.ksean.cyberslop.world.FireJet
 import io.github.ksean.cyberslop.world.Level
 import io.github.ksean.cyberslop.world.Mask
+import io.github.ksean.cyberslop.world.PickupSite
 import io.github.ksean.cyberslop.world.ThemeId
 import io.github.ksean.cyberslop.world.TileKind
 import io.github.ksean.cyberslop.world.TileMap
@@ -37,6 +38,7 @@ object TestLevels {
         spikeColumns: IntRange = IntRange.EMPTY,
         barrels: List<Barrel> = emptyList(),
         jets: List<FireJet> = emptyList(),
+        pickups: List<PickupSite> = emptyList(),
         bossArena: Arena = Arena(100, 114, FLOOR_ROW + 1),
         mapIndex: Int = 1,
     ): Level {
@@ -64,6 +66,7 @@ object TestLevels {
             miniboss = Arena(80, 92, FLOOR_ROW + 1),
             boss = bossArena,
             jets = jets,
+            pickups = pickups,
             gateColumn = 115,
             barrels = barrels,
         )
