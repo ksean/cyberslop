@@ -24,6 +24,10 @@ stands there arrives at the boss with the player, or shoots into the fight from 
 and the boss fight is tuned as a boss fight. Twenty tiles is what leaves a Swarm engaged at the
 awareness radius and outrun on the approach beyond `DISENGAGE_PX` of the boss's centre.
 
+For a player's direct `ArcSwing`, every rank-and-file silhouette is contained by a 24 px combat
+disc about the enemy centre. This disc is intentionally larger than the 14 px movement box: the
+drawn bodies vary by archetype while movement remains cell-sized.
+
 ## Awareness (PROD-060)
 
 The simulation has no screen, so "visible" is an **awareness radius**, not a viewport test: an
@@ -122,11 +126,13 @@ on the player.
 
 ## Mini-boss and main boss (PROD-087)
 
-Both reuse `BossFight` and `LiveBoss`: body 44 × 56 px, feet-anchored, hit radius 28 px, ground
-speed 55 px/s. They use gravity and the same replayed safe-leap decision as a walker, with their
-actual larger box. They may leap out of their own arena to follow an engaged player, but never
-move or jump before engagement and never start an attack airborne. A rank-and-file arena boundary
-does not bind the boss whose fight it is.
+Both reuse `BossFight` and `LiveBoss`: body 44 × 56 px, feet-anchored, ordinary radial-hit radius
+28 px and ground speed 55 px/s. A player's direct `ArcSwing` instead uses the silhouette-containing
+combat disc from P-63: 36 px for the mini-boss and 56 px for the main boss, about the same combat
+centre. They use gravity and the same replayed safe-leap decision as a walker, with their actual
+larger box. They may leap out of their own arena to follow an engaged player, but never move or
+jump before engagement and never start an attack airborne. A rank-and-file arena boundary does
+not bind the boss whose fight it is.
 
 ### Seeded combat profiles
 

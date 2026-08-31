@@ -228,8 +228,10 @@ object Actor {
             }
 
             Action.Swing -> {
-                val progress = (motion.secondsSinceSwing / motion.swingSeconds).coerceIn(0.0, 1.0)
-                val offset = SWING_ARC / 2.0 - SWING_ARC * progress
+                val progress = motion.swingProgress
+                    ?: (motion.secondsSinceSwing / motion.swingSeconds).coerceIn(0.0, 1.0)
+                val offset = motion.swingArcDegrees?.let { -it / 2.0 + it * progress }
+                    ?: (SWING_ARC / 2.0 - SWING_ARC * progress)
                 val direction = TrigTable.rotate(localAim.normalisedOr(Vec2.Right), offset)
                 Vec2(
                     shoulder.x + direction.x * ARM_REACH * ref,

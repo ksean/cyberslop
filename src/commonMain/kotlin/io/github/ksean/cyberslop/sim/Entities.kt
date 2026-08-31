@@ -1,5 +1,6 @@
 package io.github.ksean.cyberslop.sim
 
+import io.github.ksean.cyberslop.combat.MeleeSector
 import io.github.ksean.cyberslop.combat.ResolvedWeapon
 
 import io.github.ksean.cyberslop.core.Rng
@@ -475,6 +476,35 @@ data class SwingVisual(
 ) {
     /** One at the moment of the swing, falling to zero as it fades. */
     val strength: Double get() = (secondsLeft / totalSeconds).coerceIn(0.0, 1.0)
+}
+
+enum class CombatTargetKind { Enemy, Miniboss, Boss }
+
+/** Stable identity within one simulation, kept so one activation cannot hit a body twice. */
+data class CombatTargetId(val kind: CombatTargetKind, val index: Int = 0)
+
+/** Future-affecting state snapshotted when a player's `ArcSwing` triggers. */
+data class ActiveMeleeSwing(
+    val origin: Vec2,
+    val direction: Vec2,
+    val arcDegrees: Double,
+    val reachPx: Double,
+    val elapsedSeconds: Double,
+    val totalSeconds: Double,
+    val weapon: ResolvedWeapon,
+    val hitTargets: Set<CombatTargetId> = emptySet(),
+) {
+    val progress: Double get() = (elapsedSeconds / totalSeconds).coerceIn(0.0, 1.0)
+    val sector: MeleeSector get() = MeleeSector(origin, direction, reachPx, arcDegrees, progress)
+
+    fun visual(): SwingVisual = SwingVisual(
+        origin = origin,
+        direction = direction,
+        arcDegrees = arcDegrees,
+        reachPx = reachPx,
+        secondsLeft = (totalSeconds - elapsedSeconds).coerceAtLeast(0.0),
+        totalSeconds = totalSeconds,
+    )
 }
 
 /**

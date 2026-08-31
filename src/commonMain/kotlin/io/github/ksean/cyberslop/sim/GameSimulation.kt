@@ -2,6 +2,7 @@ package io.github.ksean.cyberslop.sim
 
 import io.github.ksean.cyberslop.combat.Anchor
 import io.github.ksean.cyberslop.combat.AutoFire
+import io.github.ksean.cyberslop.combat.CombatBodies
 import io.github.ksean.cyberslop.combat.DamagePipeline
 import io.github.ksean.cyberslop.combat.Falloff
 import io.github.ksean.cyberslop.combat.FirePattern
@@ -116,15 +117,14 @@ class GameSimulation(
     var exitReached: Boolean = false
         private set
 
-    /**
-     * The most recent melee swing, for the renderer.
-     *
-     * A swing resolves in a single tick, so without something to draw it the player sees enemies
-     * lose health for no visible reason — which, with an automatic weapon they never trigger, reads
-     * as nothing happening at all.
-     */
-    var lastSwing: SwingVisual? = null
-        private set
+    /** The live, future-affecting player arc. Its geometry is also what presentation consumes. */
+    var activeSwing: ActiveMeleeSwing? = null
+        internal set
+
+    /** Presentation retained only for the Halo's separately specified immediate ring attack. */
+    private var legacyMeleeVisual: SwingVisual? = null
+
+    val lastSwing: SwingVisual? get() = activeSwing?.visual() ?: legacyMeleeVisual
 
     /** The most recent shot leaving the muzzle, for the renderer. */
     var lastShot: MuzzleFlash? = null
@@ -310,7 +310,8 @@ class GameSimulation(
             playerStridePx += (if (player.vx < 0.0) -player.vx else player.vx) * TICK_SECONDS
         }
 
-        lastSwing = lastSwing?.let { swing ->
+        advanceActiveSwing(muzzle)
+        legacyMeleeVisual = legacyMeleeVisual?.let { swing ->
             val remaining = swing.secondsLeft - TICK_SECONDS
             if (remaining > 0.0) swing.copy(secondsLeft = remaining) else null
         }
@@ -340,6 +341,7 @@ class GameSimulation(
         advanceStatuses()
         advanceEnemies()
         advanceBosses()
+        resolveActiveSwing()
         val collectedDiscoveries = collectItems()
         drainHazards()
         drainContact()
@@ -387,7 +389,16 @@ class GameSimulation(
         add(autoFire.remaining); add(lootRng.state); add(lifestealBudget)
         pendingBurst.let { b ->
             add(b?.roundsLeft ?: -1)
-            if (b != null) { add(b.secondsToNext); add(b.direction); addPayload(b.weapon) }
+            if (b != null) {
+                add(b.secondsToNext); add(b.direction); addPayload(b.weapon)
+            }
+        }
+        activeSwing?.let { swing ->
+            add(ACTIVE_SWING_DIGEST_TAG)
+            add(swing.origin); add(swing.direction); add(swing.arcDegrees); add(swing.reachPx)
+            add(swing.elapsedSeconds); add(swing.totalSeconds); addPayload(swing.weapon)
+            val hit = swing.hitTargets.sortedWith(compareBy<CombatTargetId> { it.kind.ordinal }.thenBy { it.index })
+            add(hit.size); hit.forEach { add(it.kind.ordinal); add(it.index) }
         }
         add(enemies.size)
         enemies.forEach { e ->
@@ -496,30 +507,87 @@ class GameSimulation(
         }
     }
 
-    /** A swing covers an arc around the aim direction — not a circle around the player. */
+    /** An `ArcSwing` starts empty and grows through the pattern's own live window. */
     private fun resolveArc(shot: Shot, muzzle: Vec2) {
         val weapon = shot.weapon
-        val arc = (weapon.spec.pattern as? FirePattern.ArcSwing)?.arcDegrees ?: FULL_CIRCLE
-        val reach = weapon.spec.rangePx * weapon.reachScale * weapon.hitboxScale
-
-        lastSwing = SwingVisual(
+        val pattern = weapon.spec.pattern as? FirePattern.ArcSwing
+        if (pattern == null) {
+            resolveLegacyMelee(shot, muzzle)
+            return
+        }
+        activeSwing = ActiveMeleeSwing(
             origin = muzzle,
             direction = shot.direction,
-            arcDegrees = arc,
+            arcDegrees = (pattern.arcDegrees * weapon.hitboxScale).coerceAtMost(FULL_CIRCLE),
+            reachPx = weapon.spec.rangePx * weapon.reachScale,
+            elapsedSeconds = 0.0,
+            totalSeconds = pattern.lingerSeconds,
+            weapon = weapon,
+        )
+        legacyMeleeVisual = null
+    }
+
+    /** Keeps the non-`ArcSwing` Halo path independent of the live player-sector rule. */
+    private fun resolveLegacyMelee(shot: Shot, muzzle: Vec2) {
+        val weapon = shot.weapon
+        val reach = weapon.spec.rangePx * weapon.reachScale * weapon.hitboxScale
+        legacyMeleeVisual = SwingVisual(
+            origin = muzzle,
+            direction = shot.direction,
+            arcDegrees = FULL_CIRCLE,
             reachPx = reach,
             secondsLeft = SWING_VISIBLE_SECONDS,
             totalSeconds = SWING_VISIBLE_SECONDS,
         )
-        val halfArc = arc / 2.0
         var struck = 0
 
         forEachTargetNear(muzzle, reach) { hit ->
             if (struck > weapon.pierce) return@forEachTargetNear
             val toTarget = (hit.position - muzzle).normalisedOr(shot.direction)
-            if (!TrigTable.withinArc(shot.direction, toTarget, halfArc)) return@forEachTargetNear
+            if (!TrigTable.withinArc(shot.direction, toTarget, FULL_CIRCLE / 2.0)) return@forEachTargetNear
             applyHit(hit, weapon, shot.direction)
             struck++
         }
+    }
+
+    private fun advanceActiveSwing(origin: Vec2) {
+        val swing = activeSwing ?: return
+        activeSwing = if (swing.elapsedSeconds >= swing.totalSeconds) {
+            null
+        } else {
+            swing.copy(
+                origin = origin,
+                elapsedSeconds = minOf(swing.totalSeconds, swing.elapsedSeconds + TICK_SECONDS),
+            )
+        }
+    }
+
+    /** Tests the positions the next frame will draw, after both player and target movement. */
+    private fun resolveActiveSwing() {
+        val swing = activeSwing ?: return
+        val hitTargets = swing.hitTargets.toMutableSet()
+
+        enemies.forEachIndexed { index, enemy ->
+            if (!enemy.alive) return@forEachIndexed
+            val id = CombatTargetId(CombatTargetKind.Enemy, index)
+            if (id in hitTargets || !swing.sector.intersects(CombatBodies.enemy(centreOfEnemy(enemy)))) {
+                return@forEachIndexed
+            }
+            hitTargets += id
+            applyHit(Target.Enemy(enemy), swing.weapon, swing.direction)
+        }
+
+        listOf(miniboss to CombatTargetKind.Miniboss, boss to CombatTargetKind.Boss)
+            .forEach { (live, kind) ->
+                if (!live.fight.vulnerable || live.fight.defeated) return@forEach
+                val id = CombatTargetId(kind)
+                val body = CombatBodies.boss(live.centre, isMain = live === boss)
+                if (id in hitTargets || !swing.sector.intersects(body)) return@forEach
+                hitTargets += id
+                applyHit(Target.Boss(live), swing.weapon, swing.direction)
+            }
+
+        activeSwing = swing.copy(hitTargets = hitTargets)
     }
 
     /** Resolves a blast and returns the radius it actually used. */
@@ -1608,9 +1676,11 @@ class GameSimulation(
         const val FULL_CIRCLE = 360.0
         const val SWING_VISIBLE_SECONDS = 0.16
         const val FLASH_VISIBLE_SECONDS = 0.10
+
         /** How long a hit enemy or boss is drawn red (PROD-076). */
         const val HURT_FLASH_SECONDS = 0.12
         const val EXIT_CLEARANCE = 6
         private const val UPGRADE_DIGEST_TAG = 0x55504752
+        private const val ACTIVE_SWING_DIGEST_TAG = 0x5357494E
     }
 }

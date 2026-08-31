@@ -1,6 +1,7 @@
 package io.github.ksean.cyberslop.render
 
 import io.github.ksean.cyberslop.combat.Anchor
+import io.github.ksean.cyberslop.combat.MeleeSector
 import io.github.ksean.cyberslop.combat.WeaponClass
 import io.github.ksean.cyberslop.core.TrigTable
 import io.github.ksean.cyberslop.core.Vec2
@@ -1363,12 +1364,67 @@ object Scene {
         camera: Camera,
         muzzle: Vec2,
     ) {
-        val swing = sim.lastSwing ?: return
-        // Drawn from where the hand is now rather than where it was on the tick the swing
-        // resolved: over the 0.16 s it lingers a running player travels nearly 40 px, and an
-        // arc left behind in world space visibly detaches from the figure that made it. The
-        // direction and reach are the ones that actually resolved damage.
-        swoosh(builder, palette.hazardGlow, Vec2((muzzle.x - camera.x) * ZOOM, (muzzle.y - camera.y) * ZOOM), swing)
+        sim.activeSwing?.let { active ->
+            // Use the same interpolated centre as the figure so sub-tick presentation never pulls
+            // the fan away from the player; at a tick boundary this is the state's exact origin.
+            val origin = Vec2((muzzle.x - camera.x) * ZOOM, (muzzle.y - camera.y) * ZOOM)
+            playerSwoosh(builder, palette.hazardGlow, origin, active.sector)
+            return
+        }
+        sim.lastSwing?.let { legacy ->
+            swoosh(
+                builder,
+                palette.hazardGlow,
+                Vec2((muzzle.x - camera.x) * ZOOM, (muzzle.y - camera.y) * ZOOM),
+                legacy,
+            )
+        }
+    }
+
+    /** The player's closed fan, drawn directly from the sector its hit test consumed. */
+    private fun playerSwoosh(builder: SceneBuilder, style: String, origin: Vec2, sector: MeleeSector) {
+        val trailing = sector.trailingDirection
+        SWOOSH_RINGS.forEachIndexed { ring, fraction ->
+            val batch = builder.batch(
+                Layer.Effects,
+                style,
+                Primitive.Segment,
+                strokeWidth(SWING_WIDTH * SWOOSH_WIDTHS[ring]),
+            )
+            val reach = sector.reachPx * fraction * ZOOM
+            var previous = origin + trailing * reach
+            for (step in 1..SWING_SEGMENTS) {
+                val direction = TrigTable.rotate(trailing, sector.sweptDegrees * step / SWING_SEGMENTS)
+                val point = origin + direction * reach
+                batch.segment(previous.x, previous.y, point.x, point.y)
+                previous = point
+            }
+        }
+
+        val boundary = builder.batch(
+            Layer.Effects,
+            style,
+            Primitive.Segment,
+            strokeWidth(SWING_WIDTH * SWOOSH_WIDTHS[0]),
+        )
+        val reach = sector.reachPx * ZOOM
+        val trailingTip = origin + trailing * reach
+        val leadingTip = origin + sector.leadingDirection * reach
+        boundary.segment(origin.x, origin.y, trailingTip.x, trailingTip.y)
+        boundary.segment(origin.x, origin.y, leadingTip.x, leadingTip.y)
+
+        val ribs = builder.batch(
+            Layer.Effects,
+            style,
+            Primitive.Segment,
+            strokeWidth(SWING_WIDTH * SWOOSH_WIDTHS.last()),
+        )
+        for (rib in 1 until SWOOSH_RIBS) {
+            val direction = TrigTable.rotate(trailing, sector.sweptDegrees * rib / SWOOSH_RIBS)
+            val inner = origin + direction * (sector.reachPx * SWOOSH_RINGS.last() * ZOOM)
+            val outer = origin + direction * reach
+            ribs.segment(inner.x, inner.y, outer.x, outer.y)
+        }
     }
 
     /**
@@ -1542,6 +1598,7 @@ object Scene {
     /** What the player's rig needs, read off the simulation and nothing else (ENG-062). */
     fun motionOf(sim: GameSimulation): Motion {
         val state = sim.player
+        val active = sim.activeSwing
         return Motion(
             speedX = state.vx,
             verticalSpeed = state.vy,
@@ -1551,13 +1608,15 @@ object Scene {
             stridePx = sim.playerStridePx,
             secondsSinceShot = sim.lastShot
                 ?.let { it.totalSeconds - it.secondsLeft } ?: Double.MAX_VALUE,
-            secondsSinceSwing = sim.lastSwing
+            secondsSinceSwing = active?.elapsedSeconds ?: sim.lastSwing
                 ?.let { it.totalSeconds - it.secondsLeft } ?: Double.MAX_VALUE,
             // The simulation's own windows, so the arm finishes its sweep on the tick the swing
             // stops being drawn rather than snapping back partway through it.
             shotSeconds = sim.lastShot?.totalSeconds ?: Actor.FIRE_SECONDS,
-            swingSeconds = sim.lastSwing?.totalSeconds ?: Actor.SWING_SECONDS,
-            swingDirection = sim.lastSwing?.direction ?: Vec2.Right,
+            swingSeconds = active?.totalSeconds ?: sim.lastSwing?.totalSeconds ?: Actor.SWING_SECONDS,
+            swingDirection = active?.direction ?: sim.lastSwing?.direction ?: Vec2.Right,
+            swingArcDegrees = active?.arcDegrees,
+            swingProgress = active?.progress,
             // The weapon points where the game is aiming it. The player never chooses a direction,
             // so the held weapon is the only thing that tells them what has been locked onto.
             weaponAim = sim.aimDirection,
@@ -1915,6 +1974,7 @@ object Scene {
     private const val CHAIN_WIDTH = 2.0
     private const val CHAIN_SPARK_PX = 4.0
     private const val SWING_SEGMENTS = 10
+    private const val SWOOSH_RIBS = 3
     private const val SWING_WIDTH = 4.0
     private const val FLASH_PX = 7.0
     private const val FLASH_REACH = 22.0

@@ -6,6 +6,7 @@ import io.github.ksean.cyberslop.core.Vec2
 import io.github.ksean.cyberslop.gen.LevelGenerator
 import io.github.ksean.cyberslop.run.RunState
 import io.github.ksean.cyberslop.sim.GameSimulation
+import io.github.ksean.cyberslop.sim.TestLevels
 import kotlin.math.abs
 import kotlin.math.sqrt
 import kotlin.test.Test
@@ -162,7 +163,7 @@ class HeldWeaponTest {
     }
 
     private fun simulationAiming(aim: Vec2, facing: Int): GameSimulation {
-        val level = LevelGenerator.generate(SEED, MAP).level
+        val level = TestLevels.flat(mapIndex = MAP)
         val run = RunState.begin(SEED).let {
             it.copy(loadout = it.loadout.copy(weapon = Weapons.of(WeaponId.RiotbreakerShotgun)))
         }

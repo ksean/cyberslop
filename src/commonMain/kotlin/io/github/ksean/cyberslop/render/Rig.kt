@@ -45,6 +45,9 @@ data class Motion(
     val swingSeconds: Double = Actor.SWING_SECONDS,
     /** Where the swing went, so the arm sweeps the way the hit resolved (PROD-033). */
     val swingDirection: Vec2 = Vec2.Right,
+    /** Player `ArcSwing` geometry; null leaves enemy and boss attack-owned motion unchanged. */
+    val swingArcDegrees: Double? = null,
+    val swingProgress: Double? = null,
     /**
      * Where a held weapon points when nothing else is happening.
      *

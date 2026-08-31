@@ -28,10 +28,11 @@ class MechanicsTest {
         // Only the two fixtures: the generated map seeds a Swarm near spawn that a longer reach
         // would otherwise take the single allowed hit.
         sim.enemies.clear()
-        val behind = enemyNear(sim, offsetX = -20.0)
-        val ahead = enemyNear(sim, offsetX = 20.0)
+        val behind = enemyNear(sim, offsetX = -48.0)
+        val ahead = enemyNear(sim, offsetX = 48.0)
 
         while (sim.lastSwing == null) sim.tick(InputFrame())
+        while (sim.activeSwing?.progress?.let { it < 1.0 } == true) sim.tick(InputFrame())
 
         val struck = listOf(ahead, behind).count { it.health < it.startingHealth }
         assertEquals(1, struck, "one swing damaged both sides; the arc is not being respected")

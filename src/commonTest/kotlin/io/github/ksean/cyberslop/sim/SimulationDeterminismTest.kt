@@ -101,6 +101,37 @@ class SimulationDeterminismTest {
     }
 
     @Test
+    fun `active swing geometry progress build and hit identities are in the digest`() {
+        val sim = TestLevels.simulation()
+        sim.tick(InputFrame())
+        val active = sim.activeSwing!!
+        val baseline = sim.digest()
+
+        fun changed(label: String, mutate: (ActiveMeleeSwing) -> ActiveMeleeSwing) {
+            sim.activeSwing = mutate(active)
+            assertNotEquals(baseline, sim.digest(), "$label is not read by the digest")
+            sim.activeSwing = active
+        }
+
+        changed("origin") { it.copy(origin = it.origin + Vec2.Right) }
+        changed("locked direction") { it.copy(direction = Vec2(0.0, 1.0)) }
+        changed("arc") { it.copy(arcDegrees = it.arcDegrees + 1.0) }
+        changed("reach") { it.copy(reachPx = it.reachPx + 1.0) }
+        changed("progress") { it.copy(elapsedSeconds = it.elapsedSeconds + 0.001) }
+        changed("triggering build") {
+            val changedWeapon = io.github.ksean.cyberslop.combat.DamagePipeline.resolve(
+                it.weapon.spec,
+                io.github.ksean.cyberslop.loot.PowerupSlots.empty()
+                    .collect(io.github.ksean.cyberslop.loot.PowerupId.RangerOptics).first,
+            )
+            it.copy(weapon = changedWeapon)
+        }
+        changed("already-hit identity") {
+            it.copy(hitTargets = setOf(CombatTargetId(CombatTargetKind.Enemy, 3)))
+        }
+    }
+
+    @Test
     fun `safe-site geometry changes positions without changing seeded loot or its rng state`() {
         data class Snapshot(
             val contents: List<Pair<Int, Int>>,

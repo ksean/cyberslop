@@ -611,6 +611,7 @@ class SceneTest {
             swingDirection = swung,
             weaponAim = Vec2(0.0, 1.0),
             secondsSinceSwing = base.swingSeconds / 2.0,
+            swingProgress = 0.5,
         )
 
         val pose = Actor.pose(motion)
@@ -622,7 +623,7 @@ class SceneTest {
         )
 
         // And the sweep really is a sweep: the hand is somewhere else a moment later.
-        val later = Actor.pose(motion.copy(secondsSinceSwing = base.swingSeconds * 0.95))
+        val later = Actor.pose(motion.copy(secondsSinceSwing = base.swingSeconds * 0.95, swingProgress = 0.95))
         assertTrue(pose.leadHand != later.leadHand, "the hand does not move through the arc")
     }
 
