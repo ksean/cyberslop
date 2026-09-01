@@ -78,6 +78,16 @@ parallax layers of procedural skyline at 0.12×, 0.30× and 0.55× the camera ra
 level from the `backdrop` stream and posed per frame by a damped horizontal and vertical offset. It
 is never collidable.
 
+Every burning barrel is topped by a smaller fire in the same warm outer and hot-core colours. A
+broad central tongue and two shorter asymmetric tongues rise from distinct points on the drum lid;
+each is a linked chain of diagonal strokes whose joints move laterally through a deterministic
+0.72 s loop. Their different phases and heights keep the silhouette irregular, and the tongues do
+not join into a closed triangle or converge on one shared apex, so a still frame does not read as a
+spike. The bases stay attached to the lid and every stroke envelope stays within the existing flame
+cell above the barrel. Coordinate-derived phase offsets keep multiple barrels from waving in
+unison. The loop reads interpolated simulation time and freezes with pause; it consumes no RNG,
+adds no level or simulation state and changes neither barrel contact nor the level digest.
+
 The **exit corridor** is every column strictly greater than `Level.gateColumn`, the same boundary
 whose first crossing completes a map after the boss opens the gate. Its floor remains ordinary
 solid collision, but each exposed floor tile replaces the normal top edge with a fixed blue
@@ -542,3 +552,10 @@ changes, and no discovery card or other simulation-time presentation advances be
   An off jet draws no flame but retains its pipe. Composing either phase changes neither the
   `FireJet`, supporting tile, lethal contact, on/off timing nor simulation digest, and one jet and
   many jets open the same set of pipe/flame style batches.
+- **P-73** Burning-barrel fire: every barrel draws three unequal, two-tone flame tongues whose
+  distinct lid anchors and joined diagonal strokes form no closed triangle and share no apex.
+  Every flame stroke envelope stays within the flame cell above the drum. Two times within the
+  0.72 s cycle change at least one joint's lateral position, times one full cycle apart match, and
+  pause freezes the shape. Barrels at different coordinates do not all share the same pose.
+  Composing any phase changes neither damaging contact, barrel geometry nor the simulation digest,
+  and one barrel and many barrels open the same set of flame style batches.

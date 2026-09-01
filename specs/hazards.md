@@ -31,6 +31,12 @@ flame tongues wave above a ruptured pipe outlet in the supporting solid tile; wh
 pipe remains visible and the flame does not (PROD-096, presentation.md P-70). The pipe is not a new
 tile or object, and flame phase never enters `isOnAt`, the lethal volume or the level digest.
 
+A burning barrel's fire is likewise presentational: several independently phased flame tongues
+wave above the drum instead of forming a static triangular spike (PROD-099, presentation.md P-73).
+Their geometry stays within the existing flame cell above the barrel. Flame phase never enters the
+barrel footprint, damaging-contact calculation or level digest; the barrel and its entire flame
+cell remain equally damaging at every animation phase.
+
 ## Contact rules
 
 - The movement model samples lethal overlap **per sub-step** (half a tile), so a terminal-velocity

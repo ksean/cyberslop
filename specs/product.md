@@ -267,6 +267,9 @@ build of powerups collected on contact, and permadeath with persistent unlocks.
   tile immediately beneath every jet must visibly contain a ruptured pipe outlet, including while
   the jet is off, so the threat's location remains identifiable. The flame and pipe are
   presentational only and change no jet footprint, timing or lethality and no tile collision.
+- **PROD-099:** A burning barrel must be topped by visibly animated, laterally wavy fire rather
+  than a static triangular mark that reads as a spike. Its flame remains presentational and
+  changes neither the barrel-and-flame damaging footprint nor its contact damage.
 - **PROD-086:** Every positive Scrap award during active gameplay must produce one bold golden
   `+X` above the player's head, where `X` is the total awarded in that simulation tick. The label
   must rise a small visible distance and fade completely; it is feedback only and must not alter

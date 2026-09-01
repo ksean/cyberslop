@@ -16,6 +16,7 @@ import io.github.ksean.cyberslop.sim.LiveBoss
 import io.github.ksean.cyberslop.sim.LiveEnemy
 import io.github.ksean.cyberslop.sim.MuzzleFlash
 import io.github.ksean.cyberslop.sim.SwingVisual
+import io.github.ksean.cyberslop.world.Barrel
 import io.github.ksean.cyberslop.world.Level
 import io.github.ksean.cyberslop.world.TILE_SIZE
 import io.github.ksean.cyberslop.world.TileKind
@@ -314,7 +315,7 @@ object Scene {
                 }
             }
         }
-        barrels(builder, palette, level, camera, first..last)
+        barrels(builder, palette, level, camera, first..last, timeSeconds)
     }
 
     private fun exitSparks(
@@ -372,14 +373,25 @@ object Scene {
         return if (remainder < 0.0) remainder + modulus else remainder
     }
 
-    /** A burning barrel: a body in its floor cell and a flame licking up through the cell above. */
-    private fun barrels(builder: SceneBuilder, palette: Palette, level: Level, camera: Camera, visible: IntRange) {
+    /** A burning barrel: a body in its floor cell and three wavy tongues in the cell above (P-73). */
+    private fun barrels(
+        builder: SceneBuilder,
+        palette: Palette,
+        level: Level,
+        camera: Camera,
+        visible: IntRange,
+        timeSeconds: Double,
+    ) {
         if (level.barrels.isEmpty()) return
         val size = TILE_SIZE * ZOOM
         val body = builder.batch(Layer.Hazard, palette.hazard, Primitive.Rect)
         val bands = builder.batch(Layer.Hazard, palette.tileEdge, Primitive.Rect)
-        val flame = builder.batch(Layer.Hazard, palette.hazardGlow, Primitive.Segment, strokeWidth(FLAME_WIDTH))
-        val core = builder.batch(Layer.Hazard, palette.hazardGlow, Primitive.Dot)
+        val outer = BARREL_OUTER_WIDTHS.map { width ->
+            builder.batch(Layer.Hazard, FIRE_OUTER, Primitive.Segment, size * width)
+        }
+        val core = BARREL_CORE_WIDTHS.map { width ->
+            builder.batch(Layer.Hazard, FIRE_CORE, Primitive.Segment, size * width)
+        }
         level.barrels.forEach { barrel ->
             if (barrel.column !in visible) return@forEach
             val x = (TileMap.toWorld(barrel.column) - camera.x) * ZOOM
@@ -390,10 +402,60 @@ object Scene {
             body.rect(left, top, width, size * DRUM_HEIGHT)
             bands.rect(left, top + size * DRUM_HEIGHT * 0.3, width, BAND_PX)
             bands.rect(left, top + size * DRUM_HEIGHT * 0.7, width, BAND_PX)
-            val centre = x + size / 2.0
-            flame.segment(centre - width * 0.3, top, centre, top - size * FLAME_HEIGHT)
-            flame.segment(centre + width * 0.3, top, centre, top - size * FLAME_HEIGHT)
-            core.dot(centre, top - size * FLAME_HEIGHT * 0.4, size * FLAME_CORE)
+            barrelFlame(outer, core, x + size / 2.0, top, size, timeSeconds, barrel)
+        }
+    }
+
+    /** Three independently phased, open paths: no two sides meet to make the old spike. */
+    private fun barrelFlame(
+        outer: List<DrawBatch>,
+        core: List<DrawBatch>,
+        centreX: Double,
+        lidY: Double,
+        size: Double,
+        timeSeconds: Double,
+        barrel: Barrel,
+    ) {
+        for (tongue in BARREL_FLAME_LENGTHS.indices) {
+            val points = barrelFlamePoints(outer, centreX, lidY, size, timeSeconds, barrel, tongue)
+            for (segment in outer.indices) {
+                val from = points[segment]
+                val to = points[segment + 1]
+                outer[segment].segment(from.x, from.y, to.x, to.y)
+                core[segment].segment(from.x, from.y, to.x, to.y)
+            }
+        }
+    }
+
+    private fun barrelFlamePoints(
+        outer: List<DrawBatch>,
+        centreX: Double,
+        lidY: Double,
+        size: Double,
+        timeSeconds: Double,
+        barrel: Barrel,
+        tongue: Int,
+    ): List<Vec2> {
+        val startY = lidY - outer.first().width / 2.0
+        val tipY = lidY - size * BARREL_FLAME_LENGTHS[tongue] + outer.last().width / 2.0
+        val coordinatePhase = positiveMod(
+            barrel.column * BARREL_PHASE_X + barrel.row * BARREL_PHASE_Y,
+            BARREL_PHASE_STEPS,
+        ).toDouble() / BARREL_PHASE_STEPS
+        val cycle = positiveRemainder(timeSeconds / BARREL_WAVE_PERIOD + coordinatePhase, 1.0)
+        val anchorX = centreX + size * BARREL_FLAME_ANCHORS[tongue]
+        return (0..outer.size).map { point ->
+            val progress = point.toDouble() / outer.size
+            val envelope = TrigTable.sinDegrees(180.0 * progress)
+            val zig = if ((point + tongue) % 2 == 0) -1.0 else 1.0
+            val staticTurn = zig * BARREL_ZIGZAG * envelope
+            val wave = BARREL_WAVE * envelope * TrigTable.sinDegrees(
+                360.0 * (cycle + BARREL_FLAME_PHASES[tongue] + progress * BARREL_WAVE_TURNS),
+            )
+            Vec2(
+                anchorX + size * (staticTurn + wave),
+                startY + (tipY - startY) * progress,
+            )
         }
     }
 
@@ -2252,11 +2314,20 @@ object Scene {
     private const val STRIP_POINTS = 3
     private const val STRIP_TOP = 0.35
     private const val DRUM_WIDTH = 0.7
-    private const val DRUM_HEIGHT = 0.9
+    private const val DRUM_HEIGHT = 1.0
     private const val BAND_PX = 2.0
-    private const val FLAME_WIDTH = 3.0
-    private const val FLAME_HEIGHT = 0.8
-    private const val FLAME_CORE = 0.14
+    private const val BARREL_WAVE_PERIOD = 0.72
+    private const val BARREL_WAVE_TURNS = 0.55
+    private const val BARREL_ZIGZAG = 0.05
+    private const val BARREL_WAVE = 0.035
+    private const val BARREL_PHASE_STEPS = 17
+    private const val BARREL_PHASE_X = 7
+    private const val BARREL_PHASE_Y = 11
+    private val BARREL_FLAME_LENGTHS = doubleArrayOf(0.76, 0.57, 0.49)
+    private val BARREL_FLAME_ANCHORS = doubleArrayOf(0.0, -0.16, 0.16)
+    private val BARREL_FLAME_PHASES = doubleArrayOf(0.0, 0.34, 0.67)
+    private val BARREL_OUTER_WIDTHS = doubleArrayOf(0.16, 0.12, 0.08, 0.045)
+    private val BARREL_CORE_WIDTHS = doubleArrayOf(0.07, 0.05, 0.032, 0.015)
     private val BOSS_SCATTER_ANGLES = doubleArrayOf(-15.0, -7.5, 0.0, 7.5, 15.0)
     private const val BOSS_EVENT_FLASH_SECONDS = 0.10
     private const val BOSS_EVENT_SWING_SECONDS = 0.16
