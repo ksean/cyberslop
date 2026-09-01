@@ -20,11 +20,8 @@ data class RunState(
 
     val dead: Boolean get() = health <= 0.0
 
-    /** Entering the next map restores health, which is the reward for clearing a boss. */
-    fun advanced(): RunState = copy(
-        mapIndex = mapIndex + 1,
-        health = Balance.playerMaxHealth(mapIndex + 1) * upgrades.healthMultiplier,
-    )
+    /** Entering the next map preserves the health earned or lost in this run. */
+    fun advanced(): RunState = copy(mapIndex = mapIndex + 1)
 
     companion object {
         fun begin(seed: ULong, upgrades: UpgradeRanks = UpgradeRanks()): RunState = RunState(

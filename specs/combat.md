@@ -237,6 +237,35 @@ particular, Ranger Optics may still raise the Sable Railgun from 1,400 px/s to 2
 larger per-tick displacement cannot skip a target. The already-hit identity set is future-affecting
 `LiveProjectile` state and participates in P-40's digest.
 
+### Visible-view ranged boundary (PROD-101)
+
+Each fixed tick supplies the simulation with the immutable world rectangle of the current camera
+view. The rectangle's interior is active space and all four edges are terminating boundaries. This
+is a gameplay input for ranged attacks, not a canvas clipping rule.
+
+Every travelling projectile fired by a `WeaponClass.Ranged` build is spent when its centre's swept
+path first contacts an edge of that tick's rectangle. Its swept movement is clipped to that view
+edge before actor collision is resolved beyond it, including when one tick would otherwise carry a
+fast shot from visible space through an off-screen target. Reaching a view edge consumes the
+projectile: a
+lob cannot leave above the view and fall back in, Ricochet ROM cannot reflect from the edge, and
+homing cannot turn a spent shot back into view. Terrain or a visible target that is reached earlier
+still resolves normally; exact same-distance contact at the view edge resolves the boundary first.
+A projectile already outside because the camera moved is spent before it can deal damage.
+
+An enemy or boss is visible for this rule exactly when the interior of its canonical combat body
+overlaps the viewport interior; mere tangency at an edge is off-screen. Every damage or status
+application attributable to a ranged activation requires that visibility at the moment it
+resolves. The gate therefore covers travelling-projectile contact, Kessler's target-anchored
+strike, blast and chain targets, and other direct or immediate on-hit consequences. A burn or
+bleed already applied while its target was visible continues under its normal duration if that
+target later leaves the view, and life steal continues to count only damage actually dealt.
+
+Auto-aim and range are unchanged: an off-screen enemy may still be selected, but the ranged
+activation cannot damage it until its combat body enters the visible view. `WeaponClass.Melee` and
+`WeaponClass.Psychic` activations are not view-bounded. Enemy and boss projectiles and beams retain
+their terrain, player and level boundaries from PROD-092.
+
 **Life steal (PROD-073).** Red Market Siphon heals the player by its fraction of every point of
 damage the held weapon **actually deals** to an enemy or a boss — a swing, a projectile landing,
 a blast, a chain jump, splash; overkill past zero health steals nothing — before the per-hit cap
@@ -386,6 +415,16 @@ same-weapon pickup pays exactly one weapon value and no values for the powerups 
   and a Ricochet ROM reflection cannot hit an already struck target again. The same outcomes hold
   at fixed-step boundaries on JVM and Wasm. Mutating a live projectile's already-hit identities
   changes P-40's digest.
+- **P-75** Visible-view ranged boundary: straight, maximum-speed, lobbed, homing, piercing and
+  terrain-bouncing ranged projectiles are spent at the first left, right, top or bottom viewport
+  edge and cannot re-enter; a target before that edge is hit and one wholly beyond it is not,
+  including when both lie in one tick's swept segment. A wall before the edge still blocks or
+  reflects normally, while an exact boundary tie spends the shot. Kessler, blast, chain, ignite
+  and other immediate ranged consequences exclude wholly off-screen targets but include a combat
+  body with positive-area overlap inside the view; an already-applied status may keep ticking after
+  its target leaves. Psychic and melee player attacks and enemy and boss shots are unchanged
+  controls. Equal initial state, input tape and viewport tape produce equal outcomes on JVM and
+  Wasm, while changing the viewport tape can change them.
 - **P-42** Weapon pickup: collecting a weapon with a different `WeaponId` — including one of lower
   tier and lower score than the held one — equips it; the previous weapon's Scrap and the Scrap of
   every cleared slot are paid; the slots are empty afterwards; and a powerup collected next lands

@@ -28,8 +28,17 @@ The profile is the canonical source of persistent state and is saved immediately
 run, buying an upgrade or recording a discovery. A valid in-progress run is stored separately; a
 profile write must not create, replace or clear one. A shop purchase made while `Continue game` is
 available applies when that run is continued. Current health remains the same absolute value when
-a health rank is bought; the higher maximum applies immediately and the next map entry restores
-to that higher maximum.
+a health rank is bought; the higher maximum applies immediately without granting the difference as
+health.
+
+## In-run health across maps
+
+A new run begins at its full upgraded map-one maximum. After that, current health is one continuous
+run resource: exiting a cleared map and entering its successor preserve exactly the absolute value
+the player had on exit (PROD-100). The transition advances `mapIndex` and therefore recalculates
+`maxHealth`, but it grants no heal, refill or proportional adjustment. Only an explicit gameplay
+healing effect may increase current health. The carried value is what the next map's simulation and
+in-progress save receive.
 
 The profile format is versioned and rejects a malformed record as a whole. Migration preserves
 existing players: a legacy metadata record containing one Scrap integer, or the meta-Scrap field
@@ -60,7 +69,7 @@ All three tracks have five ranks and use the same prices for ranks 1 through 5: 
 
 | Upgrade | Effect per rank | Rank-five total | Applies to |
 |---|---:|---:|---|
-| Reinforced Chassis | +10 % maximum health | +50 % | `Balance.playerMaxHealth(mapIndex)` before a run starts or a map restores health |
+| Reinforced Chassis | +10 % maximum health | +50 % | `Balance.playerMaxHealth(mapIndex)` when a run starts and whenever the current maximum is queried |
 | Black-Market Firmware | +5 % weapon damage | +25 % | the resolved player weapon hit, before its blast, chain, ignite and life-steal consequences |
 | Reactive Dermal Weave | −5 % incoming non-lethal damage | −25 % | enemy and boss attacks, enemy and boss contact, spike strips and burning barrels |
 
@@ -122,3 +131,8 @@ direction or Space cannot move or jump on resume.
   interval simulation tick count and digest do not move, background time does not expire it, the
   card is rendered and announced, and input held or pressed during the interval is absent on the
   first resumed tick.
+- **P-74** Map-to-map health carry: a new run starts at its full upgraded map-one maximum; advancing
+  a damaged run increments only its map index and preserves current health bit-for-bit, including
+  when the next map's maximum is higher because of map scaling or Reinforced Chassis. Entering the
+  generated successor and saving or loading it preserve that same value; neither a profile upgrade
+  nor a map transition grants the difference to the new maximum.

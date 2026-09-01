@@ -37,7 +37,7 @@ commonMain/io/github/ksean/cyberslop/
   loot/      Powerup, Powerups, PowerupSlots, Loadout, DropTable, LootFloor
   progression/  PlayerProfile, UpgradeCatalog, DiscoveryCatalog
   entity/    Enemies, Boss, Bosses, Balance
-  sim/       GameSimulation, Entities
+  sim/       GameSimulation, GameplayViewport, Entities
   render/    Palette, Rig, Actor, EnemyLook, Backdrop, Scene, DrawList, Icon*, Hud, Camera
   run/       RunState, SaveCodec
   screen/    ScreenState
@@ -49,8 +49,8 @@ wasmJsMain/io/github/ksean/cyberslop/
 
 ## Simulation
 
-- **ENG-050:** The simulation must be a pure function of its previous state and one input frame,
-  reading no clock, ambient randomness or DOM.
+- **ENG-050:** The simulation must be a pure function of its previous state, one input frame and
+  one immutable world-space gameplay viewport, reading no clock, ambient randomness or DOM.
 - **ENG-051:** Player position and velocity must be changed only by the movement model.
 - **ENG-052:** The movement model must be the single source of truth for motion, shared by the game
   loop and by map verification; verification never re-implements it.

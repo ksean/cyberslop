@@ -42,7 +42,11 @@ follow (25 % of the view) with look-ahead (12 %) in the facing direction; hard c
 bounds; on resize keep world-units-per-pixel fixed. The camera never frames an arena: a boss that
 fights is engaged and pursuing, so it is within the awareness radius of the player the camera
 follows. Boss projectiles and beams continue to terrain or the level boundary; the camera clips
-their draw geometry at its own viewport rather than the simulation shortening them to fit.
+their draw geometry at its own viewport rather than the simulation shortening them to fit. Player
+ranged attacks are the deliberate exception: the most recently composed camera rectangle becomes
+the next fixed tick's gameplay viewport under PROD-101. A travelling ranged shot spent at an edge
+leaves its normal impact/tracer endpoint there; the renderer displays that simulation result and
+does not independently decide whether the shot or an off-screen target can interact.
 
 ## Palettes and the world
 

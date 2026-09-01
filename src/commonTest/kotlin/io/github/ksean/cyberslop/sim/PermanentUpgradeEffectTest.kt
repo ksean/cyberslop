@@ -13,6 +13,7 @@ import io.github.ksean.cyberslop.physics.InputFrame
 import io.github.ksean.cyberslop.physics.TICK_SECONDS
 import io.github.ksean.cyberslop.progression.UpgradeRanks
 import io.github.ksean.cyberslop.run.RunState
+import io.github.ksean.cyberslop.run.SaveCodec
 import io.github.ksean.cyberslop.world.Barrel
 import io.github.ksean.cyberslop.world.FireJet
 import io.github.ksean.cyberslop.world.Hazards
@@ -26,13 +27,21 @@ import kotlin.test.assertTrue
 /** P-56: purchased effects enter rules once, at their explicit boundaries. */
 class PermanentUpgradeEffectTest {
     @Test
-    fun `chassis raises new and next map maximum health while a profile refresh preserves current health`() {
+    fun `chassis raises maximum health while map advance and profile refresh preserve current health`() {
         val ranks = UpgradeRanks(reinforcedChassis = 5)
         val fresh = RunState.begin(SEED, ranks)
 
         assertEquals(Balance.playerMaxHealth(1) * 1.5, fresh.maxHealth)
         assertEquals(fresh.maxHealth, fresh.health)
-        assertEquals(Balance.playerMaxHealth(2) * 1.5, fresh.advanced().health)
+
+        val damaged = fresh.copy(health = 47.0)
+        val advanced = damaged.advanced()
+        assertEquals(2, advanced.mapIndex)
+        assertEquals(Balance.playerMaxHealth(2) * 1.5, advanced.maxHealth)
+        assertEquals(47.0, advanced.health)
+        val restored = SaveCodec.decodeRun(SaveCodec.encodeRun(advanced)).getOrThrow().run
+        assertEquals(advanced.mapIndex, restored.mapIndex)
+        assertEquals(advanced.health, restored.health)
 
         val active = RunState.begin(SEED).copy(health = 47.0)
         val refreshed = active.copy(upgrades = ranks)

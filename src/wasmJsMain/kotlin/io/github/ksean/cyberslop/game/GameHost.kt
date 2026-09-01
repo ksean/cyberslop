@@ -127,7 +127,10 @@ class GameHost(
         val player = sim.player
         val standingBlocked =
             player.stance == Stance.Crouch && !MovementModel.canStand(player, sim.level.tiles)
-        val report = sim.tick(filter.next(input.keys(), player.onGround, standingBlocked))
+        val report = sim.tick(
+            filter.next(input.keys(), player.onGround, standingBlocked),
+            camera,
+        )
         if (report.collectedDiscoveries.isNotEmpty()) {
             profile = discovery.collect(report.collectedDiscoveries).profile
         }

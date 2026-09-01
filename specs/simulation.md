@@ -1,8 +1,20 @@
 # Simulation and Movement
 
-The simulation is `sim.GameSimulation.tick(input, dt)`: a pure function of the previous world state
-and one input frame (ENG-050). The movement model inside it is the single source of truth for player
-motion and is shared, unchanged, by the game loop and by map verification (ENG-051, ENG-052).
+The simulation is `sim.GameSimulation.tick(input, viewport)`: a pure function of the previous world
+state, one input frame and one immutable gameplay viewport (ENG-050). The movement model
+inside it is the single source of truth for player motion and is shared, unchanged, by the game
+loop and by map verification (ENG-051, ENG-052).
+
+## Gameplay viewport input
+
+`sim.GameplayViewport` is the world-space rectangle initialized from the level-entry camera and
+then last composed for the player. The browser converts the current platform-independent `Camera`
+to this value before each fixed tick; multiple catch-up ticks before another frame therefore
+consume the same visible rectangle. Canvas size, camera following and interpolation remain
+presentation concerns, while the numeric rectangle is an explicit rule input used only for
+PROD-101's player-ranged boundary. It contains no browser or DOM reference and is not stored in the
+simulation digest or canonical save. A deterministic replay must supply the same viewport tape as
+well as the same control-input tape.
 
 ## Movement model
 
@@ -135,7 +147,8 @@ Kotlin/Wasm and the JVM agree bit-for-bit on IEEE-754 `+ − × ÷ √`; they ma
   it paused. `Return to title` banks the live run Scrap once, clears the run save and reaches a
   title with no `Continue game` for that run; opening, closing or focus-pausing banks nothing.
 - **P-40** Simulation determinism: a digest of the whole rule-bearing simulation state after N
-  ticks of a fixed tape on a fixed seed matches a committed golden value on both targets
+  ticks of fixed input and viewport tapes on a fixed seed matches a committed golden value on both
+  targets
   (enemies.md lists the fields). Enemy/boss leap state, selected boss profiles, scheduled multi-hit
   events, boss-projectile ownership, deterministic death-drop positions and the player's active
   `ArcSwing` are rule-bearing and included. A live projectile's gravity and already-hit target

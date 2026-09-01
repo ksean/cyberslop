@@ -104,6 +104,8 @@ class GameSimulation(
     internal val lootRng = Rng.derive(seed, level.mapIndex, "loot")
     private val rng: Rng get() = lootRng
 
+    private var gameplayViewport = fullLevelViewport()
+
     var run: RunState = startingRun
         private set
     var player: PlayerState = level.spawnState()
@@ -298,7 +300,10 @@ class GameSimulation(
         }
     }
 
-    fun tick(input: InputFrame): TickReport {
+    fun tick(input: InputFrame): TickReport = tick(input, fullLevelViewport())
+
+    fun tick(input: InputFrame, viewport: GameplayViewport): TickReport {
+        gameplayViewport = viewport
         previousPlayer = player
         playerHurtSecondsLeft = (playerHurtSecondsLeft - TICK_SECONDS).coerceAtLeast(0.0)
         advanceScrapGains()
@@ -368,6 +373,13 @@ class GameSimulation(
             collectedDiscoveries = collectedDiscoveries,
         )
     }
+
+    private fun fullLevelViewport() = GameplayViewport(
+        left = 0.0,
+        top = 0.0,
+        right = level.tiles.widthPx,
+        bottom = level.tiles.heightPx,
+    )
 
     /**
      * A canonical digest of every mutable, future-affecting field (P-40, `specs/enemies.md`):
@@ -629,9 +641,10 @@ class GameSimulation(
         val points = mutableListOf(origin)
 
         for (jump in 0 until jumps) {
-            val candidates = enemies.filter { it.alive && it !in struck }.map { Target.Enemy(it) } +
+            val candidates = (enemies.filter { it.alive && it !in struck }.map { Target.Enemy(it) } +
                 listOf(miniboss, boss).filter { it.fight.vulnerable && !it.fight.defeated && it !in struck }
-                    .map { Target.Boss(it) }
+                    .map { Target.Boss(it) })
+                .filter { canDamage(it, shot.weapon) }
             val next = candidates.minByOrNull { (it.position - from).lengthSquared } ?: break
             if ((next.position - from).lengthSquared > pattern.jumpRange * pattern.jumpRange) break
             struck.add(if (next is Target.Enemy) next.enemy else (next as Target.Boss).boss)
@@ -781,7 +794,8 @@ class GameSimulation(
         weapon: ResolvedWeapon,
         direction: Vec2,
         scale: Double = 1.0,
-    ) {
+    ): Boolean {
+        if (!canDamage(target, weapon)) return false
         val distance = (target.position - centreOf(player)).length
         val crit = rng.nextDouble() < weapon.critChance
         val amount = weapon.damagePerProjectile *
@@ -796,11 +810,21 @@ class GameSimulation(
 
         if (weapon.blastFraction > 0.0) {
             forEachTargetNear(target.position, BLAST_RADIUS * weapon.hitboxScale) { splash ->
-                if (splash !== target && splash is Target.Enemy) {
+                if (splash !== target && splash is Target.Enemy && canDamage(splash, weapon)) {
                     damageEnemy(splash.enemy, amount * weapon.blastFraction, weapon, direction, splash = true)
                 }
             }
         }
+        return true
+    }
+
+    private fun canDamage(target: Target, weapon: ResolvedWeapon): Boolean {
+        if (weapon.spec.cls != WeaponClass.Ranged) return true
+        val body = when (target) {
+            is Target.Enemy -> CombatBodies.enemy(target.position)
+            is Target.Boss -> CombatBodies.boss(target.position, isMain = target.boss === boss)
+        }
+        return gameplayViewport.overlaps(body)
     }
 
     private fun damageBoss(boss: LiveBoss, amount: Double, weapon: ResolvedWeapon) {
@@ -916,7 +940,18 @@ class GameSimulation(
             val before = projectile.position
             val after = before + projectile.velocity * (TICK_SECONDS / pieces)
             val terrainEntry = if (projectile.passesTerrain) null else terrainEntryFraction(before, after)
-            if (projectile.fromPlayer && !hitTargetsAlong(projectile, before, after, terrainEntry)) {
+            val viewportExit = rangedViewportExit(projectile, before, after)
+            val blockingEntry = when {
+                terrainEntry == null -> viewportExit
+                viewportExit == null -> terrainEntry
+                else -> minOf(terrainEntry, viewportExit)
+            }
+            if (projectile.fromPlayer && !hitTargetsAlong(projectile, before, after, blockingEntry)) {
+                return false
+            }
+            if (viewportExit != null && (terrainEntry == null || viewportExit <= terrainEntry)) {
+                projectile.position = before + (after - before) * viewportExit
+                projectile.secondsLeft = 0.0
                 return false
             }
             projectile.position = after
@@ -934,6 +969,13 @@ class GameSimulation(
             }
         }
         return true
+    }
+
+    private fun rangedViewportExit(projectile: LiveProjectile, from: Vec2, to: Vec2): Double? {
+        if (!projectile.fromPlayer) return null
+        val weapon = projectile.weapon ?: autoFire.weapon
+        if (weapon.spec.cls != WeaponClass.Ranged) return null
+        return gameplayViewport.exitFraction(from, to)
     }
 
     private data class ProjectileContact(
@@ -1001,6 +1043,8 @@ class GameSimulation(
         radius: Double,
     ) {
         if (id in projectile.hitTargets) return
+        val weapon = projectile.weapon ?: autoFire.weapon
+        if (!canDamage(target, weapon)) return
         val fraction = segmentDiscEntry(from, to, target.position, radius) ?: return
         if (terrainEntry != null && fraction >= terrainEntry) return
         add(ProjectileContact(fraction, id, target))

@@ -28,6 +28,10 @@ build of powerups collected on contact, and permadeath with persistent unlocks.
 - **PROD-032:** `Continue game` must resume an in-progress run only — never a run that has ended,
   and never a save the current build cannot read. Saves carry a format version and are refused
   rather than partially applied.
+- **PROD-100:** Exiting a cleared map into the next map must carry the player's current health
+  forward as the same absolute value. Clearing or entering a map must not heal, refill or reset
+  health; the next map still recalculates maximum health for its map index and permanent upgrades,
+  while a new run begins at its full map-one maximum.
 - **PROD-048:** The title screen and the run-ended screens must share the in-game visual identity.
 - **PROD-081:** The title screen must always offer a keyboard-operable button named `Shop`. The
   shop must show the player's spendable Scrap, every permanent upgrade and its current rank,
@@ -176,6 +180,10 @@ build of powerups collected on contact, and permadeath with persistent unlocks.
   region its swept path intersects, subject to its pierce budget and intervening terrain. A fast
   shot must not pass harmlessly through a target merely because it crossed the complete target
   between two fixed simulation ticks; projectile-speed upgrades must not make a hit less reliable.
+- **PROD-101:** A player attack fired by a ranged-class weapon must be bounded by the visible
+  camera view. A travelling shot is spent when it first reaches the view's edge and no direct or
+  secondary part of that ranged activation may damage an enemy or boss wholly off-screen. Melee,
+  psychic, enemy and boss attacks retain their existing boundaries.
 - **PROD-083:** The first time a browser profile collects each weapon or powerup, the collection
   must complete and then gameplay must pause for three seconds of active foreground time. A card
   centred over the game must show that item's usual picture, name and a brief, mechanically
