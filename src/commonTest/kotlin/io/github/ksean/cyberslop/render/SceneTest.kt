@@ -990,6 +990,38 @@ class SceneTest {
         assertTrue(hasSegment(segmentsOf(frame, ShotLooks.RANGED.core), head, tail), "no tracer from $head to $tail: ${segmentsOf(frame, style)}")
     }
 
+    @Test
+    fun `Ashfall flash and tracer follow the upward ballistic tangent`() {
+        val weapon = Weapons.of(WeaponId.AshfallGrenadeLobber)
+        val sim = simulation(weapon.id)
+        trimTo(sim, 0)
+        while (sim.projectiles.none { it.fromPlayer }) sim.tick(InputFrame())
+        val shot = sim.projectiles.first { it.fromPlayer }
+        val flash = sim.lastShot!!
+        assertTrue(flash.direction.y < 0.0, "flash did not point upward: ${flash.direction}")
+
+        val pose = Actor.pose(Scene.motionOf(sim))
+        val feet = Vec2(playerCentre(sim).x, sim.player.y + sim.player.height(Physics.Default)) * Scene.ZOOM
+        val muzzle = feet + Scene.muzzleOf(pose, weapon) * Scene.ZOOM
+        val frame = frameOf(sim)
+        val flashSegments = segmentsOf(frame).filter { (from, _) -> (from - muzzle).length < 1e-6 }
+        assertTrue(
+            flashSegments.any { (_, to) ->
+                (to - muzzle).normalisedOr(Vec2.Right).let { direction ->
+                    (direction - flash.direction).length < 1e-6
+                }
+            },
+            "no flash segment followed ${flash.direction} from $muzzle",
+        )
+        assertShotMarks(frame, shot.position, shot.velocity, shot.radius, ShotLooks.RANGED)
+
+        val firstVelocity = shot.velocity
+        sim.autoFire.remaining = 100.0
+        sim.tick(InputFrame())
+        assertTrue(shot.velocity.y > firstVelocity.y, "tracer tangent did not turn downward")
+        assertShotMarks(frameOf(sim), shot.position, shot.velocity, shot.radius, ShotLooks.RANGED)
+    }
+
     /** P-53 (PROD-080): a ranged build's shot is four marks in the ranged look. */
     @Test
     fun `a ranged shot draws glow, body, core and a two-tone tracer in the ranged look`() {

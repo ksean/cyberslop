@@ -138,6 +138,6 @@ Kotlin/Wasm and the JVM agree bit-for-bit on IEEE-754 `+ − × ÷ √`; they ma
   ticks of a fixed tape on a fixed seed matches a committed golden value on both targets
   (enemies.md lists the fields). Enemy/boss leap state, selected boss profiles, scheduled multi-hit
   events, boss-projectile ownership, deterministic death-drop positions and the player's active
-  `ArcSwing` are rule-bearing and included. A live projectile's gravity and a pending lobbed
-  burst's snapshotted aim point are likewise included. Floating Scrap labels, enemy swing/flash
-  visuals and other presentation-only fields are excluded.
+  `ArcSwing` are rule-bearing and included. A live projectile's gravity and already-hit target
+  identities, and a pending lobbed burst's snapshotted aim point, are likewise included. Floating
+  Scrap labels, enemy swing/flash visuals and other presentation-only fields are excluded.

@@ -223,7 +223,7 @@ class SimulationDeterminismTest {
         val SEED = 0xD1CE5uL
         const val TICKS = 720
         const val RUN_TICKS = 300
-        const val GOLDEN = 17077257187548672098uL
+        const val GOLDEN = 13782930364277332050uL
         const val LOOT_MAP = 2
         const val LOOT_COLUMN = 20
         const val LOOT_KILLS = 80

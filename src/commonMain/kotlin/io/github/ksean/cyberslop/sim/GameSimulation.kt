@@ -8,6 +8,7 @@ import io.github.ksean.cyberslop.combat.Falloff
 import io.github.ksean.cyberslop.combat.FirePattern
 import io.github.ksean.cyberslop.combat.HitEffect
 import io.github.ksean.cyberslop.combat.Homing
+import io.github.ksean.cyberslop.combat.ProjectileBallistics
 import io.github.ksean.cyberslop.combat.ResolvedWeapon
 import io.github.ksean.cyberslop.combat.Shot
 import io.github.ksean.cyberslop.combat.Targeting
@@ -396,7 +397,9 @@ class GameSimulation(
         pendingBurst.let { b ->
             add(b?.roundsLeft ?: -1)
             if (b != null) {
-                add(b.secondsToNext); add(b.direction); addPayload(b.weapon)
+                add(b.secondsToNext); add(b.direction)
+                add(b.aimPoint != null); b.aimPoint?.let { add(it) }
+                addPayload(b.weapon)
             }
         }
         activeSwing?.let { swing ->
@@ -420,6 +423,9 @@ class GameSimulation(
             add(p.passesTerrain); add(p.fromPlayer); add(p.homingTurn); add(p.homingRadius); add(p.radius)
             add(p.bossOwned); add(p.bossModule?.ordinal ?: -1)
             add(p.bouncesLeft)
+            val hit = p.hitTargets.sortedWith(COMBAT_TARGET_ORDER)
+            add(hit.size); hit.forEach { add(it.kind.ordinal); add(it.index) }
+            add(p.gravity)
             addPayload(p.weapon)
         }
         add(bossBeams.size)
@@ -507,7 +513,10 @@ class GameSimulation(
                     is FirePattern.Chain -> resolveChain(shot, origin)
                     is FirePattern.Orbit -> showHit(HitShape.Ring(origin, resolveBlast(shot, origin, pattern.radius)))
                     is FirePattern.Pull -> showHit(HitShape.Ring(origin, resolveBlast(shot, origin, pattern.radius)))
-                    else -> spawnProjectiles(shot, origin)
+                    else -> {
+                        val launch = spawnProjectiles(shot, origin, aim)
+                        lastShot = lastShot?.copy(direction = launch)
+                    }
                 }
             }
         }
@@ -640,20 +649,32 @@ class GameSimulation(
      * its projectiles at once across the spread. A new trigger always replaces a pending burst, so
      * a burst can never carry a stale build.
      */
-    private fun spawnProjectiles(shot: Shot, origin: Vec2) {
+    private fun spawnProjectiles(shot: Shot, origin: Vec2, aimPoint: Vec2): Vec2 {
         val weapon = shot.weapon
         val interval = weapon.spec.burstIntervalSeconds
+        val lobbed = (weapon.spec.pattern as? FirePattern.Projectile)
+            ?.gravity
+            ?.let { gravity -> gravity > 0.0 } == true
         if (interval > 0.0) {
-            pendingBurst = PendingBurst(weapon.projectileCount - 1, interval, shot.direction, weapon)
-            spawnRound(weapon, origin, shot.direction, offsetDegrees = 0.0)
-            return
+            pendingBurst = PendingBurst(
+                weapon.projectileCount - 1,
+                interval,
+                shot.direction,
+                weapon,
+                aimPoint = aimPoint.takeIf { lobbed },
+            )
+            return spawnRound(weapon, origin, shot.direction, aimPoint, offsetDegrees = 0.0)
+                ?.normalisedOr(shot.direction) ?: shot.direction
         }
         // Fanned evenly across the whole spread: the outermost projectiles sit on its edges.
         val count = weapon.projectileCount
+        var launchDirection = shot.direction
         repeat(count) { index ->
             val offset = if (count == 1) 0.0 else (index - (count - 1) / 2.0) * (weapon.spec.spreadDegrees / (count - 1))
-            spawnRound(weapon, origin, shot.direction, offset)
+            val velocity = spawnRound(weapon, origin, shot.direction, aimPoint, offset)
+            if (index == 0 && velocity != null) launchDirection = velocity.normalisedOr(shot.direction)
         }
+        return launchDirection
     }
 
     /** Fires the next pending round when it is due, from the muzzle as it is now, along the trigger aim. */
@@ -665,8 +686,12 @@ class GameSimulation(
             pendingBurst = burst.copy(secondsToNext = due)
             return
         }
-        lastShot = MuzzleFlash(burst.direction, FLASH_VISIBLE_SECONDS, FLASH_VISIBLE_SECONDS)
-        spawnRound(burst.weapon, muzzle, burst.direction, offsetDegrees = 0.0)
+        val velocity = spawnRound(burst.weapon, muzzle, burst.direction, burst.aimPoint, offsetDegrees = 0.0)
+        lastShot = MuzzleFlash(
+            velocity?.normalisedOr(burst.direction) ?: burst.direction,
+            FLASH_VISIBLE_SECONDS,
+            FLASH_VISIBLE_SECONDS,
+        )
         pendingBurst = if (burst.roundsLeft > 1) {
             burst.copy(roundsLeft = burst.roundsLeft - 1, secondsToNext = due + burst.weapon.spec.burstIntervalSeconds)
         } else {
@@ -674,18 +699,39 @@ class GameSimulation(
         }
     }
 
-    private fun spawnRound(weapon: ResolvedWeapon, origin: Vec2, direction: Vec2, offsetDegrees: Double) {
-        if (projectiles.size >= MAX_PROJECTILES) return
+    private fun spawnRound(
+        weapon: ResolvedWeapon,
+        origin: Vec2,
+        direction: Vec2,
+        aimPoint: Vec2?,
+        offsetDegrees: Double,
+    ): Vec2? {
+        if (projectiles.size >= MAX_PROJECTILES) return null
         val speed = if (weapon.spec.projectileSpeed > 0.0) {
             weapon.spec.projectileSpeed * weapon.reachScale
         } else {
             DEFAULT_PROJECTILE_SPEED
         }
+        val pattern = weapon.spec.pattern as? FirePattern.Projectile
+        val gravity = pattern?.gravity ?: 0.0
+        val baseVelocity = if (pattern != null && pattern.gravity > 0.0) {
+            ProjectileBallistics.solve(
+                origin = origin,
+                target = requireNotNull(aimPoint) { "lobbed projectile requires an aim point" },
+                nominalSpeed = speed,
+                gravity = gravity,
+                lifetimeSeconds = pattern.lifetimeSeconds,
+                tickSeconds = TICK_SECONDS,
+            ).velocity
+        } else {
+            direction * speed
+        }
+        val velocity = TrigTable.rotate(baseVelocity, offsetDegrees)
         val homing = weapon.homing as? Homing.Seek
         projectiles.add(
             LiveProjectile(
                 position = origin,
-                velocity = TrigTable.rotate(direction, offsetDegrees) * speed,
+                velocity = velocity,
                 damage = weapon.damagePerProjectile,
                 pierceLeft = weapon.pierce.coerceAtMost(MAX_PIERCE),
                 secondsLeft = lifetimeOf(weapon),
@@ -696,8 +742,10 @@ class GameSimulation(
                 radius = PROJECTILE_RADIUS * weapon.hitboxScale,
                 weapon = weapon,
                 bouncesLeft = if (weapon.spec.cls == WeaponClass.Psychic) 0 else weapon.bounces,
+                gravity = gravity,
             ),
         )
+        return velocity
     }
 
     // ---- hit resolution -----------------------------------------------------------------------
@@ -831,20 +879,16 @@ class GameSimulation(
     private fun advanceProjectiles() {
         projectiles.forEach { projectile ->
             if (projectile.homingTurn > 0.0) steer(projectile)
+            if (projectile.gravity > 0.0) {
+                projectile.velocity = Vec2(
+                    projectile.velocity.x,
+                    projectile.velocity.y + projectile.gravity * TICK_SECONDS,
+                )
+            }
             projectile.secondsLeft -= TICK_SECONDS
             if (!move(projectile)) return@forEach
 
-            if (projectile.fromPlayer) {
-                forEachTargetNear(projectile.position, projectile.radius) { target ->
-                    if (projectile.spent) return@forEachTargetNear
-                    when (target) {
-                        is Target.Enemy ->
-                            damageEnemy(target.enemy, projectile.damage, projectile.weapon ?: autoFire.weapon, projectile.velocity)
-                        is Target.Boss -> damageBoss(target.boss, projectile.damage, projectile.weapon ?: autoFire.weapon)
-                    }
-                    projectile.pierceLeft--
-                }
-            } else if ((centreOf(player) - projectile.position).lengthSquared <
+            if (!projectile.fromPlayer && (centreOf(player) - projectile.position).lengthSquared <
                 projectile.radius * projectile.radius * 4.0
             ) {
                 if (if (projectile.bossOwned) bossDamageAllowed() else enemyDamageAllowed()) hurt(projectile.damage)
@@ -862,21 +906,26 @@ class GameSimulation(
 
     /**
      * Moves a projectile one tick, in pieces no longer than half a tile so a fast shot cannot cross
-     * a wall between two samples (a Railgun covers 23 px a tick against 16 px tiles). Returns false
-     * where terrain spent it.
+     * a wall or target between two samples (a Railgun covers 23 px a tick against 16 px tiles).
+     * Returns false where terrain or an exhausted pierce budget spent it.
      */
     private fun move(projectile: LiveProjectile): Boolean {
         val step = projectile.velocity * TICK_SECONDS
         val pieces = maxOf(1, kotlin.math.ceil(step.length / MAX_PROJECTILE_STEP).toInt())
         repeat(pieces) {
             val before = projectile.position
-            projectile.position = before + projectile.velocity * (TICK_SECONDS / pieces)
-            if (projectile.bossOwned && outsideLevel(projectile.position)) {
+            val after = before + projectile.velocity * (TICK_SECONDS / pieces)
+            val terrainEntry = if (projectile.passesTerrain) null else terrainEntryFraction(before, after)
+            if (projectile.fromPlayer && !hitTargetsAlong(projectile, before, after, terrainEntry)) {
+                return false
+            }
+            projectile.position = after
+            if (projectile.bossOwned && outsideLevel(after)) {
                 projectile.position = before
                 projectile.secondsLeft = 0.0
                 return false
             }
-            if (projectile.passesTerrain || !blocked(projectile.position)) return@repeat
+            if (projectile.passesTerrain || terrainEntry == null) return@repeat
             if (projectile.bouncesLeft > 0) {
                 bounce(projectile, before)
             } else {
@@ -885,6 +934,115 @@ class GameSimulation(
             }
         }
         return true
+    }
+
+    private data class ProjectileContact(
+        val fraction: Double,
+        val id: CombatTargetId,
+        val target: Target,
+    )
+
+    /** Applies player-shot contacts along one movement piece in geometric travel order (PROD-098). */
+    private fun hitTargetsAlong(
+        projectile: LiveProjectile,
+        from: Vec2,
+        to: Vec2,
+        terrainEntry: Double?,
+    ): Boolean {
+        if (projectile.spent) return true
+        val contacts = buildList {
+            enemies.forEachIndexed { index, enemy ->
+                if (!enemy.alive) return@forEachIndexed
+                val id = CombatTargetId(CombatTargetKind.Enemy, index)
+                addProjectileContact(projectile, from, to, terrainEntry, id, Target.Enemy(enemy), projectile.radius)
+            }
+            listOf(
+                Triple(miniboss, CombatTargetKind.Miniboss, miniboss.radius),
+                Triple(boss, CombatTargetKind.Boss, boss.radius),
+            ).forEach { (live, kind, radius) ->
+                if (!live.fight.vulnerable || live.fight.defeated) return@forEach
+                addProjectileContact(
+                    projectile,
+                    from,
+                    to,
+                    terrainEntry,
+                    CombatTargetId(kind),
+                    Target.Boss(live),
+                    projectile.radius + radius,
+                )
+            }
+        }.sortedWith(
+            compareBy<ProjectileContact> { it.fraction }
+                .thenBy { it.id.kind.ordinal }
+                .thenBy { it.id.index },
+        )
+
+        val weapon = projectile.weapon ?: autoFire.weapon
+        contacts.forEach { contact ->
+            projectile.position = from + (to - from) * contact.fraction
+            projectile.hitTargets = projectile.hitTargets + contact.id
+            when (val target = contact.target) {
+                is Target.Enemy -> damageEnemy(target.enemy, projectile.damage, weapon, projectile.velocity)
+                is Target.Boss -> damageBoss(target.boss, projectile.damage, weapon)
+            }
+            projectile.pierceLeft--
+            if (projectile.spent) return false
+        }
+        return true
+    }
+
+    private fun MutableList<ProjectileContact>.addProjectileContact(
+        projectile: LiveProjectile,
+        from: Vec2,
+        to: Vec2,
+        terrainEntry: Double?,
+        id: CombatTargetId,
+        target: Target,
+        radius: Double,
+    ) {
+        if (id in projectile.hitTargets) return
+        val fraction = segmentDiscEntry(from, to, target.position, radius) ?: return
+        if (terrainEntry != null && fraction >= terrainEntry) return
+        add(ProjectileContact(fraction, id, target))
+    }
+
+    /** First point where segment [from]..[to] enters a closed disc, as a fraction in `[0, 1]`. */
+    private fun segmentDiscEntry(from: Vec2, to: Vec2, centre: Vec2, radius: Double): Double? {
+        val travel = to - from
+        val offset = from - centre
+        val c = offset.lengthSquared - radius * radius
+        if (c <= 0.0) return 0.0
+        val a = travel.lengthSquared
+        if (a <= Vec2.EPSILON * Vec2.EPSILON) return null
+        val b = offset.x * travel.x + offset.y * travel.y
+        val discriminant = b * b - a * c
+        if (discriminant < 0.0) return null
+        val fraction = (-b - kotlin.math.sqrt(discriminant)) / a
+        return fraction.takeIf { it in 0.0..1.0 }
+    }
+
+    /** Entry into the blocked tile containing [to], or null when the movement piece stays clear. */
+    private fun terrainEntryFraction(from: Vec2, to: Vec2): Double? {
+        if (!blocked(to)) return null
+        val tileX = TileMap.toTile(to.x)
+        val tileY = TileMap.toTile(to.y)
+        val left = TileMap.toWorld(tileX)
+        val top = TileMap.toWorld(tileY)
+        val right = left + TILE_SIZE
+        val bottom = top + TILE_SIZE
+        val travel = to - from
+
+        fun axisEntry(start: Double, delta: Double, minimum: Double, maximum: Double): Double = when {
+            start >= minimum && start < maximum -> 0.0
+            delta > 0.0 -> (minimum - start) / delta
+            delta < 0.0 -> (maximum - start) / delta
+            else -> Double.POSITIVE_INFINITY
+        }
+
+        return maxOf(
+            axisEntry(from.x, travel.x, left, right),
+            axisEntry(from.y, travel.y, top, bottom),
+        ).coerceIn(0.0, 1.0)
     }
 
     /**
@@ -1642,6 +1800,8 @@ class GameSimulation(
         (weapon.spec.pattern as? FirePattern.Projectile)?.lifetimeSeconds ?: DEFAULT_LIFETIME
 
     companion object {
+        private val COMBAT_TARGET_ORDER =
+            compareBy<CombatTargetId> { it.kind.ordinal }.thenBy { it.index }
         const val STARTER_CACHE_TILES = 6
         const val MAX_PROJECTILES = 300
         const val MAX_PIERCE = 8

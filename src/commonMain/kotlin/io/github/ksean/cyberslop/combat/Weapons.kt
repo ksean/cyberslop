@@ -1,5 +1,8 @@
 package io.github.ksean.cyberslop.combat
 
+import io.github.ksean.cyberslop.core.Vec2
+import io.github.ksean.cyberslop.physics.TICK_SECONDS
+
 /**
  * The weapon registry.
  *
@@ -55,6 +58,7 @@ object Weapons {
         ranged(WeaponId.VultureRailCarbine, "Vulture Rail Carbine", Tier.Chromed, 28.0, 1.0, 900.0,
             pierce = 2),
         ranged(WeaponId.AshfallGrenadeLobber, "Ashfall Grenade Lobber", Tier.Chromed, 33.0, 1.4, 420.0,
+            gravity = 600.0,
             onHit = listOf(HitEffect.BlastOnHit(radius = 2.5 * METRE, damageFraction = 0.6))),
         ranged(WeaponId.SableCorpRailgun, "Sable Corp Railgun", Tier.Blacksite, 95.0, 1.7, 1400.0,
             pierce = Int.MAX_VALUE, windUp = 0.4),
@@ -134,14 +138,28 @@ object Weapons {
     private fun ranged(
         id: WeaponId, name: String, tier: Tier, damage: Double, cooldown: Double, speed: Double,
         projectiles: Int = 1, spread: Double = 0.0, burst: Double = 0.0, pierce: Int = 0, windUp: Double = 0.0,
-        falloff: Falloff = Falloff.None, onHit: List<HitEffect> = emptyList(),
+        falloff: Falloff = Falloff.None, gravity: Double = 0.0, onHit: List<HitEffect> = emptyList(),
     ) = WeaponSpec(
         id = id, name = name, cls = WeaponClass.Ranged, tier = tier, damage = damage,
         cooldown = cooldown, rangePx = 20.0 * METRE, projectileSpeed = speed,
         projectileCount = projectiles, spreadDegrees = spread, burstIntervalSeconds = burst, pierce = pierce,
         windUpSeconds = windUp, falloff = falloff, onHit = onHit,
-        pattern = FirePattern.Projectile(gravity = 0.0, lifetimeSeconds = 2.0),
-    )
+        pattern = FirePattern.Projectile(gravity = gravity, lifetimeSeconds = 2.0),
+    ).also(::validateLob)
+
+    /** A registry lob must solve even for the lowest aim point at maximum acquisition distance. */
+    private fun validateLob(spec: WeaponSpec) {
+        val pattern = spec.pattern as FirePattern.Projectile
+        if (pattern.gravity <= 0.0) return
+        ProjectileBallistics.solve(
+            origin = Vec2.Zero,
+            target = Vec2(0.0, Targeting.AUTO_RANGE_PX),
+            nominalSpeed = spec.projectileSpeed,
+            gravity = pattern.gravity,
+            lifetimeSeconds = pattern.lifetimeSeconds,
+            tickSeconds = TICK_SECONDS,
+        )
+    }
 
     @Suppress("LongParameterList")
     private fun psychic(

@@ -568,6 +568,8 @@ data class PendingBurst(
     val secondsToNext: Double,
     val direction: Vec2,
     val weapon: ResolvedWeapon,
+    /** Trigger-time target snapshot for a future positive-gravity burst. */
+    val aimPoint: Vec2? = null,
 )
 
 class LiveProjectile(
@@ -589,6 +591,10 @@ class LiveProjectile(
     val weapon: ResolvedWeapon? = null,
     /** Terrain contacts this projectile can still reflect off (PROD-074). */
     var bouncesLeft: Int = 0,
+    /** Stable targets already damaged by this projectile (PROD-098). */
+    var hitTargets: Set<CombatTargetId> = emptySet(),
+    /** Downward acceleration in screen pixels per second squared (PROD-097). */
+    val gravity: Double = 0.0,
 ) {
     val spent: Boolean get() = secondsLeft <= 0.0 || pierceLeft < 0
 }

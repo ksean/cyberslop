@@ -352,7 +352,7 @@ inventory directly.
   scrap), the auto-fire accumulator, the loot RNG state, every enemy in list order (position,
   velocity, health, facing, engagement, leap target/cooldown, cooldown, wind-up and its aim, slow,
   stun, burn, bleed), every projectile in list order (position, velocity, damage, pierce, life,
-  ownership and boss activation), every ground
+  ownership, boss activation and already-hit target identities), every ground
   item, the pending burst (rounds left, seconds to the next, aim, payload), each boss (position,
   velocity, profile and phase, health, engagement, attack, elapsed and scheduled events, rest,
   melee and ranged attack indices, its attack-choice RNG state, reward flag),

@@ -172,6 +172,10 @@ build of powerups collected on contact, and permadeath with persistent unlocks.
   it directly along the line of sight. The Ashfall Grenade Lobber is a lobber, and the same rule
   applies to every future projectile pattern with positive gravity. Straight ranged and psychic
   shots, and enemy and boss shots, keep their declared trajectories.
+- **PROD-098:** A player projectile must damage every eligible enemy or boss whose projectile-hit
+  region its swept path intersects, subject to its pierce budget and intervening terrain. A fast
+  shot must not pass harmlessly through a target merely because it crossed the complete target
+  between two fixed simulation ticks; projectile-speed upgrades must not make a hit less reliable.
 - **PROD-083:** The first time a browser profile collects each weapon or powerup, the collection
   must complete and then gameplay must pause for three seconds of active foreground time. A card
   centred over the game must show that item's usual picture, name and a brief, mechanically

@@ -1,6 +1,8 @@
 package io.github.ksean.cyberslop.combat
 
 import io.github.ksean.cyberslop.loot.PowerupSlots
+import io.github.ksean.cyberslop.core.Vec2
+import io.github.ksean.cyberslop.physics.TICK_SECONDS
 import kotlin.test.Test
 import kotlin.test.assertEquals
 import kotlin.test.assertTrue
@@ -36,6 +38,26 @@ class WeaponRegistryTest {
         assertEquals(0.0, Weapons.of(WeaponId.DebtCollectorMinigun).spreadDegrees, "the minigun still blooms")
         assertTrue(Weapons.of(WeaponId.RiotbreakerShotgun).spreadDegrees > 0.0)
         assertTrue(Weapons.of(WeaponId.TenementNailgun).spreadDegrees > 0.0)
+    }
+
+    @Test
+    fun `Ashfall is the only current lobbed projectile`() {
+        val lobbed = Weapons.all.filter {
+            (it.pattern as? FirePattern.Projectile)?.gravity?.let { gravity -> gravity > 0.0 } == true
+        }
+
+        assertEquals(listOf(WeaponId.AshfallGrenadeLobber), lobbed.map { it.id })
+        val ashfall = lobbed.single()
+        val pattern = ashfall.pattern as FirePattern.Projectile
+        assertEquals(600.0, pattern.gravity)
+        ProjectileBallistics.solve(
+            origin = Vec2.Zero,
+            target = Vec2(0.0, Targeting.AUTO_RANGE_PX),
+            nominalSpeed = ashfall.projectileSpeed,
+            gravity = pattern.gravity,
+            lifetimeSeconds = pattern.lifetimeSeconds,
+            tickSeconds = TICK_SECONDS,
+        )
     }
 
     @Test

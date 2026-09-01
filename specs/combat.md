@@ -196,7 +196,7 @@ vy0 <= -MIN_LOB_UP_SPEED
 
 where `MIN_LOB_SECONDS = 0.40 s` and `MIN_LOB_UP_SPEED = 120 px/s`; screen y increases downward.
 It sets `vx0 = dx / (N × dt)`. Each tick thereafter first applies any homing turn, then adds
-`g × dt` to `vy`, then performs the existing swept terrain-and-actor move. In an unobstructed,
+`g × dt` to `vy`, then performs the swept terrain-and-actor move specified below. In an unobstructed,
 non-homing flight this semi-implicit update places the projectile centre on the snapshotted point
 after exactly `N` ticks. A lobbed registry entry must have enough lifetime for a solution throughout
 the game's target-acquisition distance; construction rejects one that does not. Ashfall declares
@@ -212,6 +212,30 @@ pending lobbed burst also carries its snapshotted aim point. Zero-gravity projec
 existing constant-velocity path exactly. Damage, falloff, crit, blast and all other landing rules
 are unchanged by this requirement, including the pre-existing projectile-landing gaps recorded
 below.
+
+### Swept projectile hits (PROD-098)
+
+A player projectile tests the complete segment travelled by each movement piece, not only its
+position after the tick. The existing projectile contact geometry is unchanged: a rank-and-file
+enemy is contacted when the swept projectile-radius disc reaches its combat centre, and a boss is
+contacted when that disc reaches the boss's existing body radius. Segment/disc tangency is a hit.
+Movement remains divided into pieces no longer than half a tile for terrain, but hit reliability
+does not depend on that implementation bound, projectile speed or fixed-step endpoint placement.
+
+Contacts in one piece resolve by increasing first-intersection distance along the segment; exact
+ties use stable `CombatTargetId` order. Each projectile carries the identities it has already hit
+and may damage each target at most once, even when several movement pieces or later ticks remain
+inside that target. Every accepted contact applies damage and consumes the existing pierce budget.
+A spent projectile stops at its first disallowed continuation; a piercing projectile continues
+from the contact along the remainder of the same movement piece. Terrain still wins at its actual
+blocking face: no target whose first intersection lies beyond that face is hit. Ricochet begins a
+new reflected segment but does not clear prior target identities.
+
+This is collision correction only. It changes neither projectile speed nor radius, target
+selection, damage, pierce caps, terrain reflection, homing, falloff, crit or on-hit behavior. In
+particular, Ranger Optics may still raise the Sable Railgun from 1,400 px/s to 2,100 px/s, but that
+larger per-tick displacement cannot skip a target. The already-hit identity set is future-affecting
+`LiveProjectile` state and participates in P-40's digest.
 
 **Life steal (PROD-073).** Red Market Siphon heals the player by its fraction of every point of
 damage the held weapon **actually deals** to an enemy or a boss — a swing, a projectile landing,
@@ -352,6 +376,16 @@ same-weapon pickup pays exactly one weapon value and no values for the powerups 
   Daemon and Ricochet ROM retain gravity. A Zip Pistol control keeps its existing constant-velocity
   path exactly. Changing live gravity or a pending lob aim point changes P-40's digest;
   changing only its drawn marks does not.
+- **P-72** Swept player-projectile collision: fixtures place a rank-and-file enemy wholly between
+  the Sable Railgun's start and end positions for one tick at its base 1,400 px/s and at the
+  Ranger-Optics maximum 2,100 px/s; both take exactly one hit. Tangency hits and one epsilon of
+  clearance misses. Three non-overlapping targets crossed in one tick resolve in geometric travel
+  order and only as far as the existing pierce budget permits; reversing insertion order does not
+  change that result. A target overlapped across multiple movement pieces or ticks takes only one
+  hit from that projectile. A wall before the target blocks it, a target before the wall is hit,
+  and a Ricochet ROM reflection cannot hit an already struck target again. The same outcomes hold
+  at fixed-step boundaries on JVM and Wasm. Mutating a live projectile's already-hit identities
+  changes P-40's digest.
 - **P-42** Weapon pickup: collecting a weapon with a different `WeaponId` — including one of lower
   tier and lower score than the held one — equips it; the previous weapon's Scrap and the Scrap of
   every cleared slot are paid; the slots are empty afterwards; and a powerup collected next lands
