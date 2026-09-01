@@ -86,11 +86,11 @@ build of powerups collected on contact, and permadeath with persistent unlocks.
 - **PROD-061:** A melee enemy must close on the player and attack with a telegraphed swing. A
   ranged enemy must keep its distance when the player closes, but no enemy may move faster than
   the player runs.
-- **PROD-069:** A rank-and-file enemy's body must hurt to touch: while the player overlaps a living
-  enemy, health drains per second of contact at a rate the map index scales, in addition to any
-  swing or shot, never displacing the player, and never faster than the fairness rules for
-  committed spans and the boss's ground allow. Bosses and mini-bosses hurt only through their
-  attacks.
+- **PROD-069:** Every enemy body must hurt to touch: while the player overlaps a living
+  rank-and-file enemy, health drains per second of contact at a rate the map index scales; a living
+  mini-boss or main boss drains exactly three times that normal-enemy amount. Contact stacks with
+  any swing or shot, never displaces the player, and never bypasses the fairness rules for
+  committed spans and the boss's ground.
 - **PROD-062:** A boss and a mini-boss must activate — move, attack and become vulnerable — as soon
   as the player is within its awareness radius, not on crossing a line; an engaged boss is free to
   leave its arena and pursue.

@@ -34,7 +34,7 @@ class HurtFlashSceneTest {
 
     @Test
     fun `a hurt boss flashes unless it is telegraphing`() {
-        val sim = simulation(bossArena = Arena(2, 12, TestLevels.FLOOR_ROW + 1))
+        val sim = simulation(bossArena = Arena(6, 22, TestLevels.FLOOR_ROW + 1))
         sim.boss.fight.engage()
         val palette = Palettes.of(sim.level.theme)
         val crownStyle = palette.glow[palette.glow.size - 1]

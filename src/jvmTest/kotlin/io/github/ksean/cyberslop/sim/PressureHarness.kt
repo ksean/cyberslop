@@ -1,6 +1,5 @@
 package io.github.ksean.cyberslop.sim
 
-import io.github.ksean.cyberslop.entity.Dodge
 import io.github.ksean.cyberslop.gen.GeneratedLevel
 import io.github.ksean.cyberslop.loot.Loadout
 import io.github.ksean.cyberslop.loot.LootFloor
@@ -9,6 +8,7 @@ import io.github.ksean.cyberslop.physics.InputFrame
 import io.github.ksean.cyberslop.physics.Physics
 import io.github.ksean.cyberslop.run.RunState
 import io.github.ksean.cyberslop.world.TileMap
+import io.github.ksean.cyberslop.world.TILE_SIZE
 import kotlin.math.abs
 
 /**
@@ -151,32 +151,75 @@ object PressureHarness {
 
     /** Boss pressure: after the route, fight with the dodge policy until the boss dies or time runs out. */
     fun fight(sim: GameSimulation): Boolean {
+        val dodge = ArenaDodge()
         var ticks = 0
         while (ticks < FIGHT_TICKS && !sim.boss.fight.defeated && !sim.run.dead) {
-            sim.tick(dodgePolicy(sim))
+            sim.tick(dodge.next(sim))
             ticks++
         }
         return sim.boss.fight.defeated
     }
 
-    /** Answer each telegraphed attack with its dodge for the attack's whole duration; otherwise close. */
+    /** Answer each telegraphed attack with its dodge; otherwise maintain body-clear spacing. */
     fun dodgePolicy(sim: GameSimulation): InputFrame {
-        val attack = sim.boss.currentAttack
-        val towardBoss = sim.boss.centre.x > sim.player.x
-        if (attack != null) {
-            return when (attack.dodge) {
-                Dodge.Jump -> InputFrame(jump = true, jumpStart = sim.player.onGround)
-                Dodge.Crouch -> InputFrame(crouch = true)
-                Dodge.MoveAside -> InputFrame(left = towardBoss, right = !towardBoss)
+        if (sim.boss.currentAttack != null) return TestLevels.dodgeActiveBossAttack(sim)
+        return TestLevels.closeOnBossWithoutContact(sim)
+    }
+
+    /**
+     * A body-clear dodge cannot retreat forever in a bounded arena. Between attacks, vault over the
+     * boss near an edge, waiting to close the last horizontal gap until the bodies are vertically
+     * clear. The vault finishes inside one rest window, so active attacks still get their own dodge.
+     */
+    private class ArenaDodge {
+        private var vaultDirection = 0
+
+        fun next(sim: GameSimulation): InputFrame {
+            if (sim.boss.currentAttack != null) {
+                vaultDirection = 0
+                return dodgePolicy(sim)
             }
+            if (vaultDirection != 0) return vault(sim)
+
+            val centreX = playerCentreX(sim)
+            val arena = sim.boss.arena
+            val nearLeft = centreX <= TileMap.toWorld(arena.leftTile) + EDGE_INSET
+            val nearRight = centreX >= TileMap.toWorld(arena.rightTile + 1) - EDGE_INSET
+            vaultDirection = when {
+                nearLeft && sim.boss.position.x > centreX -> 1
+                nearRight && sim.boss.position.x < centreX -> -1
+                else -> 0
+            }
+            return if (vaultDirection == 0) dodgePolicy(sim) else vault(sim)
         }
-        return InputFrame(right = towardBoss, left = !towardBoss)
+
+        private fun vault(sim: GameSimulation): InputFrame {
+            val centreX = playerCentreX(sim)
+            val clearSide = vaultDirection * (centreX - sim.boss.position.x) >= BODY_CLEAR
+            if (clearSide) {
+                vaultDirection = 0
+                return dodgePolicy(sim)
+            }
+
+            val playerBottom = sim.player.y + sim.player.height(Physics.Default)
+            val bossTop = sim.boss.position.y - sim.boss.height
+            val approachingGap = -vaultDirection * (centreX - sim.boss.position.x)
+            val canAdvance = playerBottom <= bossTop || approachingGap > BODY_CLEAR
+            return InputFrame(
+                left = canAdvance && vaultDirection < 0,
+                right = canAdvance && vaultDirection > 0,
+                jump = true,
+                jumpStart = sim.player.onGround,
+            )
+        }
     }
 
     private const val AWARD_APPROACH_TICKS = 1_800
     private const val AWARD_JUMP_TICKS = 240
     private const val AWARD_ALIGN_TOLERANCE = 1.0
     private const val REST_SPEED = 0.001
+    private const val EDGE_INSET = 3.0 * TILE_SIZE
+    private const val BODY_CLEAR = 30.0
     private const val JUMP_LOOKAHEAD = 24.0
     private const val JUMP_PROBE_STEP = 4.0
     private const val GROUND_PROBE = 0.05

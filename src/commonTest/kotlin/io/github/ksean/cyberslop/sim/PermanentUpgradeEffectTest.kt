@@ -75,12 +75,13 @@ class PermanentUpgradeEffectTest {
     }
 
     @Test
-    fun `weave reduces enemy projectiles swings contact spikes barrels and boss attacks`() {
+    fun `weave reduces enemy projectiles swings contact spikes barrels and boss damage`() {
         assertReduced(::enemyProjectileDamage, "enemy projectile")
         assertReduced(::enemySwingDamage, "enemy swing")
         assertReduced(::enemyContactDamage, "enemy contact")
         assertReduced(::hazardDamage, "spikes and barrel")
         assertReduced(::bossAttackDamage, "boss attack")
+        assertReduced(::bossContactDamage, "boss contact")
     }
 
     @Test
@@ -194,6 +195,18 @@ class PermanentUpgradeEffectTest {
             if (sim.run.health < before) return before - sim.run.health
         }
         return 0.0
+    }
+
+    private fun bossContactDamage(ranks: UpgradeRanks): Double {
+        val sim = simulation(TestLevels.flat(), ranks)
+        sim.enemies.clear()
+        sim.boss.fight.engage()
+        sim.boss.placeAt(
+            Vec2(sim.player.x + 6.0, sim.player.y + sim.player.height(io.github.ksean.cyberslop.physics.Physics.Default)),
+        )
+        val before = sim.run.health
+        sim.tick(InputFrame())
+        return before - sim.run.health
     }
 
     private fun simulation(level: Level, ranks: UpgradeRanks): GameSimulation =

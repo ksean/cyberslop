@@ -4,6 +4,7 @@ import io.github.ksean.cyberslop.core.Vec2
 import io.github.ksean.cyberslop.entity.Dodge
 import io.github.ksean.cyberslop.entity.EnemyArchetype
 import io.github.ksean.cyberslop.physics.InputFrame
+import io.github.ksean.cyberslop.physics.Physics
 import io.github.ksean.cyberslop.run.RunState
 import io.github.ksean.cyberslop.world.Arena
 import io.github.ksean.cyberslop.world.Barrel
@@ -14,6 +15,7 @@ import io.github.ksean.cyberslop.world.PickupSite
 import io.github.ksean.cyberslop.world.ThemeId
 import io.github.ksean.cyberslop.world.TileKind
 import io.github.ksean.cyberslop.world.TileMap
+import kotlin.math.abs
 
 /**
  * Small hand-built levels for behaviour tests, where a generated map's geometry would be noise.
@@ -40,6 +42,7 @@ object TestLevels {
         jets: List<FireJet> = emptyList(),
         pickups: List<PickupSite> = emptyList(),
         bossArena: Arena = Arena(100, 114, FLOOR_ROW + 1),
+        spawnColumn: Int = SPAWN_COLUMN,
         mapIndex: Int = 1,
     ): Level {
         val tiles = TileMap(WIDTH, HEIGHT)
@@ -61,7 +64,7 @@ object TestLevels {
             tiles = tiles,
             floorMask = floorMask,
             arcMask = arc,
-            spawnColumn = SPAWN_COLUMN,
+            spawnColumn = spawnColumn,
             spawnRow = FLOOR_ROW + 1,
             miniboss = Arena(80, 92, FLOOR_ROW + 1),
             boss = bossArena,
@@ -101,28 +104,75 @@ object TestLevels {
     }
 
     val SEED = 0xD1FFuL
+    private const val BOSS_STANDOFF_PX = 64.0
 
     /**
      * The dodge policy of `specs/enemies.md` (boss pressure): answer each telegraphed attack with
-     * its listed dodge for the attack's whole duration, otherwise close on the boss.
+     * its listed dodge for the attack's whole duration, otherwise close without body contact.
      */
     fun dodge(sim: GameSimulation): InputFrame {
-        val attack = sim.boss.currentAttack
-        val towardBoss = sim.boss.centre.x > sim.player.x
-        if (attack != null) {
-            return when (attack.dodge) {
-                Dodge.Jump -> InputFrame(jump = true, jumpStart = sim.player.onGround)
-                Dodge.Crouch -> InputFrame(crouch = true)
-                Dodge.MoveAside -> InputFrame(left = towardBoss, right = !towardBoss)
-            }
-        }
-        return InputFrame(right = towardBoss, left = !towardBoss)
+        if (sim.boss.currentAttack != null) return dodgeActiveBossAttack(sim)
+        return closeOnBossWithoutContact(sim)
     }
 
-    /** Close on the boss and never react: what a player who does nothing takes. */
+    /** Remove the earlier encounter so a main-boss harness measures one boss, not a skipped pair. */
+    fun isolateMainBoss(sim: GameSimulation) {
+        if (!sim.miniboss.fight.defeated) {
+            sim.miniboss.fight.engage()
+            sim.miniboss.fight.damage(sim.miniboss.spec.maxHealth)
+            sim.tick(InputFrame()) // resolve its reward transition before discarding that fixture loot
+        }
+        sim.enemies.clear()
+        sim.items.removeAll { it.guaranteed }
+        sim.boss.placeAt(
+            Vec2(
+                TileMap.toWorld(sim.boss.arena.centreTile),
+                TileMap.toWorld(sim.boss.arena.floorRow),
+            ),
+        )
+    }
+
+    /** Perform exactly the active attack's declared real-input dodge. */
+    fun dodgeActiveBossAttack(sim: GameSimulation): InputFrame {
+        val attack = requireNotNull(sim.boss.currentAttack)
+        val spacing = closeOnBossWithoutContact(sim)
+        return when (attack.dodge) {
+            Dodge.Jump -> InputFrame(
+                left = spacing.left,
+                right = spacing.right,
+                jump = true,
+                jumpStart = sim.player.onGround,
+            )
+            Dodge.Crouch -> InputFrame(left = spacing.left, right = spacing.right, crouch = true)
+            Dodge.MoveAside -> InputFrame(
+                left = spacing.left,
+                right = spacing.right,
+                jump = true,
+                jumpStart = sim.player.onGround,
+            )
+        }
+    }
+
+    /** Close to melee range without body contact, then never react while an attack is active. */
     fun standStill(sim: GameSimulation): InputFrame {
         if (sim.boss.currentAttack != null) return InputFrame()
-        val towardBoss = sim.boss.centre.x > sim.player.x
-        return InputFrame(right = towardBoss, left = !towardBoss)
+        return closeOnBossWithoutContact(sim)
+    }
+
+    /** The boss-pressure approach: enter melee range without conflating attacks with body contact. */
+    fun closeOnBossWithoutContact(sim: GameSimulation): InputFrame {
+        val playerCentreX = sim.player.x + Physics.Default.width / 2.0
+        val offset = sim.boss.position.x - playerCentreX
+        if (abs(offset) < Vec2.EPSILON) return InputFrame()
+        val toward = if (offset > 0.0) 1 else -1
+        val closingSpeed = maxOf(0.0, sim.player.vx * toward)
+        // Use the slower air response even on the ground: a ranged dodge may end one tick before
+        // landing, and a ground-only braking estimate can carry that airborne player through the body.
+        val reversalSeconds = closingSpeed / Physics.Default.airAccel
+        val reversalDistance = closingSpeed * closingSpeed / (2.0 * Physics.Default.airAccel)
+        val bossAdvance = LiveBoss.SPEED * reversalSeconds
+        val shouldClose = abs(offset) > BOSS_STANDOFF_PX + reversalDistance + bossAdvance
+        val direction = if (shouldClose) toward else -toward
+        return InputFrame(left = direction < 0, right = direction > 0)
     }
 }

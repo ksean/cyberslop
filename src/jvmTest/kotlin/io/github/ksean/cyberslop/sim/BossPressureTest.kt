@@ -23,10 +23,20 @@ class BossPressureTest {
                     assertTrue(route.sim.run.loadout.weapon.id == LootFloor.weaponAt(mapIndex).id, "map $mapIndex seed $seed: the route ended holding ${route.sim.run.loadout.weapon.name}, not the floor's")
                     assertTrue(route.sim.run.loadout.slots.held == LootFloor.slotsAt(mapIndex).held, "map $mapIndex seed $seed: the route ended with ${route.sim.run.loadout.slots.held}")
                 }
+                TestLevels.isolateMainBoss(route.sim)
                 PressureHarness.holdFloor(route.sim, mapIndex)
                 assertTrue(route.sim.run.loadout.weapon.id == LootFloor.weaponAt(mapIndex).id, "map $mapIndex: not holding the floor weapon")
                 assertTrue(route.sim.run.loadout.slots.held == LootFloor.slotsAt(mapIndex).held, "map $mapIndex: not holding the floor slots")
-                assertTrue(PressureHarness.fight(route.sim), "map $mapIndex seed $seed: the boss was not beaten (player health ${route.sim.run.health})")
+                val healthBeforeFight = route.sim.run.health
+                val grossBeforeFight = route.sim.grossDamageTaken
+                val playerBeforeFight = route.sim.player
+                assertTrue(
+                    PressureHarness.fight(route.sim),
+                    "map $mapIndex seed $seed: the boss was not beaten " +
+                        "(health $healthBeforeFight -> ${route.sim.run.health}, " +
+                        "fight damage ${route.sim.grossDamageTaken - grossBeforeFight}, " +
+                        "player $playerBeforeFight -> ${route.sim.player}, arena ${route.sim.level.boss})",
+                )
             }
         }
     }

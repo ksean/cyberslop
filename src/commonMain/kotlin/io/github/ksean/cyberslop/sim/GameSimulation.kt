@@ -1215,7 +1215,7 @@ class GameSimulation(
      */
     private fun enemyDamageAllowed(): Boolean = playerExposed() && !playerOnArenaGround()
 
-    /** Boss-owned swings, projectiles and beams are allowed on their fight ground. */
+    /** Boss-owned contact, swings, projectiles and beams are allowed on their fight ground. */
     private fun bossDamageAllowed(): Boolean = playerExposed()
 
     private fun playerOnArenaGround(): Boolean {
@@ -1752,16 +1752,18 @@ class GameSimulation(
         if (rate > 0.0) hurt(rate * Balance.contactDamage(level.mapIndex) * TICK_SECONDS)
     }
 
-    /**
-     * A living enemy's body drains by overlap like a hazard (`specs/enemies.md`, PROD-069): no
-     * wind-up, not cancelled by a stun, never displacing the player, and never on a committed span
-     * or the boss's ground. Bosses have no body drain; their attacks are their damage.
-     */
+    /** Every living enemy body drains by overlap like a hazard (`specs/enemies.md`, PROD-069). */
     private fun drainContact() {
-        if (!enemyDamageAllowed()) return
-        val touching = enemies.count { it.alive && overlapsPlayer(it) }
-        if (touching == 0) return
-        hurt(touching * EnemyAttacks.CONTACT_DRAIN * Balance.contactDamage(level.mapIndex) * TICK_SECONDS)
+        val normalBodies = if (enemyDamageAllowed()) enemies.count { it.alive && overlapsPlayer(it) } else 0
+        val bossBodies = if (bossDamageAllowed()) {
+            (if (!miniboss.fight.defeated && overlapsPlayer(miniboss)) 1 else 0) +
+                (if (!boss.fight.defeated && overlapsPlayer(boss)) 1 else 0)
+        } else {
+            0
+        }
+        val contactRate = (normalBodies + bossBodies * EnemyAttacks.BOSS_CONTACT_MULTIPLIER) *
+            EnemyAttacks.CONTACT_DRAIN
+        if (contactRate > 0.0) hurt(contactRate * Balance.contactDamage(level.mapIndex) * TICK_SECONDS)
     }
 
     private fun overlapsPlayer(enemy: LiveEnemy): Boolean {
@@ -1769,6 +1771,14 @@ class GameSimulation(
         val height = player.height(Physics.Default)
         return enemy.position.x < player.x + width && enemy.position.x + ENEMY_SIZE > player.x &&
             enemy.position.y < player.y + height && enemy.position.y + ENEMY_SIZE > player.y
+    }
+
+    private fun overlapsPlayer(boss: LiveBoss): Boolean {
+        val width = Physics.Default.width
+        val height = player.height(Physics.Default)
+        return boss.position.x - boss.halfWidth < player.x + width &&
+            boss.position.x + boss.halfWidth > player.x &&
+            boss.position.y - boss.height < player.y + height && boss.position.y > player.y
     }
 
     private fun burnedByJet(): Boolean {

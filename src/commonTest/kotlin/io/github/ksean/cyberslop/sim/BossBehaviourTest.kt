@@ -150,10 +150,18 @@ class BossBehaviourTest {
     @Test
     fun `every attack is dodged with real inputs and lands on a player who only stands there`() {
         fun fight(policy: (GameSimulation) -> InputFrame): Triple<Double, Map<String, Double>, Set<String>> {
-            val level = TestLevels.flat(bossArena = Arena(6, 22, TestLevels.FLOOR_ROW + 1), mapIndex = 5)
+            val level = TestLevels.flat(
+                bossArena = Arena(30, 38, TestLevels.FLOOR_ROW + 1),
+                spawnColumn = 50,
+                mapIndex = 5,
+            )
             val run = io.github.ksean.cyberslop.run.RunState.begin(TestLevels.SEED)
                 .copy(mapIndex = 5, health = 100_000.0)
             val sim = GameSimulation(level, run, TestLevels.SEED, optionalLoot = false)
+            // This harness isolates the main-boss attack cycle; its movement path crosses the
+            // otherwise-live mini-boss arena while evading ranged fire.
+            sim.miniboss.fight.engage()
+            sim.miniboss.fight.damage(sim.miniboss.spec.maxHealth)
             sim.boss.fight.engage()
             sim.boss.fight.damage(sim.boss.spec.maxHealth * 0.8)
             val expected = sim.boss.fight.currentPhase().attacks.map { it.name }.toSet()
@@ -173,15 +181,16 @@ class BossBehaviourTest {
                 }
                 if (sim.run.health < before) {
                     val name = activeName ?: error("damage arrived before any attack")
-                    landed[name] = (landed[name] ?: 0.0) + (before - sim.run.health)
+                    val amount = before - sim.run.health
+                    landed[name] = (landed[name] ?: 0.0) + amount
                 }
             }
             assertEquals(expected, seen, "fixture: not every attack resolved in $ticks ticks")
             return Triple(sim.grossDamageTaken, landed, expected)
         }
 
-        val (dodged, _, _) = fight(TestLevels::dodge)
-        assertEquals(0.0, dodged, "a player performing every listed dodge still took damage")
+        val (dodged, dodgedHits, _) = fight(TestLevels::dodge)
+        assertEquals(0.0, dodged, "a player performing every listed dodge still took damage: $dodgedHits")
 
         val (_, landed, expected) = fight(TestLevels::standStill)
         expected.forEach { name ->

@@ -83,17 +83,21 @@ on the player.
 
 ## Attacks (PROD-061, PROD-063)
 
-`contactDamage(mapIndex)` is the unit every enemy attack scales from.
+`contactDamage(mapIndex)` is the unit every enemy attack and contact drain scales from.
 
-- **Contact (PROD-069).** A living rank-and-file enemy's body hurts to touch: while the player's
-  AABB overlaps the enemy's 14 × 14 px box, health drains at `CONTACT_DRAIN = 1.0 × contactDamage`
-  per second (`× dt` per tick, the way a damaging hazard drains — hazards.md). Overlapping two
-  enemies drains both. Contact is not an attack: it needs no wind-up, is not cancelled by a stun,
-  and stacks with a swing that lands in the same tick. It never displaces the player (ENG-051)
-  and it is subject to the fairness rule below like everything else an enemy does. Bosses and
-  mini-bosses have no contact drain; their attacks are their damage. Contact drain is not part
-  of `ThreatScore`, which measures attacks the population can make, but it is counted by the
-  pressure harnesses as gross damage like any other.
+- **Contact (PROD-069).** Every living enemy body hurts to touch. While the player's AABB overlaps
+  a rank-and-file enemy's 14 × 14 px box, health drains at
+  `CONTACT_DRAIN = 1.0 × contactDamage` per second (`× dt` per tick, the way a damaging hazard
+  drains — hazards.md). While it overlaps a living mini-boss or main boss's 44 × 56 px body,
+  health drains at `BOSS_CONTACT_MULTIPLIER × CONTACT_DRAIN × contactDamage` per second, where
+  `BOSS_CONTACT_MULTIPLIER = 3.0`. Each overlapping body drains independently. Contact is not an
+  attack: it needs no wind-up, remains active regardless of attack or stun state, and stacks with
+  a swing that lands in the same tick. It never displaces the player (ENG-051) and is subject to
+  the fairness rule below like every other enemy damage source: committed columns and landing
+  grace suppress every contact drain; boss ground additionally suppresses rank-and-file contact
+  but not mini-boss or main-boss contact. Contact drain is not part of `ThreatScore`, which
+  measures attacks the population can make, but pressure harnesses count it as gross damage like
+  any other.
 
 - **Melee swing.** A melee enemy whose target's centre is within `SWING_REACH = 1.5 tiles` of its
   own starts a swing: a wind-up during which it deals nothing and does not move, then one instance
@@ -260,8 +264,13 @@ every damage event before lifesteal — separately from net health.
   ends at the boss arena entrance. A death ends the map and counts as the map's full max health.
   Reported per map over the seed cohort as mean gross damage per 100 tiles of width.
 - **Boss pressure**, on the maps the loot floor covers: after the route, fight with the dodge
-  policy — answer each telegraphed attack with its dodge for the attack's whole duration, otherwise
-  close on the boss — until the boss dies or `FIGHT_TICKS = 12 000` elapse; the map must be won.
+  policy against the isolated main encounter (the earlier mini-boss, residual rank-and-file
+  population and any uncollected award are absent) — answer each telegraphed attack with its dodge
+  for the attack's whole duration, otherwise maintain a nominal `64 px` horizontal centre-to-centre
+  standoff. Near an arena edge and between attacks, vault over the boss, advancing through its
+  horizontal span only once the bodies are vertically clear. Any boss-body contact during the
+  fight counts toward gross damage. Continue until the boss dies or
+  `FIGHT_TICKS = 12 000` elapse; the map must be won.
 - **Boss escalation calibration**, all ten maps: on one flat, hazard-free arena, engage the seeded
   main boss below 25 % health against a stationary non-attacking target with enough health to live
   for 60 s, and record gross damage per second. Over the roster seed cohort, the mean of maps 1–3,
@@ -324,8 +333,8 @@ inventory directly.
   an unsupported walker falls and lands and one knocked into acid dies; when no verified leap
   exists it stops at that boundary. A jump state never begins an attack and preserves its take-off
   direction until landing.
-- **P-34** Attacks: an enemy overlapping the player outside a strike deals exactly its contact
-  drain and nothing more; a swing deals
+- **P-34** Attacks: a rank-and-file enemy overlapping the player outside a strike deals exactly its
+  normal contact drain and nothing more; a swing deals
   nothing during wind-up and its damage exactly once per cooldown; a player in reach but behind the
   swing direction is missed; a shot leaves after its wind-up at the new speed and cadence; a stun
   cancels a wind-up; no enemy damage lands while the player occupies a committed column or within
@@ -342,11 +351,14 @@ inventory directly.
   1→10; route pressure's mean gross damage per 100 tiles averaged over maps 1–3, 4–6 and 7–10 is
   strictly increasing; the guaranteed loadout survives the route and wins the boss fight on every
   floor-covered map on every cohort seed.
-- **P-41** Contact drain: overlapping a living enemy drains `CONTACT_DRAIN × contactDamage × dt`
-  per tick and one tick never kills a full-health player; overlapping two enemies drains both; a
-  dead enemy, an enemy one pixel clear of the box, an enemy touched while the player is over a
-  committed column, within the landing grace or on the boss's ground drains nothing; a stunned
-  enemy still drains; a boss body drains nothing; the player is not displaced.
+- **P-41** Contact drain: overlapping a living rank-and-file enemy drains
+  `CONTACT_DRAIN × contactDamage × dt` per tick, while overlapping either a living mini-boss or a
+  living main boss drains exactly three times that amount. One tick never kills a full-health
+  player; overlapping bodies drain independently. A defeated body, a body one pixel clear, or any
+  contact while the player is over a committed column or within landing grace drains nothing;
+  boss ground suppresses only rank-and-file contact. Contact remains active through stun and boss
+  attack states, receives the normal incoming non-lethal damage multiplier, refreshes the player
+  hurt flash, and never displaces the player.
 - **P-40** Simulation determinism (simulation.md): `GameSimulation.digest()` is a canonical
   encoding of every mutable, future-affecting field — the player state and run (health, loadout,
   scrap), the auto-fire accumulator, the loot RNG state, every enemy in list order (position,

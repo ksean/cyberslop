@@ -1,7 +1,9 @@
 package io.github.ksean.cyberslop.sim
 
+import io.github.ksean.cyberslop.core.Vec2
 import io.github.ksean.cyberslop.entity.EnemyArchetype
 import io.github.ksean.cyberslop.physics.InputFrame
+import io.github.ksean.cyberslop.physics.Physics
 import io.github.ksean.cyberslop.physics.TICK_SECONDS
 import io.github.ksean.cyberslop.world.TileKind
 import kotlin.test.Test
@@ -41,6 +43,18 @@ class PlayerHurtFlashTest {
 
         assertEquals(health, sim.run.health)
         assertEquals(0.0, sim.playerHurtSecondsLeft)
+    }
+
+    @Test
+    fun `boss contact starts the player flash`() {
+        val sim = TestLevels.simulation()
+        sim.boss.fight.engage()
+        sim.boss.placeAt(Vec2(sim.player.x + 6.0, sim.player.y + sim.player.height(Physics.Default)))
+
+        sim.tick(InputFrame())
+
+        assertTrue(sim.run.health < sim.run.maxHealth)
+        assertEquals(GameSimulation.HURT_FLASH_SECONDS, sim.playerHurtSecondsLeft)
     }
 
     @Test

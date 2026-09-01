@@ -116,7 +116,7 @@ Kotlin/Wasm and the JVM agree bit-for-bit on IEEE-754 `+ − × ÷ √`; they ma
 - **P-19** Player physics determinism: a fixed `PlayerState` and input tape run through
   `MovementModel` for N ticks hash to a committed golden value on both targets. This covers the
   movement model only. Player position and velocity are written only by the movement model: no hit
-  effect, fire effect, enemy contact, hazard or platform displaces the player.
+  effect, fire effect, enemy or boss contact, hazard or platform displaces the player.
 - **P-48** Press latching: a key pressed and released between two `KeyLedger` samples is held in
   exactly one sample; a key still down is held in every sample; `releaseAll` empties the ledger.
 - **P-49** Pending jump: a jump held while standing is blocked, or while Down is held, produces no

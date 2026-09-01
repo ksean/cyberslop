@@ -38,6 +38,9 @@ object EnemyAttacks {
     /** A living body drains this many `contactDamage` per second of overlap (`specs/enemies.md`). */
     const val CONTACT_DRAIN = 1.0
 
+    /** A mini-boss or main-boss body drains this many times normal contact (PROD-069). */
+    const val BOSS_CONTACT_MULTIPLIER = 3.0
+
     val SHOT = EnemyShot(
         windUpSeconds = 0.25,
         damageShare = 0.45,

@@ -527,12 +527,12 @@ changes, and no discovery card or other simulation-time presentation advances be
   freezes them. The geometry is derived from the existing completion boundary and changes no tile,
   collision, map-clear tick, RNG consumption or digest; its styles are distinct from every item
   ring and shot look.
-- **P-69** Player hurt flash: enemy projectile, boss hit, enemy contact and damaging-hazard
-  fixtures each lower health and start `playerHurtSecondsLeft`; a fairness-suppressed hit and
-  healing do not. The window refreshes under continued damage, decays to zero after damage stops
-  and is frozen by pause. While active every player figure style is `Palettes.HURT`, while the eye
-  and held weapon retain their normal styles. Mutating the timer changes neither the canonical
-  save nor P-40 digest.
+- **P-69** Player hurt flash: enemy projectile, boss hit, normal-enemy contact, boss contact and
+  damaging-hazard fixtures each lower health and start `playerHurtSecondsLeft`; a
+  fairness-suppressed hit and healing do not. The window refreshes under continued damage, decays
+  to zero after damage stops and is frozen by pause. While active every player figure style is
+  `Palettes.HURT`, while the eye and held weapon retain their normal styles. Mutating the timer
+  changes neither the canonical save nor P-40 digest.
 - **P-70** Fire-jet presentation: the solid cell at `(column, bottomRow + 1)` draws a dark open
   mouth, metal neck, asymmetric split rim and crack in both the on and off states, while an
   ordinary solid cell draws none of those pipe marks. An active jet draws three pointed two-tone
