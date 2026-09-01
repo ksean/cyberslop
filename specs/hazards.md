@@ -25,6 +25,11 @@ differently phased bubbles rising through the pool (PROD-085, presentation.md P-
 height and size never enter the level or contact model; an acid tile is equally lethal at every
 animation phase.
 
+A fire jet's flame and source are likewise presentational: while the jet is on, several pointed
+flame tongues wave above a ruptured pipe outlet in the supporting solid tile; while it is off, the
+pipe remains visible and the flame does not (PROD-096, presentation.md P-70). The pipe is not a new
+tile or object, and flame phase never enters `isOnAt`, the lethal volume or the level digest.
+
 ## Contact rules
 
 - The movement model samples lethal overlap **per sub-step** (half a tile), so a terminal-velocity

@@ -114,7 +114,7 @@ object Scene {
         val presentationTime = presentationTime(timeSeconds, alpha)
         tiles(builder, palette, sim.level, camera, presentationTime)
         arenas(builder, palette, sim.level, camera)
-        jets(builder, palette, sim.level, camera, timeSeconds)
+        jets(builder, palette, sim.level, camera, timeSeconds, presentationTime)
         pickups(builder, sim, camera, presentationTime)
         enemies(builder, palette, sim, camera, presentationTime)
         bosses(builder, palette, sim, camera)
@@ -415,33 +415,123 @@ object Scene {
         level: Level,
         camera: Camera,
         timeSeconds: Double,
+        presentationTime: Double,
     ) {
-        val outer = builder.batch(
-            Layer.Hazard, palette.accent, Primitive.Segment,
-            strokeWidth(TILE_SIZE * ZOOM * JET_OUTER),
+        val size = TILE_SIZE * ZOOM
+        val pipeNeck = builder.batch(Layer.Terrain, palette.tileEdge, Primitive.Rect)
+        val pipeMouth = builder.batch(Layer.Terrain, palette.tileDeep, Primitive.Dot)
+        val pipeRim = builder.batch(
+            Layer.Terrain, palette.tileEdge, Primitive.Segment, strokeWidth(PIPE_RIM_WIDTH),
         )
-        val core = builder.batch(
-            Layer.Hazard, palette.hazardGlow, Primitive.Segment,
-            strokeWidth(TILE_SIZE * ZOOM * JET_CORE),
+        val pipeCrack = builder.batch(
+            Layer.Terrain, palette.tileDeep, Primitive.Segment, strokeWidth(PIPE_CRACK_WIDTH),
         )
-        val pool = builder.batch(Layer.Hazard, palette.accent, Primitive.Rect)
+        val outer = JET_OUTER_WIDTHS.map { width ->
+            builder.batch(Layer.Hazard, FIRE_OUTER, Primitive.Segment, strokeWidth(size * width))
+        }
+        val core = JET_CORE_WIDTHS.map { width ->
+            builder.batch(Layer.Hazard, FIRE_CORE, Primitive.Segment, strokeWidth(size * width))
+        }
 
         level.jets.forEach { jet ->
-            if (!jet.isOnAt(timeSeconds)) return@forEach
-            val x = (TileMap.toWorld(jet.column) - camera.x) * ZOOM + TILE_SIZE * ZOOM / 2.0
+            val x = (TileMap.toWorld(jet.column) - camera.x) * ZOOM + size / 2.0
             val top = (TileMap.toWorld(jet.topRow) - camera.y) * ZOOM
             val bottom = (TileMap.toWorld(jet.bottomRow + 1) - camera.y) * ZOOM
-            outer.segment(x, top, x, bottom)
-            core.segment(x, top, x, bottom)
-            // The pool of light it throws on the floor, which is what makes a lit jet read as
-            // lighting the room rather than as a bright stripe drawn over it.
-            pool.rect(
-                x - TILE_SIZE * ZOOM * JET_POOL / 2.0,
-                bottom - TILE_SIZE * ZOOM * JET_POOL_HEIGHT,
-                TILE_SIZE * ZOOM * JET_POOL,
-                TILE_SIZE * ZOOM * JET_POOL_HEIGHT,
+            brokenPipe(pipeNeck, pipeMouth, pipeRim, pipeCrack, x, bottom)
+            if (!jet.isOnAt(timeSeconds)) return@forEach
+            flame(outer, core, x, top, bottom, size, presentationTime)
+        }
+    }
+
+    /** Three tapering, independently phased tongues; the broad outer strokes always paint first. */
+    private fun flame(
+        outer: List<DrawBatch>,
+        core: List<DrawBatch>,
+        centreX: Double,
+        top: Double,
+        bottom: Double,
+        size: Double,
+        timeSeconds: Double,
+    ) {
+        for (tongue in JET_LENGTHS.indices) {
+            val points = flamePoints(outer, centreX, top, bottom, size, timeSeconds, tongue)
+            for (segment in outer.indices) {
+                val from = points[segment]
+                val to = points[segment + 1]
+                outer[segment].segment(from.x, from.y, to.x, to.y)
+                core[segment].segment(from.x, from.y, to.x, to.y)
+            }
+        }
+    }
+
+    private fun flamePoints(
+        outer: List<DrawBatch>,
+        centreX: Double,
+        top: Double,
+        bottom: Double,
+        size: Double,
+        timeSeconds: Double,
+        tongue: Int,
+    ): List<Vec2> {
+        val startY = bottom - outer.first().width / 2.0
+        val tongueTop = bottom - (bottom - top) * JET_LENGTHS[tongue]
+        val tipY = tongueTop + outer.last().width / 2.0
+        val cycle = positiveRemainder(timeSeconds / JET_WAVE_PERIOD + JET_PHASE_EPSILON, 1.0)
+        return (0..outer.size).map { point ->
+            val progress = point.toDouble() / outer.size
+            val envelope = TrigTable.sinDegrees(180.0 * progress)
+            val zig = if ((point + tongue) % 2 == 0) -1.0 else 1.0
+            val staticTurn = zig * JET_ZIGZAG * envelope
+            val wave = JET_WAVE * envelope * TrigTable.sinDegrees(
+                360.0 * (cycle + JET_PHASES[tongue] + progress * JET_WAVE_TURNS),
+            )
+            val branch = JET_DIRECTIONS[tongue] * JET_BRANCH * progress
+            Vec2(
+                centreX + size * (branch + staticTurn + wave),
+                startY + (tipY - startY) * progress,
             )
         }
+    }
+
+    /** The jet's source remains visible during its safe window (PROD-096). */
+    private fun brokenPipe(
+        neck: DrawBatch,
+        mouth: DrawBatch,
+        rim: DrawBatch,
+        crack: DrawBatch,
+        centreX: Double,
+        surfaceY: Double,
+    ) {
+        val size = TILE_SIZE * ZOOM
+        val halfNeck = size * PIPE_NECK_WIDTH / 2.0
+        neck.rect(centreX - halfNeck, surfaceY, halfNeck * 2.0, size * PIPE_NECK_HEIGHT)
+        mouth.dot(centreX, surfaceY + size * PIPE_MOUTH_DROP, size * PIPE_MOUTH_RADIUS)
+
+        val rimY = surfaceY + size * PIPE_RIM_DROP
+        rim.segment(
+            centreX - size * PIPE_RIM_RADIUS,
+            rimY + size * PIPE_RIM_LEFT_DROP,
+            centreX - size * PIPE_RIM_GAP,
+            rimY - size * PIPE_RIM_LIFT,
+        )
+        rim.segment(
+            centreX + size * PIPE_RIM_GAP,
+            rimY - size * PIPE_RIM_LIFT,
+            centreX + size * PIPE_RIM_RADIUS,
+            rimY + size * PIPE_RIM_RIGHT_DROP,
+        )
+
+        val crackStartX = centreX + size * PIPE_CRACK_START_X
+        val crackStartY = surfaceY + size * PIPE_CRACK_START_Y
+        val crackJointX = centreX + size * PIPE_CRACK_JOINT_X
+        val crackJointY = surfaceY + size * PIPE_CRACK_JOINT_Y
+        crack.segment(crackStartX, crackStartY, crackJointX, crackJointY)
+        crack.segment(
+            crackJointX,
+            crackJointY,
+            centreX + size * PIPE_CRACK_END_X,
+            surfaceY + size * PIPE_CRACK_END_Y,
+        )
     }
 
     // ---- things in the world ----------------------------------------------------------------
@@ -2005,10 +2095,37 @@ object Scene {
     private const val BUBBLE_PHASE_INDEX = 5
     private val BUBBLE_X = doubleArrayOf(0.2, 0.5, 0.8)
     private const val ARENA_PX = 3.0
-    private const val JET_OUTER = 0.75
-    private const val JET_CORE = 0.3
-    private const val JET_POOL = 2.6
-    private const val JET_POOL_HEIGHT = 0.18
+    private const val FIRE_OUTER = "#ff5a1f"
+    private const val FIRE_CORE = "#ffd166"
+    private const val JET_WAVE_PERIOD = 0.72
+    private const val JET_PHASE_EPSILON = 1e-9
+    private const val JET_WAVE_TURNS = 0.6
+    private const val JET_ZIGZAG = 0.09
+    private const val JET_WAVE = 0.04
+    private const val JET_BRANCH = 0.18
+    private val JET_LENGTHS = doubleArrayOf(1.0, 0.72, 0.56)
+    private val JET_DIRECTIONS = doubleArrayOf(0.0, -1.0, 1.0)
+    private val JET_PHASES = doubleArrayOf(0.0, 0.34, 0.67)
+    private val JET_OUTER_WIDTHS = doubleArrayOf(0.43, 0.34, 0.26, 0.18, 0.08)
+    private val JET_CORE_WIDTHS = doubleArrayOf(0.18, 0.13, 0.09, 0.055, 0.025)
+    private const val PIPE_NECK_WIDTH = 0.54
+    private const val PIPE_NECK_HEIGHT = 0.46
+    private const val PIPE_MOUTH_RADIUS = 0.23
+    private const val PIPE_MOUTH_DROP = 0.07
+    private const val PIPE_RIM_WIDTH = 5.0
+    private const val PIPE_RIM_RADIUS = 0.25
+    private const val PIPE_RIM_GAP = 0.055
+    private const val PIPE_RIM_DROP = 0.075
+    private const val PIPE_RIM_LIFT = 0.055
+    private const val PIPE_RIM_LEFT_DROP = 0.055
+    private const val PIPE_RIM_RIGHT_DROP = 0.11
+    private const val PIPE_CRACK_WIDTH = 2.5
+    private const val PIPE_CRACK_START_X = 0.08
+    private const val PIPE_CRACK_START_Y = 0.22
+    private const val PIPE_CRACK_JOINT_X = 0.17
+    private const val PIPE_CRACK_JOINT_Y = 0.31
+    private const val PIPE_CRACK_END_X = 0.11
+    private const val PIPE_CRACK_END_Y = 0.43
 
     private const val PIP_PX = 2.0
     private const val PIP_HALO = 1.25

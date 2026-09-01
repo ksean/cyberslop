@@ -58,10 +58,25 @@ offsets and coordinate-derived phases. During a 1.2 s cycle each bubble rises th
 70 % of the liquid and grows from 1.5 to 4 screen px before resetting at the bottom; neighbouring
 tiles and bubbles are out of phase, so the whole surface never pulses as one. The cycle reads the
 same interpolated presentation time as hovering drops and has no simulation state. A fire jet has
-a hot core, a cooler outer column and a floor pool of light. The backdrop is three parallax layers
-of procedural skyline at 0.12×, 0.30× and 0.55× the camera rate, generated once per level from the
-`backdrop` stream and posed per frame by a damped horizontal and vertical offset. It is never
-collidable.
+a warm red-orange outer flame and a narrower yellow-white hot core. It rises as three pointed
+tongues: one reaches the top of the jet volume and two asymmetric tongues split from it lower down.
+Each tongue is a linked chain of diagonal strokes with alternating lateral turns rather than one
+vertical stroke. Its joins move sideways through a deterministic 0.72 s loop while the base stays
+centred on the outlet; different tongues use different phases, so the whole jet does not sway as
+one rigid shape. The flame remains within the jet's one-column lethal footprint and
+`topRow..bottomRow` vertical span. It is absent whenever `FireJet.isOnAt` is false, and changing
+its shape never changes that on/off decision.
+
+Every jet also marks its supporting solid tile at `(column, bottomRow + 1)` with a permanently
+visible broken pipe. A dull metal neck protrudes from the tile, a dark open mouth sits under the
+flame, and an asymmetric split rim plus a descending crack makes the break readable without
+colour or motion. The pipe remains visible while the jet is off; ordinary solid tiles do not gain
+pipe marks. Pipe and flame geometry is derived from the existing `FireJet`, consumes no RNG, adds
+no level or simulation state and changes neither the supporting `Solid` tile nor its collision.
+The wave loop reads interpolated simulation time and freezes with pause. The backdrop is three
+parallax layers of procedural skyline at 0.12×, 0.30× and 0.55× the camera rate, generated once per
+level from the `backdrop` stream and posed per frame by a damped horizontal and vertical offset. It
+is never collidable.
 
 The **exit corridor** is every column strictly greater than `Level.gateColumn`, the same boundary
 whose first crossing completes a map after the boss opens the gate. Its floor remains ordinary
@@ -514,3 +529,12 @@ changes, and no discovery card or other simulation-time presentation advances be
   and is frozen by pause. While active every player figure style is `Palettes.HURT`, while the eye
   and held weapon retain their normal styles. Mutating the timer changes neither the canonical
   save nor P-40 digest.
+- **P-70** Fire-jet presentation: the solid cell at `(column, bottomRow + 1)` draws a dark open
+  mouth, metal neck, asymmetric split rim and crack in both the on and off states, while an
+  ordinary solid cell draws none of those pipe marks. An active jet draws three pointed two-tone
+  tongues made from joined diagonal segments, with distinct phases and lateral turns; every flame
+  endpoint and stroke envelope stays within the jet column and `topRow..bottomRow` span. Two times
+  within the 0.72 s cycle differ, times one full cycle apart match, and pause freezes the shape.
+  An off jet draws no flame but retains its pipe. Composing either phase changes neither the
+  `FireJet`, supporting tile, lethal contact, on/off timing nor simulation digest, and one jet and
+  many jets open the same set of pipe/flame style batches.

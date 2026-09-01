@@ -253,6 +253,11 @@ build of powerups collected on contact, and permadeath with persistent unlocks.
   exposed surface must retain its bright liquid edge and show several differently phased bubbles
   rising and bursting. The animation is presentational only and changes no hazard geometry,
   timing or lethality.
+- **PROD-096:** An active fire jet must read as fire rather than a straight light column: its outer
+  flame and hot core form several pointed, laterally wavy tongues whose shapes animate. The solid
+  tile immediately beneath every jet must visibly contain a ruptured pipe outlet, including while
+  the jet is off, so the threat's location remains identifiable. The flame and pipe are
+  presentational only and change no jet footprint, timing or lethality and no tile collision.
 - **PROD-086:** Every positive Scrap award during active gameplay must produce one bold golden
   `+X` above the player's head, where `X` is the total awarded in that simulation tick. The label
   must rise a small visible distance and fade completely; it is feedback only and must not alter
