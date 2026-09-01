@@ -167,6 +167,11 @@ build of powerups collected on contact, and permadeath with persistent unlocks.
   activation is already a single round (the Minigun) satisfies this by its cadence, and any
   extra round a powerup adds to it leaves along the same line. Spread stays the mechanic of
   weapons that are spread weapons by nature (a shotgun, a nailgun).
+- **PROD-097:** A projectile weapon declared as a lobber must launch its projectile upward toward
+  the aim point and let gravity bend the flight into a visible ballistic arc, rather than sending
+  it directly along the line of sight. The Ashfall Grenade Lobber is a lobber, and the same rule
+  applies to every future projectile pattern with positive gravity. Straight ranged and psychic
+  shots, and enemy and boss shots, keep their declared trajectories.
 - **PROD-083:** The first time a browser profile collects each weapon or powerup, the collection
   must complete and then gameplay must pause for three seconds of active foreground time. A card
   centred over the game must show that item's usual picture, name and a brief, mechanically

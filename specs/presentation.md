@@ -145,7 +145,9 @@ highest point stays within the physics' crouch height; nothing is scaled.
   bodies at the positions that frame draws, so a visible swoosh/body overlap has a direct hit from
   that swing (PROD-033, P-63).
 - A ranged shot draws a **muzzle flash** at the barrel: a bright core dot, a longer bloom segment
-  along the aim and two short spikes at ±35°, fading over the flash window.
+  along the projectile's actual initial velocity and two short spikes at ±35°, fading over the
+  flash window. This equals the aim for a straight shot; a lobber's flash visibly points into its
+  upward launch.
 - **Every shot shows where it went (PROD-071), and what fired it (PROD-080).** A travelling
   projectile is drawn in four marks in one **shot look**: a **glow** dot at `1.8 ×` its hit radius
   behind everything, a **body** dot at its hit radius, a **core** dot at `0.45 ×` its radius on
@@ -416,8 +418,10 @@ changes, and no discovery card or other simulation-time presentation advances be
   rather than one visual for the whole active window.
 - **P-43** Shots show where they went: a live projectile draws a dot at its position **at its hit
   radius** and a segment from it back along its velocity of `speed × TRACER_SECONDS`, player and
-  enemy shots in their own styles; a projectile spent on the tick it was fired still leaves that
-  tracer; boss Bolt, Burst and Scatter events produce respectively one, three straight and five
+  enemy shots in their own styles; successive Ashfall frames therefore show a tracer tangent that
+  rises, levels at the apex and falls with the simulation-owned velocity, and its muzzle flash uses
+  the initial upward tangent. A projectile spent on the tick it was fired still leaves that tracer;
+  boss Bolt, Burst and Scatter events produce respectively one, three straight and five
   diverging live projectiles with matching flash counts in the enemy-shot style, while an active
   Laser draws its locked 10 px bloom/core segment; a Kessler strike leaves a beam whose foot is the strike centre and a
   ring whose radius is the scaled strike radius; a chain leaves a segment per jump whose endpoints

@@ -7,7 +7,24 @@ requirements and decisions belong in `specs/`.
 
 ## Open
 
-No approved implementation tasks.
+### LOB — Ballistic lobbed projectiles (awaiting approval)
+
+Requested: a grenade launcher, and every other weapon identified as lobbing its projectile, must
+launch upward and follow a gravity-driven arc toward its target instead of firing straight at it.
+
+Phase one is complete in `specs/product.md`, `specs/combat.md`, `specs/presentation.md` and
+`specs/simulation.md`. Implementation is not approved yet; do not add a failing test or production
+code until the user explicitly approves this recorded phase.
+
+- **LOB-1 — Ballistic launch contract:** after approval, record it here, then add the smallest
+  pure tests for the whole-tick launch solution and registry classification. Preserve the expected
+  failure, implement the solver and set Ashfall's gravity to 600 px/s², then run the focused tests.
+- **LOB-2 — Simulation and presentation integration:** add focused simulation tests for upward
+  launch, per-tick gravity, target snapshot, collision, zero-gravity regression, relevant powerup
+  interactions and digest sensitivity, plus a frame test for the launch-aligned flash and curved
+  tracer. Preserve the expected failures, carry gravity and lob aim through live/pending state,
+  integrate gravity before swept movement, compose from actual velocity, run the focused JVM and
+  Wasm tests, then run `./scripts/check.sh`.
 
 ## Deferred
 

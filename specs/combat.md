@@ -19,7 +19,9 @@ while (cooldownLeft <= 0) { fire(); cooldownLeft += resolved.cooldown }
 
 `combat.WeaponSpec` declares id, name, class, tier, damage, cooldown, range, projectile speed and
 count, spread, burst interval, pierce, knockback, crit chance (base 5 %), anchor (`Self` |
-`Cursor`), wind-up, falloff, homing, on-hit effects, on-fire effects and fire pattern.
+`Cursor`), wind-up, falloff, homing, on-hit effects, on-fire effects and fire pattern. A
+`FirePattern.Projectile` also declares gravity and lifetime; positive gravity identifies a lobbed
+projectile, while zero gravity identifies an ordinary straight projectile.
 
 **Spread and burst are alternatives (PROD-075).** A multi-projectile weapon with a `spread`
 fires its projectiles at once, fanned evenly across the spread angle around the aim with the
@@ -27,7 +29,10 @@ outermost on its edges (five pellets at 30° sit at −15°, −7.5°, 0°, 7.5�
 nailgun. A weapon with a `burstIntervalSeconds > 0` is a **machine gun**: the trigger fires its
 first round and queues the rest, one every interval, each leaving the muzzle where it is *then*
 along the aim recorded when the trigger fell, so the rounds trail one another in a straight line
-whatever the target does in the meantime. A burst weapon declares no spread. Every round is a
+whatever the target does in the meantime. If a future lobbed weapon uses a burst, the recorded
+aim is its target point rather than merely a direction: each delayed round leaves the muzzle of
+its own tick on a newly solved arc toward that unchanged point. A burst weapon declares no spread.
+Every round is a
 whole projectile of the build that pulled the trigger (`LiveProjectile.weapon`, PROD-070) and
 draws its own muzzle flash; Fork Bomb's extra projectiles join the burst rather than a fan. The
 Minigun's cooldown is already one round every 0.12 s, so it declares no interval and no spread:
@@ -45,7 +50,8 @@ Class is load-bearing:
   body the visible sector covers takes one direct hit from that activation; Mass Driver widens the
   sector and Ranger Optics extends its reach. Meatgrinder Halo keeps its separately specified ring
   pattern.
-- **Ranged** spawns travelling projectiles that stop at terrain and obey falloff; the Railgun and
+- **Ranged** spawns travelling projectiles that stop at terrain and obey falloff. Most travel
+  straight; a positive-gravity projectile follows the ballistic-lob rule below. The Railgun and
   Minigun declare a wind-up.
 - **Psychic** projectiles and blasts pass through terrain.
 
@@ -136,7 +142,7 @@ ranged mean.
 | Ganglord SMG | Ranged | 2 | 4×3 | 0.75 | 16.0 | 20 m | Machine gun: 3-round burst, 0.05 s apart, straight |
 | Riotbreaker Shotgun | Ranged | 2 | 6×5 | 1.50 | 20.0 | 20 m | 30° cone, falloff past 5 m |
 | Vulture Rail Carbine | Ranged | 3 | 28 | 1.00 | 28.0 | 20 m | Pierce 2 |
-| Ashfall Grenade Lobber | Ranged | 3 | 33 | 1.40 | 23.6 | 20 m | Blast 2.5 m at 60 % |
+| Ashfall Grenade Lobber | Ranged | 3 | 33 | 1.40 | 23.6 | 20 m | Ballistic lob, 600 px/s² gravity; blast 2.5 m at 60 % |
 | Sable Corp Railgun | Ranged | 4 | 95 | 1.70 | 55.9 | 20 m | Infinite pierce, 0.4 s wind-up |
 | "Debt Collector" Minigun | Ranged | 4 | 7 | 0.12 | 58.3 | 20 m | Machine gun: 0.6 s wind-up, one straight round per 0.12 s |
 | Kessler Orbital Uplink | Ranged | 5 | 120 | 1.20 | 100.0 | 30 m | Target-anchored strike, 0.35 s delay |
@@ -174,6 +180,38 @@ ranged mean.
 
 Each run draws **8 of the 18** powerups, tier-weighted, as its drop pool, so duplicates are common
 enough for stacking to happen.
+
+### Lobbed projectiles (PROD-097)
+
+At the trigger tick, a positive-gravity projectile snapshots the supplied aim point; it does not
+lead a moving target. Let `dt` be the fixed simulation step, `(dx, dy)` the displacement from that
+round's muzzle to the snapshot, `s` its resolved projectile speed and `g` its declared positive
+gravity. The launch solver selects the smallest whole-tick flight length `N` for which
+
+```
+N × dt >= max(distance / s, MIN_LOB_SECONDS)
+vy0 = dy / (N × dt) - g × dt × (N + 1) / 2
+vy0 <= -MIN_LOB_UP_SPEED
+```
+
+where `MIN_LOB_SECONDS = 0.40 s` and `MIN_LOB_UP_SPEED = 120 px/s`; screen y increases downward.
+It sets `vx0 = dx / (N × dt)`. Each tick thereafter first applies any homing turn, then adds
+`g × dt` to `vy`, then performs the existing swept terrain-and-actor move. In an unobstructed,
+non-homing flight this semi-implicit update places the projectile centre on the snapshotted point
+after exactly `N` ticks. A lobbed registry entry must have enough lifetime for a solution throughout
+the game's target-acquisition distance; construction rejects one that does not. Ashfall declares
+`gravity = 600 px/s²`; every other current player projectile declares zero.
+
+The initial upward velocity is gameplay state, not a drawn offset: ceilings and walls can stop the
+grenade, and an obstruction below a clear arc is passed over. Gravity continues after a Ricochet
+ROM reflection. Ranger Optics' resolved speed participates in the flight-time bound; Fork Bomb
+rounds each use the same snapshotted aim point; spread, if a future lobber declares it, rotates the
+solved initial velocity around the base arc. Seeker Daemon may steer a lob after launch and does
+not suppress gravity. `LiveProjectile` carries gravity and the determinism digest includes it; a
+pending lobbed burst also carries its snapshotted aim point. Zero-gravity projectiles retain their
+existing constant-velocity path exactly. Damage, falloff, crit, blast and all other landing rules
+are unchanged by this requirement, including the pre-existing projectile-landing gaps recorded
+below.
 
 **Life steal (PROD-073).** Red Market Siphon heals the player by its fraction of every point of
 damage the held weapon **actually deals** to an enemy or a boss — a swing, a projectile landing,
@@ -302,6 +340,18 @@ same-weapon pickup pays exactly one weapon value and no values for the powerups 
   `interval × (count + 3 − 1) < 0.35 × cooldown`; a burst pending at the next trigger is
   discarded, a round of it due on the trigger tick included; the pending burst is in the digest;
   the registry DPS column is unchanged.
+- **P-71** Ballistic lob: Ashfall's registry pattern is the only current player projectile with
+  positive gravity, exactly `600 px/s²`; every current straight ranged and psychic projectile and
+  every enemy or boss projectile remains at zero. For same-height, higher and lower targets on
+  both sides of the player, the whole-tick solver produces an initial `vy <= -120 px/s`, applies
+  exactly `gravity × dt` downward per tick after any homing turn, crosses an apex, and reaches the
+  snapshotted point on tick `N` in an unobstructed non-homing fixture. A moving target does not
+  bend an already launched grenade. A low obstruction beneath the swept arc is cleared, while a
+  terrain cell intersected by the arc stops or reflects it under the existing bounce rule.
+  Ranger Optics changes the nominal flight bound, Fork Bomb rounds share the snapshot, and Seeker
+  Daemon and Ricochet ROM retain gravity. A Zip Pistol control keeps its existing constant-velocity
+  path exactly. Changing live gravity or a pending lob aim point changes P-40's digest;
+  changing only its drawn marks does not.
 - **P-42** Weapon pickup: collecting a weapon with a different `WeaponId` — including one of lower
   tier and lower score than the held one — equips it; the previous weapon's Scrap and the Scrap of
   every cleared slot are paid; the slots are empty afterwards; and a powerup collected next lands
