@@ -27,7 +27,10 @@ private fun documentHasFocus(): Boolean = js("document.hasFocus()")
  * hidden or put away, the canvas losing focus — releases all keys, since a key the browser never
  * reports released would otherwise be held forever (`specs/simulation.md`, key ledger).
  */
-class BrowserInput(private val canvas: HTMLCanvasElement) {
+class BrowserInput(
+    private val canvas: HTMLCanvasElement,
+    private val onEscape: () -> Unit = {},
+) {
     private val ledger = KeyLedger()
     private val downBindings = mutableMapOf<String, Key>()
     private val listeners = mutableListOf<Pair<EventTarget, Pair<String, (Event) -> Unit>>>()
@@ -41,6 +44,11 @@ class BrowserInput(private val canvas: HTMLCanvasElement) {
     fun attach() {
         listen(window, "keydown") { event ->
             val keyEvent = event as KeyboardEvent
+            if (isEscape(keyEvent)) {
+                event.preventDefault()
+                if (!keyEvent.repeat) onEscape()
+                return@listen
+            }
             val binding = bindingOf(keyEvent) ?: return@listen
             press(binding)
             // Otherwise arrows and Space scroll the page out from under the game.
@@ -136,6 +144,9 @@ class BrowserInput(private val canvas: HTMLCanvasElement) {
             val value = event.key.lowercase()
             return VALUE_BINDINGS[value]?.let { Binding("key:$value", it) }
         }
+
+        fun isEscape(event: KeyboardEvent): Boolean =
+            event.code == "Escape" || event.key.equals("Escape", ignoreCase = true)
     }
 
     private data class Binding(val source: String, val action: Key)

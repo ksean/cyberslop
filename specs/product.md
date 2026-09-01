@@ -38,17 +38,24 @@ build of powerups collected on contact, and permadeath with persistent unlocks.
   later new or continued run. A purchase must be immediate, persistent and all-or-nothing; an
   unaffordable or maximum-rank purchase changes nothing. The catalog, prices, effects, unlock
   accounting and save migration are specified in [progression.md](progression.md).
+- **PROD-091:** Pressing `Escape` during a map must pause the run and show a keyboard-operable menu
+  centred over the dimmed game, with `Resume` and `Return to title` buttons. `Escape` also resumes.
+  Pausing must freeze simulation and simulation-time presentation, clear held gameplay input, and
+  never advance the run while focus changes. `Return to title` voluntarily ends the current run,
+  banks all of its accumulated Scrap exactly once, clears its in-progress save, and shows the title
+  with that Scrap available to the shop.
 
 ## Controls and gameplay
 
 - **PROD-020:** A run must consist of ten procedurally generated maps of increasing difficulty. The
   player progresses by moving right; each map contains a mini-boss at its midpoint and a main boss
   at its end, and the main boss gates the map exit.
-- **PROD-021:** Gameplay must expose exactly four actions: left on `ArrowLeft` or `A`, right on
-  `ArrowRight` or `D`, crouch on `ArrowDown` or `S`, and jump on `ArrowUp`, `W` or `Space`. Either
-  binding for an action must have identical press, hold, release, buffering and focus-loss
-  semantics. The equipped weapon fires automatically on its own cooldown at the nearest valid
-  target. There is no attack input.
+- **PROD-021:** The simulation must expose exactly four gameplay actions: left on `ArrowLeft` or
+  `A`, right on `ArrowRight` or `D`, crouch on `ArrowDown` or `S`, and jump on `ArrowUp`, `W` or
+  `Space`. Either binding for an action must have identical press, hold, release, buffering and
+  focus-loss semantics. `Escape` controls the browser lifecycle pause in PROD-091 rather than
+  entering the simulation input frame. The equipped weapon fires automatically on its own cooldown
+  at the nearest valid target. There is no attack input.
 - **PROD-022:** Aiming must require no player input and no configuration.
 - **PROD-023:** A run must begin with a broken bottle melee weapon that swings every two seconds.
 - **PROD-024:** Every map presented must be completable: the generator holds a witness — an input
@@ -92,6 +99,10 @@ build of powerups collected on contact, and permadeath with persistent unlocks.
 - **PROD-064:** Maps must carry visible, survivable damaging hazards in the dystopian idiom — at
   least spike strips and burning barrels — that hurt per second of contact, placed off the proven
   route, at a density that rises across the run and is zero on map one.
+- **PROD-094:** No lethal or damaging hazard may be placed in the exit corridor strictly beyond the
+  main boss's gate, where entering completes the map. That corridor's safe floor must be visibly
+  marked by an animated blue sparkling surface so the completion zone reads before the player
+  crosses it; the animation is presentational and changes neither collision nor completion.
 - **PROD-068:** Difficulty pressure must rise across the run and be measured: over a seed cohort,
   the population's threat score rises strictly in cohort mean from map to map, and a reference bot
   replaying each map's route with the guaranteed loadout takes gross incoming damage per hundred
@@ -109,6 +120,10 @@ build of powerups collected on contact, and permadeath with persistent unlocks.
   burst, spread and beam shots. The available profiles, their damage and a main boss's late-fight
   cadence must grow more dangerous from the early maps through the late maps as specified in
   [enemies.md](enemies.md).
+- **PROD-092:** Every ranged mini-boss and main-boss attack must threaten through the complete
+  visible view. A projectile continues until it hits terrain, hits the player or leaves the level;
+  a beam extends in its locked direction to the first terrain face or the level boundary. Neither
+  may expire at the former fixed eight-tile distance.
 - **PROD-088:** Every engaged enemy must be able to continue pursuing across generated traversal
   hazards: a ground-bound rank-and-file enemy, mini-boss or main boss must jump a safe, reachable
   arc over pits, acid, spike strips and low obstructions instead of stopping at them, while a Flyer
@@ -199,6 +214,14 @@ build of powerups collected on contact, and permadeath with persistent unlocks.
 - **PROD-043:** A boss is drawn distinctly from a trash enemy, and a mini-boss from a main boss.
 - **PROD-076:** An enemy or boss that takes a hit must flash red briefly at the moment of the hit;
   the flash never hides a boss's telegraph colour.
+- **PROD-093:** A living rank-and-file enemy with active burn damage must carry a visibly animated
+  flame/ember indicator on its model; one with active bleed damage must carry a visibly animated
+  falling-blood indicator. The two effects must remain distinguishable without motion or colour
+  alone, coexist when both statuses are active, and disappear with the corresponding status or the
+  enemy's death.
+- **PROD-095:** The player character must briefly flash red whenever a positive damage event lowers
+  current health. The flash is feedback only: it changes no damage, invulnerability, input, save or
+  deterministic simulation state.
 - **PROD-077:** Every living enemy below full health shows a health bar above it, as bosses
   already do; an enemy at full health shows none.
 - **PROD-044:** A pickup on the ground shows the specific item it is and its rarity tier.

@@ -22,7 +22,9 @@ pursuit  : reject an attempt with a gap, step or ground-hazard span outside any 
 
 Arenas are carved during the spine pass: flat contiguous floor of at least `theme.arenaWidthTiles`,
 ceiling clearance ≥ 6, zero hazards, a left entry and a right exit at floor level, footprint in
-`FloorMask`. The mini-boss arena is centred within ±5 % of `width / 2`; the boss arena ends the map.
+`FloorMask`. The mini-boss arena is centred within ±5 % of `width / 2`; the boss arena ends the
+challenge route. Its gate is `boss.rightTile + 1`; every later in-map column is a flat, hazard-free
+exit corridor whose floor presentation marks the map-completion zone (PROD-094).
 
 A rhythm-shaped constructive spine is used rather than wave-function collapse or cellular automata
 with repair, because it is the only approach where completability is a property of the construction
@@ -98,7 +100,8 @@ test and a change to terrain is not masked by one.
 ## Verified properties
 
 - **P-05** Arenas: floor flat and contiguous, width ≥ `arenaWidthTiles`, clearance ≥ 6, zero
-  hazards, reachable entry and reachable exit.
+  hazards, reachable entry and reachable exit; every column strictly after the boss gate is flat
+  safe floor with no acid, jet, spike or barrel.
 - **P-06** Mini-boss arena centre within ±5 % of `width / 2`.
 - **P-07** `FloorMask` integrity: decoration changes no masked cell.
 - **P-08** `ArcMask` integrity: no solid tile is placed in any swept spine-move volume.

@@ -67,6 +67,16 @@ delays the press; it cannot erase it.
   bounded and accepted.
 - `IntentFilter` is scoped to one simulation: it is recreated with each map and each run.
 
+`Escape` is a lifecycle control, not a fifth `KeyLedger` action (PROD-091). While a run is playing,
+the first non-repeated `keydown` whose code or value is `Escape` toggles the manual pause and
+prevents browser handling; key repeat cannot immediately undo the transition. Opening and closing
+the pause both release every gameplay source, discard latched presses and recreate the
+`IntentFilter`, so movement held across the menu cannot resume by itself. The fixed-step loop is
+paused when any of window/page pause, manual pause or discovery pause is active. Manual pause
+persists across blur/focus and visibility changes; regaining focus never closes its menu. While it
+is active no simulation tick, discovery interval, hover, status indicator, exit sparkle, hurt
+flash, Scrap label or other simulation-time presentation timer advances.
+
 ## The measured envelope
 
 `physics.MovementEnvelope.measure(physics)` runs the real integrator against synthetic geometry and
@@ -118,6 +128,12 @@ Kotlin/Wasm and the JVM agree bit-for-bit on IEEE-754 `+ − × ÷ √`; they ma
   same; each `keydown` prevents default browser handling. Holding two bindings for one action and
   releasing one keeps that action held, while releasing both clears it; focus-loss clearing
   removes every alias.
+- **P-65** Manual pause: one physical `Escape` press during play opens the pause menu, freezes the
+  fixed-step tick count and simulation-time presentation, clears held and latched gameplay input,
+  and prevents default; repeated keydown does not close it. A later `Escape` or `Resume` closes it
+  and the first resumed tick contains no pre-pause input. Blur/focus while manually paused leaves
+  it paused. `Return to title` banks the live run Scrap once, clears the run save and reaches a
+  title with no `Continue game` for that run; opening, closing or focus-pausing banks nothing.
 - **P-40** Simulation determinism: a digest of the whole rule-bearing simulation state after N
   ticks of a fixed tape on a fixed seed matches a committed golden value on both targets
   (enemies.md lists the fields). Enemy/boss leap state, selected boss profiles, scheduled multi-hit

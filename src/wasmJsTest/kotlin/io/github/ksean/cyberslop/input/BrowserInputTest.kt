@@ -11,6 +11,7 @@ import kotlin.test.AfterTest
 import kotlin.test.BeforeTest
 import kotlin.test.Test
 import kotlin.test.assertEquals
+import kotlin.test.assertFalse
 import kotlin.test.assertTrue
 
 /** Input wiring (P-50): what the browser delivers must reach the simulation, and stuck keys must be let go. */
@@ -173,6 +174,39 @@ class BrowserInputTest {
         assertEquals(Keys(), input.keys())
         key("keyup", "KeyD", "d")
         assertEquals(Keys(), input.keys(), "a cleared physical source survived until keyup")
+    }
+
+    @Test
+    fun `escape prevents browser handling and reports one edge per physical press`() {
+        var toggles = 0
+        input.detach()
+        input = BrowserInput(canvas, onEscape = { toggles++ }).also { it.attach() }
+
+        val first = KeyboardEvent(
+            "keydown",
+            KeyboardEventInit(key = "Escape", code = "Escape", cancelable = true),
+        )
+        window.dispatchEvent(first)
+        window.dispatchEvent(
+            KeyboardEvent(
+                "keydown",
+                KeyboardEventInit(key = "Escape", code = "Escape", repeat = true, cancelable = true),
+            ),
+        )
+
+        assertTrue(first.defaultPrevented)
+        assertEquals(1, toggles)
+        assertEquals(Keys(), input.keys(), "Escape became a gameplay action")
+
+        key("keyup", "Escape")
+        val fallback = KeyboardEvent(
+            "keydown",
+            KeyboardEventInit(key = "Escape", code = "Unidentified", cancelable = true),
+        )
+        window.dispatchEvent(fallback)
+        assertTrue(fallback.defaultPrevented)
+        assertEquals(2, toggles)
+        assertFalse(input.paused, "manual pause was conflated with focus pause")
     }
 
     private fun binding(code: String, expected: Keys, keyValue: String = code) {

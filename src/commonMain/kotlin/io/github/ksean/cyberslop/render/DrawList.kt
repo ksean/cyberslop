@@ -67,6 +67,8 @@ enum class Layer {
     /** The held weapon's weathering, over its materials on [ActorTrim]. */
     ActorWear,
     ActorGlow,
+    /** Burn flames and bleed drops, above every actor part and below weapon fire. */
+    ActorStatus,
 
     /*
      * A shot is three marks in a fixed order — glow, body, core (PROD-080) — and an impact's

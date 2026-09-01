@@ -54,12 +54,15 @@ class BossRangedAttackTest {
     }
 
     @Test
-    fun `boss projectiles and beams never extend beyond eight tiles`() {
+    fun `boss projectiles and beams are not capped at eight tiles`() {
         BossModule.entries.filter { it.kind == io.github.ksean.cyberslop.entity.BossAttackKind.Ranged }
             .forEach { module ->
                 val map = (1..10).first { module in io.github.ksean.cyberslop.entity.Bosses.modulesFor(it) }
                 val attack = io.github.ksean.cyberslop.entity.Bosses.attack(module, map, mainBoss = true)
-                assertTrue(attack.reachPx <= 8.0 * 16.0, "$module reaches ${attack.reachPx}")
+                assertTrue(
+                    attack.reachPx >= TestLevels.WIDTH * 16.0,
+                    "$module still expires after ${attack.reachPx / 16.0} tiles",
+                )
             }
     }
 

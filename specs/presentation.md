@@ -27,12 +27,13 @@ primitives they draw. The batch count bounds state changes, which is what was me
 bound rasterization.
 
 Layers, back to front: `Sky`, `BackdropFar/Mid/Near`, `Haze`, `Terrain`, `Hazard`, `HazardSurface`,
-`ItemHalo`, `Items`, `ItemWear`, actors (with `ActorWear` over `ActorTrim`), `ShotGlow`, `ShotBody`,
-`ShotCore`, `Effects`, `Debug`, `Hud`, `HudOverlay`, `HudWear`. The halo, the material and the
-weathering of an icon are on three layers, and a shot's three marks on three, because on one layer
-their order depends on which batch opened first — and a wider batch a later drop or a fresher impact
-opens paints over an earlier one's overlay. A bubble's glow dot is on `Hazard` and its smaller body
-dot on `HazardSurface`, so every bubble remains a ring however the acid body batches opened.
+`ItemHalo`, `Items`, `ItemWear`, actors (with `ActorWear` over `ActorTrim`), `ActorStatus`,
+`ShotGlow`, `ShotBody`, `ShotCore`, `Effects`, `Debug`, `Hud`, `HudOverlay`, `HudWear`. The halo, the
+material and the weathering of an icon are on three layers, and a shot's three marks on three,
+because on one layer their order depends on which batch opened first — and a wider batch a later
+drop or a fresher impact opens paints over an earlier one's overlay. A bubble's glow dot is on
+`Hazard` and its smaller body dot on `HazardSurface`, so every bubble remains a ring however the
+acid body batches opened.
 
 ## The view
 
@@ -40,7 +41,8 @@ The camera view is measured in world units; `ZOOM = 3.5` makes a tile 56 screen 
 follow (25 % of the view) with look-ahead (12 %) in the facing direction; hard clamp to the level
 bounds; on resize keep world-units-per-pixel fixed. The camera never frames an arena: a boss that
 fights is engaged and pursuing, so it is within the awareness radius of the player the camera
-follows, and every boss projectile or beam is capped at eight tiles.
+follows. Boss projectiles and beams continue to terrain or the level boundary; the camera clips
+their draw geometry at its own viewport rather than the simulation shortening them to fit.
 
 ## Palettes and the world
 
@@ -60,6 +62,16 @@ a hot core, a cooler outer column and a floor pool of light. The backdrop is thr
 of procedural skyline at 0.12×, 0.30× and 0.55× the camera rate, generated once per level from the
 `backdrop` stream and posed per frame by a damped horizontal and vertical offset. It is never
 collidable.
+
+The **exit corridor** is every column strictly greater than `Level.gateColumn`, the same boundary
+whose first crossing completes a map after the boss opens the gate. Its floor remains ordinary
+solid collision, but each exposed floor tile replaces the normal top edge with a fixed blue
+`EXIT_SURFACE = #38a8ff` edge and draws three pale-blue spark dots on `HazardSurface`.
+Coordinate-derived phases stagger a `0.90 s` loop in which each spark rises 8 screen px from that
+edge and shrinks to zero before restarting. The edge's colour and the upward spark shape identify
+the zone in a still frame; animation is additional feedback. It reads interpolated simulation
+time, consumes no RNG, adds no level state and changes neither collision, completion nor the
+digest. A pause freezes it with the rest of simulation-time presentation.
 
 ## The player rig
 
@@ -212,6 +224,16 @@ modules but assign different primaries have different colour-stripped geometry. 
 the map palette still scale as before, and neither may cover the implement tip, muzzle ports or
 laser lens that communicates the attack.
 
+**Enemy damage-over-time indicators (PROD-093).** Every living `LiveEnemy` whose
+`burn.secondsLeft > 0` draws three two-tone flame chevrons and round ember dots rising over the
+actual drawn body on `ActorStatus`; every one whose `bleed.secondsLeft > 0` draws three pointed
+crimson droplets falling from that body. The upward forked flame and downward pointed drop remain
+distinct in a still, monochrome frame. Their coordinate-staggered cycles are respectively 0.75 s
+and 0.65 s, read from interpolated simulation time, and both sets draw when both statuses are
+active. Hurt flash colours do not cover them. They disappear on the first frame their status is no
+longer active or the enemy is dead. The indicators add no mutable state, randomness, damage or
+digest fields; pausing freezes their phase.
+
 **Hurt flash (PROD-076).** A hit — a swing, a projectile landing, a blast, a chain jump, splash;
 not a burn or bleed tick — sets `hurtSecondsLeft = HURT_FLASH_SECONDS = 0.12 s` on the enemy or
 boss, a presentation-only field decayed by the simulation like an enemy's `lastSwing` visual and
@@ -223,6 +245,13 @@ unchanged. A boss's telegraph colour wins over the flash: a telegraphing boss st
 telegraph colour however hard it is hit, because the tell is a fairness signal. The flash is a
 style swap, so a frame holding both hurt and unhurt figures opens at most one extra batch per
 figure batch kind (fifteen at the worst), a constant that no number of enemies moves (P-23).
+
+Every positive damage event that lowers the player's current health sets the same 0.12 s window on
+a presentation-only `playerHurtSecondsLeft`; damage prevented by a fairness rule and healing set
+nothing. Repeated per-tick contact or hazard damage refreshes the window while damage continues.
+During it the player's body, limbs, head, trim and arms use `Palettes.HURT`; the eye and held weapon
+keep their identifying styles. It decays only on simulation ticks, is neither saved nor digested,
+and changes no damage or invulnerability rule (PROD-095).
 
 **Health bars (PROD-077).** A living rank-and-file enemy whose health is below its archetype's
 maximum for the map draws the boss's bar above its figure: a dark back rect and a fill rect of
@@ -337,9 +366,17 @@ count, and the map index and sub-theme (PROD-045). The title and shop are DOM sc
 buttons and accessible names. A first-pickup discovery card is drawn centred over a dimmed canvas
 with the registered icon, item name and description; its text is repeated through the visually
 hidden live region (PROD-083, progression.md). The canvas carries `role="application"` and an
-`aria-label` which names the arrow and A/D/S/W movement bindings, Space jump and automatic fire.
+`aria-label` which names the arrow and A/D/S/W movement bindings, Space jump, automatic fire and
+Escape pause.
 Window focus loss and a hidden page clear held keys and pause; canvas focus loss clears held keys
 (`specs/simulation.md`, key ledger).
+
+An in-map manual pause leaves the last composed canvas visible and dimmed and opens a centred DOM
+dialog titled `Paused`, with real buttons in `Resume`, `Return to title` order. The dialog has an
+accessible name, is announced through the live region and focuses `Resume` on opening. `Resume` or
+`Escape` closes it and returns focus to the canvas; `Return to title` uses progression.md's
+voluntary run-ending transition. The dialog remains open across window blur/focus and visibility
+changes, and no discovery card or other simulation-time presentation advances behind it.
 
 ## Verified properties
 
@@ -458,3 +495,22 @@ Window focus loss and a hidden page clear held keys and pause; canvas focus loss
   remain distinct for every pair. Slam, Sweep, each Flurry event, Rush, Bolt, each Burst event,
   Scatter and Laser each select and draw their declared active pose/effect, and an airborne boss
   selects the rise/fall pose from its vertical velocity.
+- **P-67** Damage-over-time indicators: burn-only, bleed-only and combined fixtures draw,
+  respectively, upward forked flame/ember marks, downward pointed droplets and both on
+  `ActorStatus`, anchored to each biped, hover and crawler body. Two times within each cycle differ
+  and times one full cycle apart match; a paused time does not move them. Clearing one status
+  removes only its marks, killing the enemy removes both, and composing them changes neither
+  health, status duration nor digest. Frames with many identically affected enemies open the same
+  status batch count as one.
+- **P-68** Exit corridor: every exposed floor tile strictly right of `gateColumn` has the fixed blue
+  surface and three pale upward sparks, while the gate column and every earlier floor tile do not.
+  Two times within 0.90 s change spark height/size and times one full cycle apart match; pause
+  freezes them. The geometry is derived from the existing completion boundary and changes no tile,
+  collision, map-clear tick, RNG consumption or digest; its styles are distinct from every item
+  ring and shot look.
+- **P-69** Player hurt flash: enemy projectile, boss hit, enemy contact and damaging-hazard
+  fixtures each lower health and start `playerHurtSecondsLeft`; a fairness-suppressed hit and
+  healing do not. The window refreshes under continued damage, decays to zero after damage stops
+  and is frozen by pause. While active every player figure style is `Palettes.HURT`, while the eye
+  and held weapon retain their normal styles. Mutating the timer changes neither the canonical
+  save nor P-40 digest.

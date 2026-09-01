@@ -178,13 +178,16 @@ fairness floor never scales.
 | Bolt | ranged | 0.65 → 0.50 s | a 0.10 s window emits one terrain-blocked projectile at 280 px/s along the aim recorded at telegraph start | `0.50 × U` | move away from the recorded aim | one narrow barrel and one muzzle flash |
 | Burst | ranged | 0.65 → 0.50 s | a 0.36 s window emits three terrain-blocked projectiles at 300 px/s and 0.12 s intervals along one recorded line | `0.22 × U` each | move away through the sequence | one barrel with a long magazine and three flashes |
 | Scatter | ranged | 0.60 → 0.45 s | a 0.10 s window emits five terrain-blocked projectiles at 320 px/s, simultaneously at −15°, −7.5°, 0°, +7.5° and +15° about the recorded aim | `0.24 × U` each | move clear of the recorded fan | a short five-port muzzle and five flashes/tracers |
-| Laser | ranged | 0.70 → 0.55 s | a 10 px-wide beam from the emitter to the recorded target point for 0.30 s; it may damage a player at most once | `1.05 × U` | move clear of the locked segment | a large lens which charges, then a core-and-bloom beam |
+| Laser | ranged | 0.70 → 0.55 s | a 10 px-wide beam along the aim recorded at telegraph start, clipped by the first terrain face or level boundary, for 0.30 s; it may damage a player at most once | `1.05 × U` | move clear of the locked segment | a large lens which charges, then a core-and-bloom beam |
 
-Bolt, Burst and Scatter projectiles stop at terrain and after eight tiles of travel. That same
-eight-tile cap bounds the Laser endpoint and keeps every boss attack on-screen under the camera
-contract. Boss projectiles carry boss ownership: they may hurt a player on boss ground, where the
-fight belongs, but are suppressed while the player occupies a committed column and during the
-same `LANDING_GRACE` as every other boss hit.
+Bolt, Burst and Scatter projectiles stop when they hit terrain or the player, or when their swept
+body crosses the level boundary; they have no independent travel-distance expiry. Laser uses the
+same recorded aim as the other ranged modules and extends to the first terrain face or level
+boundary. Thus an unobstructed ranged attack continues through the complete camera view whatever
+the browser's viewport dimensions, without making simulation rules depend on a screen. Boss
+projectiles carry boss ownership: they may hurt a player on boss ground, where the fight belongs,
+but are suppressed while the player occupies a committed column and during the same
+`LANDING_GRACE` as every other boss hit.
 
 A boss turns only between attacks. Every melee direction, projectile line, spread centre and Laser
 endpoint is recorded when the telegraph begins, so crossing the boss mid-telegraph never turns the
@@ -356,7 +359,8 @@ inventory directly.
   the player's active `ArcSwing` (snapshotted build and geometry, progress and already-hit targets),
   the exit state and the elapsed tick — with doubles encoded by their IEEE bits and lists by length
   then elements. Presentation-only fields (stride distance, enemy swing and flash visuals, aim
-  direction) and Scrap-gain labels are excluded. After N ticks of a fixed tape on a fixed seed it
+  direction), the player/enemy/boss hurt-flash timers, status-indicator geometry and Scrap-gain
+  labels are excluded. After N ticks of a fixed tape on a fixed seed it
   matches a committed golden value on both targets, and a mutation test per state family changes
   it.
 - Shooters and turrets are at most 35 % of any map's population; every map holds at least three
@@ -366,6 +370,12 @@ inventory directly.
   points) and with the player at or beyond `RANGED_PREFERRED_PX` in about 80 %; within a kind the
   modules cycle in profile order; a pinned seed's first twelve choices match one committed sequence
   on both targets; every telegraph, hit condition and dodge case of P-17 and P-35 is unchanged.
+- **P-66** Full-view boss range: on an unobstructed level, Bolt, every Burst round and every Scatter
+  pellet remain live after crossing the former eight-tile limit and are removed only after a player
+  hit or swept level-boundary crossing; a solid wall still stops each at its first contact. Laser's
+  locked segment reaches the level boundary on open ground and the first terrain face when blocked.
+  The real camera clips those projectiles and beams at its own edge, and the existing telegraph,
+  committed-span suppression, one-hit beam rule and scripted dodges remain unchanged.
 - **P-60** Boss profiles and escalation: for a fixed run seed, all twenty assignments and their
   signature choices are identical on JVM and Wasm and reconstruct identically on continue; adjacent
   slots never share a primary pair; every mini-boss and every phase of every main boss contains

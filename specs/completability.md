@@ -14,7 +14,9 @@ shipping build, and the seed sweep in `jvmTest` is a regression check, not the g
 CG covers traversal of static geometry and timed hazards to the boss door. It does not cover
 enemies (dynamic and killable — see *Enemies on the route* below and enemies.md), killing the boss
 (the loot floor in enemies.md), damaging hazards (hazards.md, placed off the route), or human
-execution (human validation).
+execution (human validation). The corridor strictly beyond the boss gate is outside the witness
+because entering it completes the map; generation nevertheless carves it as flat safe floor and
+forbids every placed hazard there (PROD-094, hazards.md).
 
 ## How it is discharged
 

@@ -76,13 +76,13 @@ object Bosses {
                 listOf(0.00, 0.14, 0.28),
             )
             BossModule.Rush -> attack(module, mapIndex, 0.55, 0.40, 0.40, 1.45 * unit, 128.0)
-            BossModule.Bolt -> attack(module, mapIndex, 0.65, 0.50, 0.10, 0.50 * unit, 8.0 * TILE_SIZE)
+            BossModule.Bolt -> attack(module, mapIndex, 0.65, 0.50, 0.10, 0.50 * unit, RANGED_REACH_PX)
             BossModule.Burst -> attack(
-                module, mapIndex, 0.65, 0.50, 0.36, 0.22 * unit, 8.0 * TILE_SIZE,
+                module, mapIndex, 0.65, 0.50, 0.36, 0.22 * unit, RANGED_REACH_PX,
                 listOf(0.00, 0.12, 0.24),
             )
-            BossModule.Scatter -> attack(module, mapIndex, 0.60, 0.45, 0.10, 0.24 * unit, 8.0 * TILE_SIZE)
-            BossModule.Laser -> attack(module, mapIndex, 0.70, 0.55, 0.30, 1.05 * unit, 8.0 * TILE_SIZE)
+            BossModule.Scatter -> attack(module, mapIndex, 0.60, 0.45, 0.10, 0.24 * unit, RANGED_REACH_PX)
+            BossModule.Laser -> attack(module, mapIndex, 0.70, 0.55, 0.30, 1.05 * unit, RANGED_REACH_PX)
         }
     }
 
@@ -111,4 +111,7 @@ object Bosses {
         val depth = (mapIndex - 1) / 9.0
         return (start + (end - start) * depth).coerceAtLeast(BossAttack.MIN_TELEGRAPH_SECONDS)
     }
+
+    /** Registry metadata is level-spanning; simulation clips each event to its actual level. */
+    private const val RANGED_REACH_PX = 1024.0 * TILE_SIZE
 }

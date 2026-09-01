@@ -16,7 +16,7 @@ private const val GAME_CANVAS_ID = "game-canvas"
 private const val GAME_STATUS_ID = "game-status"
 private const val GAMEPLAY_ACCESSIBLE_NAME =
     "Cyberslop gameplay. Use Arrow keys or WASD to move and crouch; use Arrow Up, W, or Space " +
-        "to jump. The weapon fires automatically."
+        "to jump. The weapon fires automatically. Press Escape to pause."
 
 internal fun configureGameplayCanvas(canvas: HTMLCanvasElement) {
     canvas.tabIndex = 0

@@ -32,6 +32,10 @@ class HazardPlacementTest {
                 footprints(level).forEach { cell ->
                     checked++
                     assertTrue(
+                        cell.column <= level.gateColumn,
+                        "$label: hazard cell $cell lies beyond completion column ${level.gateColumn}",
+                    )
+                    assertTrue(
                         replay.footholds.none { chebyshev(it, cell) < HazardPlacer.CLEARANCE },
                         "$label: hazard cell $cell is within ${HazardPlacer.CLEARANCE} of a foothold",
                     )
@@ -74,6 +78,24 @@ class HazardPlacementTest {
         assertEquals(spikesBefore, Hazards.spikeCells(level), "the confirming pass removed spikes the route never touched")
         assertEquals(barrelsBefore, kept, "the confirming pass removed barrels the route never touched")
         assertEquals(kept, keptAgain, "the confirming pass is not deterministic")
+    }
+
+    @Test
+    fun `the confirming pass removes fault injected hazards beyond the completion point`() {
+        val generated = LevelGenerator.generate(SEED, 8)
+        val level = generated.level
+        val column = level.gateColumn + 1
+        val row = (0 until level.tiles.height - 1).first { candidate ->
+            level.tiles[column, candidate] == TileKind.Empty &&
+                level.tiles[column, candidate + 1] == TileKind.Solid
+        }
+        level.tiles[column, row] = TileKind.Spikes
+        val barrel = Barrel(column, row)
+
+        val kept = HazardPlacer.confirm(level, level.barrels + barrel, generated.witness)
+
+        assertEquals(TileKind.Empty, level.tiles[column, row])
+        assertTrue(barrel !in kept)
     }
 
     @Test

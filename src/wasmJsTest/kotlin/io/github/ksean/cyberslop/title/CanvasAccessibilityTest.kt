@@ -56,6 +56,7 @@ class CanvasAccessibilityTest {
         assertTrue(accessibleName.contains("WASD"))
         assertTrue(accessibleName.contains("Space"))
         assertTrue(accessibleName.contains("automatically"))
+        assertTrue(accessibleName.contains("Escape"))
     }
 
     @Test

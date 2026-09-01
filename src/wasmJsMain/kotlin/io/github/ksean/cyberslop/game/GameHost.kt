@@ -31,7 +31,8 @@ import org.w3c.dom.HTMLElement
  *
  * It holds no rules: movement, firing, targeting, screens and framing all live in `commonMain`
  * behind [GameSimulation], where they are tested without a browser. What lives here is the wiring
- * and the three transitions that only make sense in a browser — starting, dying, and winning.
+ * and the lifecycle transitions that only make sense in a browser — starting, pausing, ending and
+ * returning to the title.
  */
 class GameHost(
     private val root: HTMLElement,
@@ -39,7 +40,7 @@ class GameHost(
     private val saves: LocalStorageSaveStore,
     private val onReturnToTitle: () -> Unit = {},
 ) {
-    private val input = BrowserInput(canvas)
+    private val input = BrowserInput(canvas, onEscape = ::toggleManualPause)
     private var filter = IntentFilter()
 
     private var screen: ScreenState = ScreenState.Title
@@ -51,6 +52,7 @@ class GameHost(
     private var announced = ""
     private var deferredReport: TickReport? = null
     private var lastActivityRevision = 0
+    private var manualPaused = false
     private val discovery = DiscoverySession(
         record = saves::recordDiscoveries,
         clearInput = ::clearGameplayInput,
@@ -82,6 +84,7 @@ class GameHost(
         canvas.style.display = "block"
         renderer?.resizeToDisplay()
         canvas.focus()
+        manualPaused = false
         discovery.clear()
         deferredReport = null
 
@@ -93,7 +96,7 @@ class GameHost(
         loop = RafLoop(
             step = { step() },
             render = { alpha, deltaSeconds -> render(alpha, deltaSeconds) },
-            isPaused = { input.paused || discovery.paused },
+            isPaused = { input.paused || discovery.paused || manualPaused },
         ).also { it.start() }
     }
 
@@ -162,6 +165,43 @@ class GameHost(
         filter = IntentFilter()
     }
 
+    private fun toggleManualPause() {
+        if (screen !is ScreenState.Playing || simulation == null) return
+        if (manualPaused) resumeFromPause() else openPauseMenu()
+    }
+
+    private fun openPauseMenu() {
+        manualPaused = true
+        clearGameplayInput()
+        root.style.display = "flex"
+        announce(
+            renderPauseMenu(
+                root,
+                onResume = ::resumeFromPause,
+                onReturnToTitle = ::returnToTitleFromPause,
+            ),
+        )
+    }
+
+    private fun resumeFromPause() {
+        if (!manualPaused) return
+        manualPaused = false
+        root.textContent = ""
+        root.className = ""
+        root.style.display = "none"
+        clearGameplayInput()
+        canvas.focus()
+    }
+
+    private fun returnToTitleFromPause() {
+        val scrap = simulation?.run?.scrap ?: return
+        if (!finishRun(scrap)) return
+        screen = ScreenRouter.next(screen, ScreenEvent.ReturnToTitle)
+        canvas.style.display = "none"
+        root.style.display = "flex"
+        onReturnToTitle()
+    }
+
     /**
      * Ends a run once and stops.
      *
@@ -172,15 +212,24 @@ class GameHost(
      */
     private fun endRun(scrap: Int, event: ScreenEvent?) {
         event?.let { screen = ScreenRouter.next(screen, it) }
+        if (!finishRun(scrap)) return
+        showEndScreen(scrap)
+    }
+
+    /** Returns false after the first call so repeated UI activation cannot bank a run twice. */
+    private fun finishRun(scrap: Int): Boolean {
+        if (simulation == null) return false
         loop?.stop()
         loop = null
         simulation = null
         deferredReport = null
+        manualPaused = false
         discovery.clear()
+        input.detach()
         saves.clearRun()
         profile = profile.banking(scrap)
         saves.saveProfile(profile)
-        showEndScreen(scrap)
+        return true
     }
 
     private fun showEndScreen(scrap: Int) {
@@ -206,7 +255,8 @@ class GameHost(
 
     private fun render(alpha: Double, frameDeltaSeconds: Double) {
         val currentRevision = input.activityRevision
-        val uninterruptedActiveFrame = !input.paused && currentRevision == lastActivityRevision
+        val uninterruptedActiveFrame =
+            !manualPaused && !input.paused && currentRevision == lastActivityRevision
         lastActivityRevision = currentRevision
         if (discovery.advance(frameDeltaSeconds, uninterruptedActiveFrame)) {
             val report = deferredReport
@@ -239,7 +289,11 @@ class GameHost(
             discovery = discovery.active,
         )
         // The same model the bar is drawn from, so the two cannot disagree (PROD-004).
-        discovery.active?.let { announce(it.announcement) } ?: announce(HudModel.of(sim).announcement)
+        when {
+            manualPaused -> announce("Paused")
+            discovery.active != null -> announce(requireNotNull(discovery.active).announcement)
+            else -> announce(HudModel.of(sim).announcement)
+        }
     }
 
     /**

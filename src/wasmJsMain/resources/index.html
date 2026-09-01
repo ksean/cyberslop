@@ -118,6 +118,33 @@
             box-shadow: 0 0 24px rgba(34, 211, 238, 0.4);
         }
 
+        #game-root.pause-overlay {
+            position: fixed;
+            inset: 0;
+            z-index: 10;
+            min-height: 0;
+            padding: 0;
+            background: rgba(5, 6, 12, 0.68);
+        }
+
+        #game-root .pause-dialog {
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+            gap: 1rem;
+            width: min(26rem, calc(100% - 2.5rem));
+            padding: 2rem;
+            box-sizing: border-box;
+            border: 1px solid var(--edge);
+            background: rgba(13, 16, 24, 0.96);
+            box-shadow: 0 0 42px rgba(34, 211, 238, 0.18);
+        }
+
+        #game-root .pause-dialog h1 {
+            margin-bottom: 0.5rem;
+            font-size: clamp(2rem, 8vw, 3.5rem);
+        }
+
         @media (prefers-reduced-motion: reduce) {
             #game-root button { transition: none; }
         }
@@ -131,7 +158,7 @@
 <body>
 <main id="game-root"></main>
 <canvas id="game-canvas" tabindex="0" role="application"
-        aria-label="Cyberslop gameplay. Use Arrow keys or WASD to move and crouch; use Arrow Up, W, or Space to jump. The weapon fires automatically."
+        aria-label="Cyberslop gameplay. Use Arrow keys or WASD to move and crouch; use Arrow Up, W, or Space to jump. The weapon fires automatically. Press Escape to pause."
         aria-describedby="game-status"></canvas>
 <!-- Run state in text, so the game is not opaque to assistive technology. A canvas announces
      nothing on its own. -->

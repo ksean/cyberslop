@@ -60,6 +60,12 @@ animation phase.
   as often as barrels, strips 1–3 cells long. The confirming replay counts damaging contact; any
   hazard the tape still overlaps is removed, deterministically, so the shipped level's route is
   hazard-free by measurement and not only by construction.
+- The **exit corridor** is every in-map column strictly greater than `gateColumn`, where the first
+  player-centre crossing completes the map after the gate opens. Spine construction carves that
+  corridor as plain safe floor; no acid gap or fire-jet corridor is proposed there, and damaging-
+  hazard candidate selection rejects every spike or barrel footprint touching it. Therefore no
+  acid, jet, spike or barrel occupies any exit-corridor column. Its blue sparkling surface is the
+  presentation-only completion marker specified in presentation.md, not a new hazard kind.
 
 ## Verified properties
 
@@ -68,10 +74,11 @@ animation phase.
 - **P-36** Damaging hazards: overlapping a spike strip, a barrel's body or a barrel's flame drains
   health at the hazard's rate per second and a single tick of contact does not kill; every footprint
   cell is at Chebyshev distance ≥ 2 from every witness foothold and every static pickup, outside
-  the `ArcMask` and both arenas; the confirming replay reports no damaging contact on every map of
-  a seed cohort; a spike and a barrel fault-injected onto the replayed route are removed by the
-  confirming pass, deterministically, and nothing else is; the per-map count rises with map index
-  in cohort mean and is zero on map 1.
+  the `ArcMask` and both arenas, and at or left of `gateColumn`; the confirming replay reports no
+  damaging contact on every map of a seed cohort; a spike and a barrel fault-injected onto the
+  replayed route are removed by the confirming pass, deterministically, and nothing else is; the
+  per-map count rises with map index in cohort mean and is zero on map 1. No acid, jet, spike or
+  barrel cell lies strictly right of `gateColumn`.
 - **P-61** Enemy hazard traversal is verified in enemies.md; the same spike, barrel, acid, void and
   fire-jet geometry remains unchanged for the player and for witness replay.
 - Hazard contact: safe ground reports no lethal contact; falling into acid does; a single fast tick

@@ -116,7 +116,7 @@ object Scene {
         arenas(builder, palette, sim.level, camera)
         jets(builder, palette, sim.level, camera, timeSeconds)
         pickups(builder, sim, camera, presentationTime)
-        enemies(builder, palette, sim, camera, timeSeconds)
+        enemies(builder, palette, sim, camera, presentationTime)
         bosses(builder, palette, sim, camera)
         projectiles(builder, palette, sim, camera)
         hitIndicator(builder, palette, sim, camera)
@@ -261,6 +261,8 @@ object Scene {
         val body = builder.batch(Layer.Terrain, palette.tileBody, Primitive.Rect)
         val deep = builder.batch(Layer.Terrain, palette.tileDeep, Primitive.Rect)
         val edge = builder.batch(Layer.Terrain, palette.tileEdge, Primitive.Rect)
+        val exitEdge = builder.batch(Layer.Terrain, EXIT_SURFACE, Primitive.Rect)
+        val exitSparkDots = builder.batch(Layer.HazardSurface, EXIT_SPARK, Primitive.Dot)
         val hazard = builder.batch(Layer.Hazard, palette.hazard, Primitive.Rect)
         val hazardGlow = builder.batch(Layer.Hazard, palette.hazardGlow, Primitive.Rect)
         val bubbleGlow = builder.batch(Layer.Hazard, palette.hazardGlow, Primitive.Dot)
@@ -276,7 +278,12 @@ object Scene {
                     TileKind.Solid -> {
                         body.rect(screenX, screenY, size, size)
                         if (!level.tiles.blocksMovement(x, y - 1)) {
-                            edge.rect(screenX, screenY, size, EDGE_PX)
+                            if (x > level.gateColumn) {
+                                exitEdge.rect(screenX, screenY, size, EDGE_PX)
+                                exitSparks(exitSparkDots, screenX, screenY, size, x, y, timeSeconds)
+                            } else {
+                                edge.rect(screenX, screenY, size, EDGE_PX)
+                            }
                         }
                         deep.rect(screenX, screenY + size - SEAM_PX, size, SEAM_PX)
                     }
@@ -308,6 +315,30 @@ object Scene {
             }
         }
         barrels(builder, palette, level, camera, first..last)
+    }
+
+    private fun exitSparks(
+        sparks: DrawBatch,
+        screenX: Double,
+        screenY: Double,
+        size: Double,
+        tileX: Int,
+        tileY: Int,
+        timeSeconds: Double,
+    ) {
+        repeat(EXIT_SPARK_COUNT) { index ->
+            val stagger = positiveMod(
+                tileX * EXIT_PHASE_X + tileY * EXIT_PHASE_Y + index * EXIT_PHASE_INDEX,
+                EXIT_PHASE_STEPS,
+            )
+            val progress = (
+                (timeSeconds % EXIT_SPARK_PERIOD) / EXIT_SPARK_PERIOD +
+                    stagger.toDouble() / EXIT_PHASE_STEPS
+                ) % 1.0
+            val x = screenX + size * EXIT_SPARK_X[index]
+            val y = screenY - EXIT_SPARK_RISE * progress
+            sparks.dot(x, y, EXIT_SPARK_RADIUS * (1.0 - progress))
+        }
     }
 
     /** Three deterministic rings rising through an exposed acid tile (P-58). */
@@ -539,12 +570,91 @@ object Scene {
                 EnemyForm.Hover -> hover(builder, palette, look, enemy, x, ground, timeSeconds)
                 EnemyForm.Crawler -> crawler(builder, palette, look, enemy, engagement(enemy, look, player), x, ground)
             }
+            enemyStatuses(builder, enemy, look, x, ground, timeSeconds)
             // The boss's bar, for anyone who has been hurt (PROD-077); full health shows none.
             if (enemy.health < enemy.maxHealth) {
                 healthBar(builder, palette, x, ground - look.height * ZOOM - BAR_GAP, GameSimulation.ENEMY_SIZE * ZOOM, enemy.healthFraction)
             }
         }
     }
+
+    private fun enemyStatuses(
+        builder: SceneBuilder,
+        enemy: LiveEnemy,
+        look: EnemyLook,
+        x: Double,
+        ground: Double,
+        timeSeconds: Double,
+    ) {
+        if (enemy.burn.secondsLeft > 0.0) burnIndicators(builder, enemy, look, x, ground, timeSeconds)
+        if (enemy.bleed.secondsLeft > 0.0) bleedIndicators(builder, enemy, look, x, ground, timeSeconds)
+    }
+
+    private fun burnIndicators(
+        builder: SceneBuilder,
+        enemy: LiveEnemy,
+        look: EnemyLook,
+        x: Double,
+        ground: Double,
+        timeSeconds: Double,
+    ) {
+        val outer = builder.batch(Layer.ActorStatus, BURN_OUTER, Primitive.Segment, BURN_OUTER_WIDTH)
+        val core = builder.batch(Layer.ActorStatus, BURN_CORE, Primitive.Segment, BURN_CORE_WIDTH)
+        val outerEmbers = builder.batch(Layer.ActorStatus, BURN_OUTER, Primitive.Dot)
+        val coreEmbers = builder.batch(Layer.ActorStatus, BURN_CORE, Primitive.Dot)
+        val span = GameSimulation.ENEMY_SIZE * ZOOM
+        val height = look.height * ZOOM
+        repeat(STATUS_COUNT) { index ->
+            val progress = statusProgress(timeSeconds, enemy, index, BURN_PERIOD)
+            val atX = x + (index - 1) * span * STATUS_SPACING
+            val atY = ground - height * (STATUS_START + STATUS_TRAVEL * progress)
+            val size = BURN_SIZE * (1.0 - STATUS_SHRINK * progress)
+            outer.segment(atX - size, atY + size, atX, atY - size)
+            outer.segment(atX, atY - size, atX + size, atY + size)
+            core.segment(atX - size * 0.55, atY + size * 0.55, atX, atY - size * 0.55)
+            core.segment(atX, atY - size * 0.55, atX + size * 0.55, atY + size * 0.55)
+            outerEmbers.dot(atX + size * 0.7, atY - size * 1.45, BURN_EMBER)
+            coreEmbers.dot(atX + size * 0.7, atY - size * 1.45, BURN_EMBER * 0.45)
+        }
+    }
+
+    private fun bleedIndicators(
+        builder: SceneBuilder,
+        enemy: LiveEnemy,
+        look: EnemyLook,
+        x: Double,
+        ground: Double,
+        timeSeconds: Double,
+    ) {
+        val drops = builder.batch(Layer.ActorStatus, BLEED, Primitive.Segment, BLEED_WIDTH)
+        val bulbs = builder.batch(Layer.ActorStatus, BLEED, Primitive.Dot)
+        val span = GameSimulation.ENEMY_SIZE * ZOOM
+        val top = ground - look.height * ZOOM
+        val height = look.height * ZOOM
+        repeat(STATUS_COUNT) { index ->
+            val progress = statusProgress(timeSeconds, enemy, index, BLEED_PERIOD)
+            val atX = x + (index - 1) * span * STATUS_SPACING
+            val atY = top + height * (STATUS_START + STATUS_TRAVEL * progress)
+            val size = BLEED_SIZE * (1.0 - STATUS_SHRINK * progress)
+            bulbs.dot(atX, atY - size * 0.35, size * 0.58)
+            drops.segment(atX - size * 0.62, atY - size * 0.25, atX, atY + size)
+            drops.segment(atX + size * 0.62, atY - size * 0.25, atX, atY + size)
+        }
+    }
+
+    private fun statusProgress(
+        timeSeconds: Double,
+        enemy: LiveEnemy,
+        index: Int,
+        period: Double,
+    ): Double {
+        val column = TileMap.toTile(enemy.position.x)
+        val row = TileMap.toTile(enemy.position.y)
+        val stagger = positiveMod(column * 7 + row * 11 + index * 5, STATUS_PHASE_STEPS)
+        return ((timeSeconds % period) / period + stagger.toDouble() / STATUS_PHASE_STEPS) % 1.0
+    }
+
+    private fun positiveMod(value: Int, modulus: Int): Int = ((value % modulus) + modulus) % modulus
 
     private fun centreOfPlayer(sim: GameSimulation) = Vec2(
         sim.player.x + Physics.Default.width / 2.0,
@@ -1548,14 +1658,15 @@ object Scene {
         val pose = Actor.pose(motionOf(sim))
         val x = (muzzle.x - camera.x) * ZOOM
         val feet = (muzzle.y + state.height(Physics.Default) / 2.0 - camera.y) * ZOOM
+        val hurt = sim.playerHurtSecondsLeft > 0.0
 
         figure(
             builder, palette, pose, x, feet,
             look = null,
-            bodyStyle = PLAYER_BODY,
-            limbStyle = PLAYER_LIMB,
-            trimStyle = palette.accent,
-            armStyle = PLAYER_ARM,
+            bodyStyle = hurtOr(hurt, PLAYER_BODY),
+            limbStyle = hurtOr(hurt, PLAYER_LIMB),
+            trimStyle = hurtOr(hurt, palette.accent),
+            armStyle = hurtOr(hurt, PLAYER_ARM),
             // The player carries a weapon at all times (PROD-023), and `specs/presentation.md` says it
             // attaches to the lead hand. It did not: the geometry was gated on an enemy archetype
             // being armed, and the player has no archetype, so the one figure that always holds
@@ -1871,6 +1982,17 @@ object Scene {
     private const val HAZE_PX = 6.0
     private const val EDGE_PX = 4.0
     private const val SEAM_PX = 2.0
+    const val EXIT_SURFACE = "#38a8ff"
+    const val EXIT_SPARK = "#bfeaff"
+    const val EXIT_SPARK_PERIOD = 0.90
+    private const val EXIT_SPARK_COUNT = 3
+    private const val EXIT_SPARK_RISE = 8.0
+    private const val EXIT_SPARK_RADIUS = 2.5
+    private const val EXIT_PHASE_STEPS = 17
+    private const val EXIT_PHASE_X = 7
+    private const val EXIT_PHASE_Y = 11
+    private const val EXIT_PHASE_INDEX = 5
+    private val EXIT_SPARK_X = doubleArrayOf(0.22, 0.51, 0.80)
     private const val BUBBLE_CYCLE = 1.2
     private const val BUBBLE_RISE = 0.70
     private const val BUBBLE_MIN_RADIUS = 1.5
@@ -1897,6 +2019,23 @@ object Scene {
 
     /** Matches the simulation's own enemy half-extent, used to find an enemy's centre. */
     private const val ENEMY_HALF = 7.0
+    const val BURN_PERIOD = 0.75
+    const val BLEED_PERIOD = 0.65
+    const val BURN_OUTER = "#ff5a1f"
+    const val BURN_CORE = "#ffd166"
+    const val BLEED = "#d0143c"
+    private const val STATUS_COUNT = 3
+    private const val STATUS_PHASE_STEPS = 17
+    private const val STATUS_SPACING = 0.28
+    private const val STATUS_START = 0.16
+    private const val STATUS_TRAVEL = 0.68
+    private const val STATUS_SHRINK = 0.42
+    private const val BURN_SIZE = 5.5
+    private const val BURN_EMBER = 2.1
+    private const val BURN_OUTER_WIDTH = 4.0
+    private const val BURN_CORE_WIDTH = 2.0
+    private const val BLEED_SIZE = 5.0
+    private const val BLEED_WIDTH = 2.0
     private const val LIMB = 0.09
     private const val TORSO = 2.0
     private const val ARM = 0.8

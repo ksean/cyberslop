@@ -16,11 +16,12 @@ The platform-independent profile contains:
 
 A new profile starts with both Scrap counters at zero, every upgrade at rank zero, and only the
 Broken Bottle discovered: it is in the player's hand from the start rather than first encountered
-as a pickup. When a run ends in death or victory, its run Scrap is added once to both counters.
-Scrap in an in-progress run is neither spendable nor part of the lifetime total until that run
-ends. Every positive change to that in-progress counter produces the transient `+X` feedback in
-presentation.md; banking, migration and shop balance changes happen outside active gameplay and do
-not. Buying an upgrade subtracts only from `spendableScrap`, so it cannot reduce
+as a pickup. When a run ends in death, victory or a voluntary `Return to title` from the pause
+menu, its run Scrap is added once to both counters. Merely opening or resuming the pause menu banks
+nothing. Scrap in an in-progress run is neither spendable nor part of the lifetime total until that
+run ends. Every positive change to that in-progress counter produces the transient `+X` feedback
+in presentation.md; banking, migration and shop balance changes happen outside active gameplay and
+do not. Buying an upgrade subtracts only from `spendableScrap`, so it cannot reduce
 `unlockedWeapons = min(8 + floor(lifetimeScrap / 400), 26)` or relock an item.
 
 The profile is the canonical source of persistent state and is saved immediately after banking a
@@ -48,8 +49,11 @@ unaffordable row remains visible with its price but cannot be bought.
 
 Death and victory bank the run before drawing their end screen. That screen offers `Return to
 title`; using it shows the title with the new balance available to `Shop` and must not start or save
-a replacement run. The existing `New game` action may remain as a shortcut, but it does not replace
-the route through the title and shop.
+a replacement run. `Return to title` from the in-map pause menu performs the same one-time banking
+and run-save clearing, but goes directly to the title rather than through a run-ended screen. The
+title therefore offers no `Continue game` for that voluntarily ended run. The existing `New game`
+action may remain as a shortcut on an end screen, but it does not replace the route through the
+title and shop.
 
 All three tracks have five ranks and use the same prices for ranks 1 through 5: **100, 250, 500,
 1,000 and 2,000 Scrap**.
@@ -102,13 +106,14 @@ direction or Space cannot move or jump on resume.
 
 ## Verified properties
 
-- **P-56** Profile and shop: banking `n` Scrap once raises both counters by `n`; buying all five
-  ranks of one track charges exactly `100 + 250 + 500 + 1000 + 2000`, never lowers lifetime Scrap
-  or the unlocked weapon count, and a repeated, unaffordable, unknown or rank-six purchase is
-  unchanged. Each rank produces exactly its specified health, weapon-damage and
-  non-lethal-damage multiplier; lethal hazards stay lethal. The current profile round-trips
-  byte-for-byte, the legacy integer and a version-2 run migrate without losing Scrap or the run,
-  and malformed or unknown versions are rejected without partial state.
+- **P-56** Profile and shop: banking `n` Scrap once raises both counters by `n`; death, victory and
+  pause-menu return each bank once and clear the run save, while opening/resuming pause banks
+  nothing. Buying all five ranks of one track charges exactly `100 + 250 + 500 + 1000 + 2000`,
+  never lowers lifetime Scrap or the unlocked weapon count, and a repeated, unaffordable, unknown
+  or rank-six purchase is unchanged. Each rank produces exactly its specified health,
+  weapon-damage and non-lethal-damage multiplier; lethal hazards stay lethal. The current profile
+  round-trips byte-for-byte, the legacy integer and a version-2 run migrate without losing Scrap
+  or the run, and malformed or unknown versions are rejected without partial state.
 - **P-57** Discovery: the discovery registry is total over every weapon and powerup id, uses each
   item's icon, and has a non-blank sentence no longer than 140 characters. A first weapon pickup
   records and queues it after resolution whether it equips or converts to Scrap; applied,

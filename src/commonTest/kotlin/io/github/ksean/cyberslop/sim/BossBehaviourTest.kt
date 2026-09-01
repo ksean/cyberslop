@@ -236,10 +236,15 @@ class BossBehaviourTest {
     }
 
     @Test
-    fun `no ranged module reaches beyond eight tiles`() {
+    fun `every ranged module has level spanning reach`() {
         (1..10).flatMap { Bosses.boss(it).phases.flatMap { phase -> phase.attacks } }
             .filter { it.kind == BossAttackKind.Ranged }
-            .forEach { assertTrue(it.reachPx <= 8.0 * 16, "${it.name} reaches ${it.reachPx}") }
+            .forEach {
+                assertTrue(
+                    it.reachPx >= TestLevels.WIDTH * 16.0,
+                    "${it.name} still expires after only ${it.reachPx / 16.0} tiles",
+                )
+            }
     }
 
     /** Runs one attack through its whole window against a scripted target and sums the damage. */

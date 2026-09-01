@@ -173,6 +173,7 @@ object Populator {
 
     private const val MIN_ENEMIES = 8
     private const val ATTEMPTS_PER_ENEMY = 24
-    private const val MAX_ENEMIES = 60
+    /** Above the documented map-ten target of 64; a lower cap made final-map density dip. */
+    private const val MAX_ENEMIES = 72
     private const val MAX_SIGHT_TILES = 24
 }

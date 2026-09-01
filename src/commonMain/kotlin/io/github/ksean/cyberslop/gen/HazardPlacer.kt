@@ -46,6 +46,8 @@ object HazardPlacer {
         while (placed < wanted && attempts < wanted * ATTEMPTS_PER_HAZARD) {
             attempts++
             val at = candidates[rng.nextInt(candidates.size)]
+            // Keep the candidate array's seeded ordering stable, but never realise an exit hazard.
+            if (at.column > level.gateColumn) continue
             if (rng.nextInt(SPIKE_SHARE + 1) < SPIKE_SHARE) {
                 val length = 1 + rng.nextInt(MAX_STRIP)
                 val strip = (0 until length).map { Cell(at.column + it, at.row) }
@@ -70,67 +72,50 @@ object HazardPlacer {
      * strip and barrel it touched. Deterministic, and it removes nothing else.
      */
     fun confirm(level: Level, barrels: List<Barrel>, witness: Witness): List<Barrel> {
-        val touched = WitnessReplay.replay(level.withBarrels(barrels), witness).touchedHazards
-        if (touched.isEmpty()) return barrels
+        val exitSafeBarrels = removeExitHazards(level, barrels)
+        val touched = WitnessReplay.replay(level.withBarrels(exitSafeBarrels), witness).touchedHazards
+        if (touched.isEmpty()) return exitSafeBarrels
         Hazards.spikeStrips(level)
             .filter { strip -> strip.any { it in touched } }
             .forEach { strip -> strip.forEach { level.tiles[it.column, it.row] = TileKind.Empty } }
-        return barrels.filter { barrel -> barrel.cells.none { it in touched } }
+        return exitSafeBarrels.filter { barrel -> barrel.cells.none { it in touched } }
     }
 
     /**
-     * Keeps the candidates, in deterministic placement order, only while both shipped enemy boxes
-     * retain a pursuit leap. This is separate from [confirm]: the witness protects the player;
-     * this pass protects the enemies' chase envelope.
+     * Greedily keeps candidates in deterministic footprint-efficiency order only while both
+     * shipped enemy boxes retain a pursuit leap. This is separate from [confirm]: the witness
+     * protects the player; this pass protects the enemies' chase envelope.
      */
     fun confirmPursuit(level: Level, barrels: List<Barrel>): List<Barrel> {
+        val candidates = (
+            Hazards.spikeStrips(level).map { PursuitCandidate(strip = it) } +
+                barrels.map { PursuitCandidate(barrel = it) }
+            ).sortedWith(compareBy(PursuitCandidate::priority, PursuitCandidate::column))
+        candidates.flatMap { it.strip.orEmpty() }
+            .forEach { level.tiles[it.column, it.row] = TileKind.Empty }
+
         val kept = mutableListOf<Barrel>()
-        kept.addAll(barrels)
-        while (true) {
-            val violations = EnemyPursuitEnvelope.audit(level.withBarrels(kept))
-            if (violations.isEmpty()) return kept
-            // Select against one immutable snapshot. The same obstacle can produce one violation
-            // per body and direction; mutating between those reports made the later duplicate
-            // remove the next, unrelated hazard.
-            val strips = Hazards.spikeStrips(level)
-            val barrelSnapshot = kept.toList()
-            val stripsToRemove = mutableSetOf<List<Cell>>()
-            val barrelsToRemove = mutableSetOf<Barrel>()
-            violations.forEach { violation ->
-                val direction = violation.direction
-                fun ahead(column: Int): Int {
-                    val distance = (column - violation.takeoffColumn) * direction
-                    return if (distance >= 0) distance else Int.MAX_VALUE
-                }
-
-                val strip = strips.minByOrNull { candidate ->
-                    candidate.minOf { ahead(it.column) }
-                }?.takeIf { candidate -> candidate.any { ahead(it.column) != Int.MAX_VALUE } }
-                val barrel = barrelSnapshot.minByOrNull { ahead(it.column) }
-                    ?.takeIf { ahead(it.column) != Int.MAX_VALUE }
-
-                val stripDistance = strip?.minOf { ahead(it.column) } ?: Int.MAX_VALUE
-                val barrelDistance = barrel?.let { ahead(it.column) } ?: Int.MAX_VALUE
-                when {
-                    stripDistance <= barrelDistance && strip != null -> {
-                        stripsToRemove += strip
-                    }
-                    barrel != null -> barrelsToRemove += barrel
-                }
+        candidates.forEach { candidate ->
+            candidate.strip?.forEach { level.tiles[it.column, it.row] = TileKind.Spikes }
+            candidate.barrel?.let(kept::add)
+            if (EnemyPursuitEnvelope.audit(level.withBarrels(kept)).isNotEmpty()) {
+                candidate.strip?.forEach { level.tiles[it.column, it.row] = TileKind.Empty }
+                candidate.barrel?.let(kept::remove)
             }
-            if (stripsToRemove.isNotEmpty() || barrelsToRemove.isNotEmpty()) {
-                stripsToRemove.flatten().forEach { level.tiles[it.column, it.row] = TileKind.Empty }
-                kept.removeAll(barrelsToRemove)
-            } else {
-                // The terrain-only audit ran immediately before placement, so this is defensive:
-                // a hazard behind an unusually wide box can still be the overlap being reported.
-                val strip = Hazards.spikeStrips(level).firstOrNull()
-                when {
-                    strip != null -> strip.forEach { level.tiles[it.column, it.row] = TileKind.Empty }
-                    kept.isNotEmpty() -> kept.removeAt(0)
-                    else -> return kept
-                }
-            }
+        }
+        return kept
+    }
+
+    private data class PursuitCandidate(
+        val strip: List<Cell>? = null,
+        val barrel: Barrel? = null,
+    ) {
+        val column: Int get() = strip?.first()?.column ?: requireNotNull(barrel).column
+        /** Most pressure for the least occupied ground first, so safe capacity is not wasted. */
+        val priority: Int get() = when {
+            strip?.size == 1 -> 0
+            barrel != null -> 1
+            else -> requireNotNull(strip).size
         }
     }
 
@@ -161,6 +146,18 @@ object HazardPlacer {
                 add(Cell(column, row))
             }
         }
+    }
+
+    /** Final invariant boundary, also covering fault-injected candidates used by verification. */
+    private fun removeExitHazards(level: Level, barrels: List<Barrel>): List<Barrel> {
+        for (column in level.gateColumn + 1 until level.widthTiles) {
+            for (row in 0 until level.tiles.height) {
+                if (level.tiles[column, row] == TileKind.Spikes) {
+                    level.tiles[column, row] = TileKind.Empty
+                }
+            }
+        }
+        return barrels.filter { barrel -> barrel.cells.all { it.column <= level.gateColumn } }
     }
 
     private fun standable(level: Level, cell: Cell): Boolean =

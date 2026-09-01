@@ -53,6 +53,29 @@ class HurtFlashSceneTest {
     }
 
     @Test
+    fun `a hurt player flashes red while the eye and held weapon keep their styles`() {
+        val sim = simulation()
+        val normal = frame(sim)
+        assertEquals(0, hurtStyled(normal))
+        val normalWeapon = actorTrimSignature(normal)
+        val normalEyes = normal.batches
+            .filter { it.layer == Layer.ActorGlow && it.style == Scene.PLAYER_EYE }
+            .sumOf { it.size }
+
+        sim.playerHurtSecondsLeft = 0.1
+        val hurt = frame(sim)
+
+        assertTrue(hurtStyled(hurt) > 0, "the hurt player did not flash")
+        assertEquals(normalEyes, hurt.batches
+            .filter { it.layer == Layer.ActorGlow && it.style == Scene.PLAYER_EYE }
+            .sumOf { it.size })
+        assertEquals(normalWeapon, actorTrimSignature(hurt), "the held weapon changed style")
+
+        sim.playerHurtSecondsLeft = 0.0
+        assertEquals(0, hurtStyled(frame(sim)))
+    }
+
+    @Test
     fun `an enemy below full health shows a bar and one at full health does not`() {
         val sim = simulation()
         val enemy = enemyAt(sim, EnemyArchetype.Brute)
@@ -87,6 +110,10 @@ class HurtFlashSceneTest {
 
     private fun ownStyled(frame: DrawList) =
         frame.batches.filter { it.layer in FIGURE_LAYERS && it.style in OWN_STYLES }.sumOf { it.size }
+
+    private fun actorTrimSignature(frame: DrawList): List<List<Any>> = frame.batches
+        .filter { it.layer == Layer.ActorTrim || it.layer == Layer.ActorWear }
+        .map { listOf(it.layer, it.style, it.primitive, it.width, it.size) }
 
     /** Rects on the effects layer, each as (x, y, w, h). */
     private fun rects(frame: DrawList): List<List<Double>> =

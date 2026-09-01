@@ -163,6 +163,10 @@ class GameSimulation(
     var playerStridePx: Double = 0.0
         private set
 
+    /** Seconds of player hurt flash remaining; presentation-only and deliberately undigested. */
+    var playerHurtSecondsLeft: Double = 0.0
+        internal set
+
     /**
      * Every point of damage the player has taken this map, before lifesteal and before death
      * clamps it: the *gross incoming damage* the pressure harnesses measure (`specs/enemies.md`).
@@ -172,8 +176,10 @@ class GameSimulation(
 
     private fun hurt(amount: Double) {
         val reduced = amount * run.upgrades.incomingDamageMultiplier
+        val before = run.health
         grossDamageTaken += reduced
         run = run.damaged(reduced)
+        if (run.health < before) playerHurtSecondsLeft = HURT_FLASH_SECONDS
     }
 
     /** How long the player has been grounded and clear of committed columns; see [playerExposed]. */
@@ -293,6 +299,7 @@ class GameSimulation(
 
     fun tick(input: InputFrame): TickReport {
         previousPlayer = player
+        playerHurtSecondsLeft = (playerHurtSecondsLeft - TICK_SECONDS).coerceAtLeast(0.0)
         advanceScrapGains()
         if (input.direction != 0) facing = input.direction
 
@@ -864,6 +871,11 @@ class GameSimulation(
         repeat(pieces) {
             val before = projectile.position
             projectile.position = before + projectile.velocity * (TICK_SECONDS / pieces)
+            if (projectile.bossOwned && outsideLevel(projectile.position)) {
+                projectile.position = before
+                projectile.secondsLeft = 0.0
+                return false
+            }
             if (projectile.passesTerrain || !blocked(projectile.position)) return@repeat
             if (projectile.bouncesLeft > 0) {
                 bounce(projectile, before)
@@ -1342,12 +1354,13 @@ class GameSimulation(
 
     private fun spawnBossRound(event: BossAttackEvent, speed: Double, angle: Double) {
         if (projectiles.size >= MAX_PROJECTILES) return
+        val direction = TrigTable.rotate(event.direction, angle)
         projectiles += LiveProjectile(
             position = event.origin,
-            velocity = TrigTable.rotate(event.direction, angle) * speed,
+            velocity = direction * speed,
             damage = event.attack.damage,
             pierceLeft = 0,
-            secondsLeft = event.attack.reachPx / speed,
+            secondsLeft = bossLevelReach / speed,
             passesTerrain = false,
             fromPlayer = false,
             bossOwned = true,
@@ -1356,7 +1369,7 @@ class GameSimulation(
     }
 
     private fun spawnBossBeam(event: BossAttackEvent) {
-        val end = clippedBeamEnd(event.origin, event.direction, event.attack.reachPx)
+        val end = clippedBeamEnd(event.origin, event.direction, bossLevelReach)
         val beam = LiveBossBeam(
             start = event.origin,
             end = end,
@@ -1400,11 +1413,19 @@ class GameSimulation(
         var end = origin
         repeat(pieces) {
             val next = end + direction * minOf(MAX_PROJECTILE_STEP, reach - (end - origin).length)
-            if (blocked(next)) return end
+            if (outsideLevel(next) || blocked(next)) return end
             end = next
         }
         return end
     }
+
+    /** Longer than the diagonal, so terrain or a level edge always resolves boss fire first. */
+    private val bossLevelReach: Double
+        get() = kotlin.math.hypot(level.tiles.widthPx, level.tiles.heightPx) + TILE_SIZE
+
+    private fun outsideLevel(point: Vec2): Boolean =
+        point.x < 0.0 || point.x >= level.tiles.widthPx ||
+            point.y < 0.0 || point.y >= level.tiles.heightPx
 
     /**
      * Clears everything between the arena and the map's edge that could stop the player leaving.
