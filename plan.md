@@ -116,6 +116,13 @@ and the loot-floor expectations only.
     sheet regenerated and looked at after LOOK-1, then `./scripts/check.sh`, then gate 5:
     adversarial review, findings dispositioned, up to three rounds. *Done; gate 5 ran its three
     rounds (9, 7, 3 findings, all confirmed and fixed) — see `tasks.md`.*
+13. **Detailed cyberpunk backdrops and basic audio feedback.** *(done)*
+    Extend PROD-040 and add PROD-102, P-76 and P-77. Preserve the three existing
+    parallax rates while giving every theme a deterministic structural motif profile and denser
+    procedural detail. Report semantic player-melee, player-ranged and ground-item pickup cues from
+    the common tick, then synthesize short Web Audio patches in a browser adapter. Complete BGS-1
+    through BGS-4 in `tasks.md` test-first, inspect the ten-theme world sheet and run
+    `./scripts/check.sh`.
 
 ## Agents
 

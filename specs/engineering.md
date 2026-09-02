@@ -37,13 +37,13 @@ commonMain/io/github/ksean/cyberslop/
   loot/      Powerup, Powerups, PowerupSlots, Loadout, DropTable, LootFloor
   progression/  PlayerProfile, UpgradeCatalog, DiscoveryCatalog
   entity/    Enemies, Boss, Bosses, Balance
-  sim/       GameSimulation, GameplayViewport, Entities
+  sim/       GameSimulation, GameplayViewport, Entities, AudioCue
   render/    Palette, Rig, Actor, EnemyLook, Backdrop, Scene, DrawList, Icon*, Hud, Camera
   run/       RunState, SaveCodec
   screen/    ScreenState
   title/     TitleScreenState, ShopScreenState
 wasmJsMain/io/github/ksean/cyberslop/
-  render/CanvasRenderer  input/BrowserInput  loop/RafLoop  save/LocalStorageSaveStore
+  render/CanvasRenderer  audio/BrowserSoundEffects  input/BrowserInput  loop/RafLoop  save/LocalStorageSaveStore
   game/GameHost  title/BrowserTitleScreen, BrowserShopScreen  Main.kt
 ```
 
@@ -76,11 +76,16 @@ wasmJsMain/io/github/ksean/cyberslop/
 - **ENG-062:** Animation must be a pure function of simulation state and elapsed simulation time,
   and no animation state may change what the simulation does.
 - **ENG-063:** Presentation must not add a runtime asset dependency; everything drawn is produced
-  by code from the 2D context.
+  by code from the 2D context, and the basic sound set is synthesized through Web Audio without
+  fetching or embedding audio files.
 - **ENG-064:** Item icon geometry must live in one `commonMain` registry that every drawing site
   resolves from. An icon must be expressible in the draw list's existing primitives such that
   orienting it needs neither a canvas transform nor a trigonometric call, and icons must add a
   constant number of style batches to a frame.
+- **ENG-065:** Decisions that a sound-worthy gameplay transition occurred must be platform-neutral
+  values returned by the common simulation tick. Web Audio context lifecycle and synthesis must
+  live in a small `wasmJsMain` adapter behind an injectable sink; browser suspension or playback
+  failure must degrade to silence and must not enter game rules.
 
 ## Code quality
 

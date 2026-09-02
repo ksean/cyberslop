@@ -77,10 +77,42 @@ flame, and an asymmetric split rim plus a descending crack makes the break reada
 colour or motion. The pipe remains visible while the jet is off; ordinary solid tiles do not gain
 pipe marks. Pipe and flame geometry is derived from the existing `FireJet`, consumes no RNG, adds
 no level or simulation state and changes neither the supporting `Solid` tile nor its collision.
-The wave loop reads interpolated simulation time and freezes with pause. The backdrop is three
-parallax layers of procedural skyline at 0.12×, 0.30× and 0.55× the camera rate, generated once per
-level from the `backdrop` stream and posed per frame by a damped horizontal and vertical offset. It
-is never collidable.
+The wave loop reads interpolated simulation time and freezes with pause.
+
+### Cyberpunk-dystopian backdrops (PROD-040)
+
+The backdrop remains three procedural parallax layers at exactly 0.12×, 0.30× and 0.55× the
+camera rate, generated once per level from the `backdrop` stream and posed per frame by the existing
+damped horizontal and vertical offset. The far layer carries the largest masses and fewest marks;
+the middle layer adds recognisable infrastructure; the near layer has the densest roof damage,
+supports, pipes, cables, vents, light strips and antennae. Detail must enrich a silhouette without
+filling the playfield or competing with actors and hazards.
+
+Every `ThemeId` has an authored backdrop profile. The profile selects building proportions, roof
+profiles, window arrangements and at least three of the following primitive motif families:
+stepped or broken rooflines, stacks, tanks, exposed pipes, gantries, suspended cables, antennae,
+sign frames, buttresses, vents and bridge fragments. Seeded generation varies dimensions, spacing,
+damage, lit cells and motif placement within that profile; it never replaces the profile with an
+unrelated motif.
+
+| Sub-theme | Required silhouette language and details |
+|---|---|
+| Ruined City Sprawl | sheared high-rises, missing roof corners, skeletal antennae and broken skywalk stubs |
+| Rust Flats | low scrap sheds, tank farms, crooked derricks and corroded gantries |
+| Flooded Undercity | squat pump houses, drainage mouths, raised pipe bridges and half-submerged tower remnants |
+| Chem Foundry | distillation stacks, clustered chemical tanks, dense pipe runs and vent crowns |
+| Neon Slums | crowded rooftop shacks, improvised sign frames, dish antennae and sagging utility cables |
+| Sable Refinery | heavy cracking towers, flare stacks, refinery vessels and thick overhead pipes |
+| Server Stacks | repeated cooling monoliths, ventilation grids, cable trunks and narrow status-light strips |
+| Skybridge Ruin | isolated pylons, snapped elevated spans, skeletal towers and hanging cable silhouettes |
+| Reactor Core | containment masses, cooling stacks, armoured conduits and sparse warning beacons |
+| Arcology Vault | fortified mega-towers, sealed arches, surveillance spires and rigid transit ribs |
+
+All motifs are abstract geometry with no readable text, logos or trademarks. They use the existing
+draw-list primitives on `BackdropFar`, `BackdropMid` and `BackdropNear`; colour and primitive
+vocabularies are fixed by depth, so the number of style batches does not grow with building or
+detail count. No bitmap, font or other runtime asset is introduced. A backdrop reads no tile,
+writes no tile, is excluded from the simulation digest and is never collidable.
 
 Every burning barrel is topped by a smaller fire in the same warm outer and hot-core colours. A
 broad central tongue and two shorter asymmetric tongues rise from distinct points on the drum lid;
@@ -390,6 +422,32 @@ so a frame between ticks does not stair-step. Opacity is a numeric `TextItem` pr
 presentational, is not saved, does not change `run.scrap`, and is excluded from the simulation
 digest. A discovery-card pause freezes it because no simulation tick consumes its lifetime.
 
+## Basic audio feedback (PROD-102)
+
+Audio is driven by semantic cues returned from the fixed simulation tick, not by polling a visual
+timer or recounting projectiles in the browser. `MeleeSwing` is emitted once when the player's
+melee activation begins. `RangedFire` is emitted once for a simultaneous ranged volley and once for
+each later round that actually leaves a time-separated burst; projectile count, hits and pierce do
+not multiply it. `PickupPulse` is emitted once per contacted `GroundItem` removed by pickup
+resolution, whether it held a weapon, a powerup or a paired award and whether its loot was equipped,
+applied, displaced or scrapped. Ticks with none of those transitions emit no cue. Psychic
+activations and enemy or boss attacks emit none in this basic set.
+
+The browser adapter owns one Web Audio context, lazily created and resumed by the player gesture
+that starts or continues a game, and synthesizes all three cues with short gain-enveloped
+oscillator/noise patches: a falling airy swing no longer than 140 ms, a
+sharper falling fire burst no longer than 100 ms, and a soft rising pickup pulse no longer than
+120 ms. Each patch has peak gain at most 0.12 and stops and disconnects its nodes at the end of its
+envelope. There are no fetched or embedded sound files and no new dependency. The adapter performs
+no audio operation before that gesture; if the browser still suspends or rejects audio, the cue is
+skipped without throwing, changing game state or being
+queued for replay. A pause produces no simulation cues, and resuming never replays old ones.
+
+Sound is supplementary: every cue duplicates the visible swing, firing effect or disappearing
+pickup, and no rule, warning or choice is communicated by audio alone. Cue values are
+presentation-only, are not saved or digested, and consuming them cannot change deterministic
+simulation state.
+
 ## HUD and screens
 
 The HUD shows health, the equipped weapon's icon and name, each held powerup's icon and stack
@@ -563,3 +621,24 @@ changes, and no discovery card or other simulation-time presentation advances be
   pause freezes the shape. Barrels at different coordinates do not all share the same pose.
   Composing any phase changes neither damaging contact, barrel geometry nor the simulation digest,
   and one barrel and many barrels open the same set of flame style batches.
+- **P-76** Backdrop identity and detail: the backdrop-profile registry is total over the ten
+  `ThemeId`s; every profile has a unique colour-independent structural signature containing at
+  least the motifs required by its table row. For a representative level, all three depths contain
+  profile-owned structure and the near depth contains more detail marks per building than the far
+  depth. Equal seed, level and theme reproduce equal geometry; changing the seed varies geometry
+  without changing the profile, and changing the theme changes its signature. The three layers
+  remain ordered at exactly 0.12, 0.30 and 0.55 parallax, and camera movement offsets every body,
+  window and detail by its owning layer's rate. One building and a skyline of hundreds open the
+  same backdrop style batches. Generation and composition change no tile, collision, RNG stream
+  outside `backdrop` or simulation digest. The development world sheet renders all ten themes for
+  human review of dystopian readability, depth and playfield contrast.
+- **P-77** Basic audio cues: a player melee activation reports exactly one `MeleeSwing`; a ranged
+  single shot and a simultaneous spread each report exactly one `RangedFire`; every later round of
+  a timed burst reports one more on its actual emission tick. Psychic activations and enemy or boss
+  attacks report none. Removing a contacted weapon-only, powerup-only or paired `GroundItem`
+  reports exactly one `PickupPulse`, including same-weapon Scrap, refused/displaced powerup and
+  guaranteed outcomes; no contact reports none. Cue presence and consumption change neither
+  canonical save nor P-40 digest. Browser wiring forwards each report cue once and in order to an
+  injectable sink, forwards none while paused, never replays one after resume, and treats a
+  suspended or failing audio context as silence. Each synthesized patch obeys its duration and
+  peak-gain bound and references no runtime audio asset.

@@ -14,7 +14,6 @@ No approved implementation tasks.
 Not scheduled by the current plan; kept so they are not forgotten.
 
 - Human playtest of a full run with a written rubric (fairness, telegraph readability, camera).
-- Sound effects: kotlinx-browser exposes no Web Audio API, so this needs hand-written externals.
 - Recalibrate `WeaponScore` against `expectedDps` (see `specs/combat.md`, Known gaps).
 - A committed, reproducible frame-time benchmark (the 7.6× transform figure is unretained).
 - Draw projectiles as their weapon's own shape (a slug, a nail, a grenade) — the tracer in CPS-3

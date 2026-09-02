@@ -75,6 +75,8 @@ data class TickReport(
     val bossDefeated: Boolean = false,
     /** Items whose contact fully resolved this tick, in resolution order. */
     val collectedDiscoveries: List<DiscoveryId> = emptyList(),
+    /** Presentation-only sound transitions, in the order they occurred this tick (PROD-102). */
+    val audioCues: List<AudioCue> = emptyList(),
 )
 
 /**
@@ -200,6 +202,7 @@ class GameSimulation(
     val items = mutableListOf<GroundItem>()
     private val deathDropPlacement = DeathDropPlacement(level)
     private val liveScrapGains = mutableListOf<ScrapGain>()
+    private val emittedAudioCues = mutableListOf<AudioCue>()
     val scrapGains: List<ScrapGain> get() = liveScrapGains
 
     val miniboss = LiveBoss(
@@ -303,6 +306,7 @@ class GameSimulation(
     fun tick(input: InputFrame): TickReport = tick(input, fullLevelViewport())
 
     fun tick(input: InputFrame, viewport: GameplayViewport): TickReport {
+        emittedAudioCues.clear()
         gameplayViewport = viewport
         previousPlayer = player
         playerHurtSecondsLeft = (playerHurtSecondsLeft - TICK_SECONDS).coerceAtLeast(0.0)
@@ -371,6 +375,7 @@ class GameSimulation(
             mapCleared = exitReached,
             bossDefeated = boss.fight.defeated,
             collectedDiscoveries = collectedDiscoveries,
+            audioCues = emittedAudioCues.toList(),
         )
     }
 
@@ -510,8 +515,12 @@ class GameSimulation(
         val origin = if (weapon.spec.anchor == Anchor.Cursor) aim else muzzle
 
         when (weapon.spec.cls) {
-            WeaponClass.Melee -> resolveArc(shot, muzzle)
+            WeaponClass.Melee -> {
+                emittedAudioCues += AudioCue.MeleeSwing
+                resolveArc(shot, muzzle)
+            }
             else -> {
+                if (weapon.spec.cls == WeaponClass.Ranged) emittedAudioCues += AudioCue.RangedFire
                 lastShot = MuzzleFlash(
                     direction = shot.direction,
                     secondsLeft = FLASH_VISIBLE_SECONDS,
@@ -700,6 +709,7 @@ class GameSimulation(
             return
         }
         val velocity = spawnRound(burst.weapon, muzzle, burst.direction, burst.aimPoint, offsetDegrees = 0.0)
+        if (velocity != null) emittedAudioCues += AudioCue.RangedFire
         lastShot = MuzzleFlash(
             velocity?.normalisedOr(burst.direction) ?: burst.direction,
             FLASH_VISIBLE_SECONDS,
@@ -1723,6 +1733,7 @@ class GameSimulation(
                 gainScrap(scrap)
                 collected += DiscoveryId.Powerup(powerup.id)
             }
+            if (item.weapon != null || item.powerup != null) emittedAudioCues += AudioCue.PickupPulse
             autoFire.rebuild(run.loadout.weapon, run.loadout.slots)
         }
         items.removeAll(taken)

@@ -184,10 +184,24 @@ object Scene {
         height: Double,
     ) {
         backdrop.layers.forEach { layer ->
-            val batch = builder.batch(layer.layer, layer.tint, Primitive.Rect)
-            // Opened after the tint so the lit windows are painted over their own building rather
-            // than under it — and per depth, so a near tower still occludes a far window.
-            val windows = builder.batch(layer.layer, palette.window, Primitive.Rect)
+            val bodyRects = builder.batch(layer.layer, layer.tint, Primitive.Rect)
+            val bodySegments = builder.batch(
+                layer.layer,
+                layer.tint,
+                Primitive.Segment,
+                BACKDROP_STRUCTURE_STROKE,
+            )
+            val bodyDots = builder.batch(layer.layer, layer.tint, Primitive.Dot)
+            // All light batches open after all body batches, so fixtures remain visible over their
+            // own structure and a near tower still occludes a far fixture.
+            val lightRects = builder.batch(layer.layer, palette.window, Primitive.Rect)
+            val lightSegments = builder.batch(
+                layer.layer,
+                palette.window,
+                Primitive.Segment,
+                BACKDROP_LIGHT_STROKE,
+            )
+            val lightDots = builder.batch(layer.layer, palette.window, Primitive.Dot)
             val offset = camera.x * layer.parallax * ZOOM
             // Vertical parallax, anchored to the height the horizon fraction was calibrated at.
             val horizon = height * backdrop.horizonFraction +
@@ -198,20 +212,39 @@ object Scene {
                 if (x + drawWidth < 0.0 || x > width) return@forEach
 
                 val drawHeight = building.height * ZOOM
-                batch.rect(x, horizon - drawHeight, drawWidth, drawHeight)
+                val top = horizon - drawHeight
+                bodyRects.rect(x, top, drawWidth, drawHeight)
+                backdropRoof(building.roof, x, top, drawWidth, drawHeight, bodyRects, bodySegments)
 
                 val cellWidth = drawWidth / building.windowColumns
                 val cellHeight = drawHeight / building.windowRows
                 for (column in 0 until building.windowColumns) {
                     for (row in 0 until building.windowRows) {
                         if (!building.hasWindow(column, row)) continue
-                        windows.rect(
-                            x + cellWidth * (column + WINDOW_INSET),
-                            horizon - drawHeight + cellHeight * (row + WINDOW_INSET),
-                            cellWidth * WINDOW_FILL,
-                            cellHeight * WINDOW_FILL,
+                        backdropWindow(
+                            building.windowLayout,
+                            x + cellWidth * column,
+                            top + cellHeight * row,
+                            cellWidth,
+                            cellHeight,
+                            lightRects,
                         )
                     }
+                }
+                building.features.forEach { feature ->
+                    backdropFeature(
+                        feature = feature,
+                        x = x,
+                        top = top,
+                        width = drawWidth,
+                        height = drawHeight,
+                        bodyRects = bodyRects,
+                        bodySegments = bodySegments,
+                        bodyDots = bodyDots,
+                        lightRects = lightRects,
+                        lightSegments = lightSegments,
+                        lightDots = lightDots,
+                    )
                 }
             }
         }
@@ -219,6 +252,202 @@ object Scene {
             verticalDrift(backdrop, camera, backdrop.layers.last().parallax, height)
         builder.batch(Layer.Haze, palette.haze, Primitive.Rect)
             .rect(0.0, haze - HAZE_PX, width, HAZE_PX * 2.0)
+    }
+
+    private fun backdropWindow(
+        layout: BackdropWindows,
+        x: Double,
+        y: Double,
+        width: Double,
+        height: Double,
+        lights: DrawBatch,
+    ) {
+        val insetX: Double
+        val insetY: Double
+        val fillWidth: Double
+        val fillHeight: Double
+        when (layout) {
+            BackdropWindows.Grid -> {
+                insetX = WINDOW_INSET
+                insetY = WINDOW_INSET
+                fillWidth = WINDOW_FILL
+                fillHeight = WINDOW_FILL
+            }
+
+            BackdropWindows.Bands -> {
+                insetX = 0.14
+                insetY = 0.40
+                fillWidth = 0.72
+                fillHeight = 0.18
+            }
+
+            BackdropWindows.Columns -> {
+                insetX = 0.40
+                insetY = 0.12
+                fillWidth = 0.18
+                fillHeight = 0.72
+            }
+
+            BackdropWindows.Sparse -> {
+                insetX = 0.38
+                insetY = 0.38
+                fillWidth = 0.24
+                fillHeight = 0.24
+            }
+        }
+        lights.rect(
+            x + width * insetX,
+            y + height * insetY,
+            width * fillWidth,
+            height * fillHeight,
+        )
+    }
+
+    private fun backdropRoof(
+        roof: BackdropRoof,
+        x: Double,
+        top: Double,
+        width: Double,
+        height: Double,
+        rects: DrawBatch,
+        segments: DrawBatch,
+    ) {
+        val rise = minOf(width, height) * BACKDROP_ROOF_SCALE
+        when (roof) {
+            BackdropRoof.Flat -> Unit
+            BackdropRoof.Broken -> {
+                rects.rect(x, top - rise * 0.42, width * 0.38, rise * 0.42)
+                rects.rect(x + width * 0.70, top - rise * 0.18, width * 0.30, rise * 0.18)
+                segments.segment(x + width * 0.38, top - rise * 0.42, x + width * 0.48, top)
+            }
+
+            BackdropRoof.Stepped -> {
+                rects.rect(x + width * 0.12, top - rise * 0.55, width * 0.76, rise * 0.55)
+                rects.rect(x + width * 0.32, top - rise, width * 0.36, rise * 0.45)
+            }
+
+            BackdropRoof.Sawtooth -> repeat(3) { index ->
+                val left = x + width * index / 3.0
+                val right = x + width * (index + 1) / 3.0
+                segments.segment(left, top, (left + right) / 2.0, top - rise * 0.55)
+                segments.segment((left + right) / 2.0, top - rise * 0.55, right, top)
+            }
+
+            BackdropRoof.Crowned -> {
+                rects.rect(x + width * 0.16, top - rise * 0.45, width * 0.68, rise * 0.45)
+                rects.rect(x + width * 0.36, top - rise, width * 0.28, rise * 0.55)
+            }
+
+            BackdropRoof.Ribbed -> repeat(4) { index ->
+                val ribWidth = width * 0.09
+                val ribX = x + width * (0.18 + index * 0.18)
+                rects.rect(ribX, top - rise * (0.45 + index % 2 * 0.25), ribWidth, rise)
+            }
+        }
+    }
+
+    @Suppress("LongParameterList")
+    private fun backdropFeature(
+        feature: BackdropFeature,
+        x: Double,
+        top: Double,
+        width: Double,
+        height: Double,
+        bodyRects: DrawBatch,
+        bodySegments: DrawBatch,
+        bodyDots: DrawBatch,
+        lightRects: DrawBatch,
+        lightSegments: DrawBatch,
+        lightDots: DrawBatch,
+    ) {
+        val anchor = x + width * feature.anchor
+        val unit = (minOf(width, height) * BACKDROP_FEATURE_SCALE * feature.scale)
+            .coerceAtLeast(BACKDROP_FEATURE_MIN)
+        val side = if (feature.variant % 2 == 0) 1.0 else -1.0
+        when (feature.motif) {
+            BackdropMotif.RoofDamage -> {
+                bodySegments.segment(anchor - unit, top, anchor - unit * 0.35, top - unit * 1.4)
+                bodySegments.segment(anchor - unit * 0.35, top - unit * 1.4, anchor, top - unit * 0.6)
+                bodySegments.segment(anchor, top - unit * 0.6, anchor + unit, top - unit * 1.1)
+            }
+
+            BackdropMotif.Stack -> {
+                bodyRects.rect(anchor - unit * 0.35, top - unit * 2.6, unit * 0.70, unit * 2.6)
+                lightDots.dot(anchor, top - unit * 2.72, unit * 0.18)
+            }
+
+            BackdropMotif.Tank -> {
+                bodyDots.dot(anchor, top - unit * 0.62, unit * 0.78)
+                bodyRects.rect(anchor - unit * 0.78, top - unit * 0.62, unit * 1.56, unit * 0.62)
+                lightSegments.segment(anchor - unit * 0.42, top - unit * 0.55, anchor + unit * 0.42, top - unit * 0.55)
+            }
+
+            BackdropMotif.Pipe -> {
+                bodySegments.segment(anchor, top - unit * 1.8, anchor, top + height * 0.56)
+                bodySegments.segment(anchor, top + height * 0.56, anchor + side * unit * 1.8, top + height * 0.56)
+                lightDots.dot(anchor, top - unit * 1.82, unit * 0.15)
+            }
+
+            BackdropMotif.Gantry -> {
+                bodySegments.segment(anchor - unit, top, anchor - unit, top - unit * 1.6)
+                bodySegments.segment(anchor + unit, top, anchor + unit, top - unit * 1.6)
+                bodySegments.segment(anchor - unit, top - unit * 1.6, anchor + unit, top - unit * 1.6)
+                lightSegments.segment(anchor - unit * 0.65, top - unit * 1.43, anchor + unit * 0.65, top - unit * 1.43)
+            }
+
+            BackdropMotif.Cable -> {
+                bodySegments.segment(anchor - unit * 2.0, top - unit, anchor, top - unit * 0.25)
+                bodySegments.segment(anchor, top - unit * 0.25, anchor + unit * 2.0, top - unit * 1.2)
+            }
+
+            BackdropMotif.Antenna -> {
+                bodySegments.segment(anchor, top, anchor, top - unit * 2.8)
+                bodySegments.segment(anchor, top - unit * 2.1, anchor + side * unit * 0.8, top - unit * 2.45)
+                lightDots.dot(anchor, top - unit * 2.9, unit * 0.16)
+            }
+
+            BackdropMotif.SignFrame -> {
+                val left = anchor - unit
+                val right = anchor + unit
+                val signTop = top - unit * 1.8
+                bodySegments.segment(left, top, left, signTop)
+                bodySegments.segment(right, top, right, signTop)
+                bodySegments.segment(left, signTop, right, signTop)
+                bodySegments.segment(left, top - unit * 0.55, right, top - unit * 0.55)
+                lightSegments.segment(
+                    left + unit * 0.25,
+                    signTop + unit * 0.35,
+                    right - unit * 0.25,
+                    signTop + unit * 0.35
+                )
+            }
+
+            BackdropMotif.Buttress -> {
+                bodySegments.segment(anchor, top - unit * 1.2, anchor - unit * 1.4, top + height)
+                bodySegments.segment(anchor, top - unit * 1.2, anchor + unit * 1.4, top + height)
+            }
+
+            BackdropMotif.Vent -> repeat(3) { index ->
+                val ventX = anchor + (index - 1) * unit * 0.65
+                val ventHeight = unit * (0.55 + (feature.variant + index) % 3 * 0.22)
+                bodyRects.rect(ventX - unit * 0.18, top - ventHeight, unit * 0.36, ventHeight)
+                lightDots.dot(ventX, top - ventHeight, unit * 0.10)
+            }
+
+            BackdropMotif.BridgeFragment -> {
+                val end = anchor + side * unit * 3.2
+                bodySegments.segment(anchor, top - unit * 0.8, end, top - unit * 0.8)
+                bodySegments.segment(anchor + side * unit * 0.8, top - unit * 0.8, end, top + unit * 0.2)
+                lightDots.dot(end, top - unit * 0.8, unit * 0.14)
+            }
+
+            BackdropMotif.LightStrip -> {
+                lightRects.rect(anchor - unit * 0.22, top + height * 0.18, unit * 0.44, height * 0.62)
+                repeat(3) { index ->
+                    lightDots.dot(anchor, top + height * (0.30 + index * 0.18), unit * 0.10)
+                }
+            }
+        }
     }
 
     /**
@@ -2121,6 +2350,11 @@ object Scene {
     private const val BACKDROP_HORIZON = 0.72
     private const val WINDOW_INSET = 0.30
     private const val WINDOW_FILL = 0.34
+    private const val BACKDROP_STRUCTURE_STROKE = 2.75
+    private const val BACKDROP_LIGHT_STROKE = 1.5
+    private const val BACKDROP_ROOF_SCALE = 0.22
+    private const val BACKDROP_FEATURE_SCALE = 0.12
+    private const val BACKDROP_FEATURE_MIN = 2.0
 
     /**
      * How much of the camera's vertical travel the skyline takes, and how far it may ever slide.

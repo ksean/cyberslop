@@ -207,8 +207,12 @@ build of powerups collected on contact, and permadeath with persistent unlocks.
 
 ## Presentation
 
-- **PROD-040:** A coherent cyberpunk-dystopian 2D identity; each sub-theme has its own palette and
-  backdrop so two sub-themes can be told apart without reading the map name.
+- **PROD-040:** A coherent cyberpunk-dystopian 2D identity; every map's backdrop must depict a
+  decayed, surveilled or industrial future rather than a generic modern skyline. Each sub-theme
+  has its own palette, silhouette vocabulary and seeded structural detail so two sub-themes can be
+  told apart without reading the map name or relying on colour alone. The existing three-depth
+  parallax effect and its far-to-near speed ordering must remain visible. Exact motifs, depth rates
+  and procedural constraints are specified in [presentation.md](presentation.md).
 - **PROD-041:** The player character is animated and visibly distinguishes standing, moving
   sideways, rising, falling, crouching, moving while crouched, firing a ranged weapon and swinging a
   melee weapon. Weapon animation composes over movement animation rather than replacing it.
@@ -218,6 +222,14 @@ build of powerups collected on contact, and permadeath with persistent unlocks.
   psychic activation must show a firing cue at the moment it happens: a muzzle flash at the barrel
   for a weapon that has one, an activation pulse at the weapon for one that does not (the Kessler
   dish). Enemy and boss attack cues remain governed by PROD-063.
+- **PROD-102:** During active gameplay, each activation of the player's melee weapon must produce
+  one short swing sound and each firing event of the player's ranged weapon must produce one short
+  fire sound. A simultaneous spread is one firing event; each later round in a time-separated burst
+  is another. Contact that resolves one ground item containing a weapon, a powerup or both must
+  produce one small pickup pulse, including when the resolved item converts to Scrap or displaces
+  something. These sounds duplicate visible events, require no downloaded audio assets, and may
+  never affect simulation, input, saving or progression. This basic pass does not sonify psychic
+  activations or enemy and boss attacks.
 - **PROD-071:** Every ranged or psychic attack must also show where it went, not only that it
   fired: a travelling projectile is drawn as a visible body with a tracer along its motion, and an
   attack that resolves instantly draws its hit geometry — a beam onto a strike point, a chain

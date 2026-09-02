@@ -71,6 +71,7 @@ class BackdropTest {
     fun `the layers run back to front, each moving faster than the one behind it`() {
         val layers = Backdrops.of(SEED, level(ThemeId.NeonSlums)).layers
 
+        assertEquals(listOf(0.12, 0.30, 0.55), layers.map { it.parallax })
         assertTrue(layers.size >= 3, "a skyline with fewer than three depths has no parallax to see")
         layers.zipWithNext { far, near ->
             assertTrue(

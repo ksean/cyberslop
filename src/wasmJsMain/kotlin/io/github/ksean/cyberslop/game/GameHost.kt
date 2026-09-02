@@ -1,5 +1,7 @@
 package io.github.ksean.cyberslop.game
 
+import io.github.ksean.cyberslop.audio.BrowserSoundEffects
+import io.github.ksean.cyberslop.audio.SoundEffects
 import io.github.ksean.cyberslop.gen.LevelGenerator
 import io.github.ksean.cyberslop.input.BrowserInput
 import io.github.ksean.cyberslop.loop.RafLoop
@@ -39,6 +41,7 @@ class GameHost(
     private val canvas: HTMLCanvasElement,
     private val saves: LocalStorageSaveStore,
     private val onReturnToTitle: () -> Unit = {},
+    private val sounds: SoundEffects = BrowserSoundEffects(),
 ) {
     private val input = BrowserInput(canvas, onEscape = ::toggleManualPause)
     private var filter = IntentFilter()
@@ -63,6 +66,7 @@ class GameHost(
         if (action == TitleScreenAction.Shop) return
         val context = canvas.getContext("2d") as? CanvasRenderingContext2D ?: return
         renderer = CanvasRenderer(canvas, context)
+        sounds.arm()
 
         val restored = if (action == TitleScreenAction.ContinueGame) saves.load() else null
         profile = restored?.second ?: saves.loadProfile()
@@ -131,6 +135,7 @@ class GameHost(
             filter.next(input.keys(), player.onGround, standingBlocked),
             camera,
         )
+        sounds.play(report.audioCues)
         if (report.collectedDiscoveries.isNotEmpty()) {
             profile = discovery.collect(report.collectedDiscoveries).profile
         }
@@ -188,6 +193,7 @@ class GameHost(
 
     private fun resumeFromPause() {
         if (!manualPaused) return
+        sounds.arm()
         manualPaused = false
         root.textContent = ""
         root.className = ""
