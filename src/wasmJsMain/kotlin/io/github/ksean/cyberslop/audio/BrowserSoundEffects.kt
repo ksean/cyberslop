@@ -41,16 +41,20 @@ internal data class SoundPatch(
     val endFrequency: Double,
     val durationMillis: Int,
     val peakGain: Double,
+    /** Optional mid-envelope frequency for a two-stage bend rather than one monotonic sweep. */
+    val bendFrequency: Double? = null,
 )
 
 internal object SoundPatches {
     private val melee = SoundPatch("sawtooth", 260.0, 80.0, 120, 0.07)
     private val ranged = SoundPatch("square", 180.0, 55.0, 75, 0.10)
+    private val psychic = SoundPatch("sine", 320.0, 540.0, 125, 0.045, bendFrequency = 190.0)
     private val pickup = SoundPatch("sine", 480.0, 820.0, 110, 0.06)
 
     fun of(cue: AudioCue): SoundPatch = when (cue) {
         AudioCue.MeleeSwing -> melee
         AudioCue.RangedFire -> ranged
+        AudioCue.PsychicFire -> psychic
         AudioCue.PickupPulse -> pickup
     }
 }
@@ -70,6 +74,7 @@ private class WebAudioEngine : AudioEngine {
             context = active,
             waveform = patch.waveform.toJsString(),
             startFrequency = patch.startFrequency,
+            bendFrequency = patch.bendFrequency ?: 0.0,
             endFrequency = patch.endFrequency,
             durationMillis = patch.durationMillis,
             peakGain = patch.peakGain,
@@ -95,7 +100,7 @@ private external fun createAudioContext(): JsAny?
 private external fun resumeAudioContext(context: JsAny)
 
 @JsFun(
-    """(context, waveform, startFrequency, endFrequency, durationMillis, peakGain) => {
+    """(context, waveform, startFrequency, bendFrequency, endFrequency, durationMillis, peakGain) => {
         if (!context || context.state !== "running") return;
         const now = context.currentTime;
         const duration = durationMillis / 1000;
@@ -104,6 +109,9 @@ private external fun resumeAudioContext(context: JsAny)
         const gain = context.createGain();
         oscillator.type = waveform;
         oscillator.frequency.setValueAtTime(startFrequency, now);
+        if (bendFrequency > 0) {
+            oscillator.frequency.exponentialRampToValueAtTime(bendFrequency, now + duration * 0.45);
+        }
         oscillator.frequency.exponentialRampToValueAtTime(Math.max(1, endFrequency), now + duration);
         gain.gain.setValueAtTime(0.0001, now);
         gain.gain.exponentialRampToValueAtTime(Math.max(0.0001, peakGain), now + attack);
@@ -122,6 +130,7 @@ private external fun playTone(
     context: JsAny,
     waveform: JsString,
     startFrequency: Double,
+    bendFrequency: Double,
     endFrequency: Double,
     durationMillis: Int,
     peakGain: Double,

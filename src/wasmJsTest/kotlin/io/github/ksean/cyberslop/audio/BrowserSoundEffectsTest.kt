@@ -15,7 +15,7 @@ class BrowserSoundEffectsTest {
         sounds.play(listOf(AudioCue.MeleeSwing))
         sounds.arm()
         sounds.play(
-            listOf(AudioCue.RangedFire, AudioCue.PickupPulse, AudioCue.MeleeSwing),
+            listOf(AudioCue.RangedFire, AudioCue.PsychicFire, AudioCue.PickupPulse, AudioCue.MeleeSwing),
         )
         sounds.arm()
         sounds.play(listOf(AudioCue.PickupPulse))
@@ -24,6 +24,7 @@ class BrowserSoundEffectsTest {
         assertEquals(
             listOf(
                 AudioCue.RangedFire,
+                AudioCue.PsychicFire,
                 AudioCue.PickupPulse,
                 AudioCue.MeleeSwing,
                 AudioCue.PickupPulse,
@@ -58,12 +59,25 @@ class BrowserSoundEffectsTest {
             val durationLimit = when (cue) {
                 AudioCue.MeleeSwing -> 140
                 AudioCue.RangedFire -> 100
+                AudioCue.PsychicFire -> 130
                 AudioCue.PickupPulse -> 120
             }
             assertTrue(patch.durationMillis in 1..durationLimit, "$cue lasts ${patch.durationMillis} ms")
             assertTrue(patch.peakGain in 0.0..0.12, "$cue peaks at ${patch.peakGain}")
             assertTrue(patch.startFrequency > 0.0 && patch.endFrequency > 0.0)
         }
+    }
+
+    @Test
+    fun `psychic fire uses the subtle dip and rise warp patch`() {
+        val patch = SoundPatches.of(AudioCue.PsychicFire)
+
+        assertEquals("sine", patch.waveform)
+        assertEquals(320.0, patch.startFrequency)
+        assertEquals(190.0, patch.bendFrequency)
+        assertEquals(540.0, patch.endFrequency)
+        assertTrue(patch.durationMillis in 1..130)
+        assertTrue(patch.peakGain in 0.0..0.05)
     }
 
     private class RecordingEngine : AudioEngine {

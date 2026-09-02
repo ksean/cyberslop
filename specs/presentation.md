@@ -455,21 +455,25 @@ digest. A discovery-card pause freezes it because no simulation tick consumes it
 Audio is driven by semantic cues returned from the fixed simulation tick, not by polling a visual
 timer or recounting projectiles in the browser. `MeleeSwing` is emitted once when the player's
 melee activation begins. `RangedFire` is emitted once for a simultaneous ranged volley and once for
-each later round that actually leaves a time-separated burst; projectile count, hits and pierce do
-not multiply it. `PickupPulse` is emitted once per contacted `GroundItem` removed by pickup
-resolution, whether it held a weapon, a powerup or a paired award and whether its loot was equipped,
-applied, displaced or scrapped. Ticks with none of those transitions emit no cue. Psychic
-activations and enemy or boss attacks emit none in this basic set.
+each later round that actually leaves a time-separated burst. `PsychicFire` follows the same event
+boundary for a psychic weapon: one cue for the trigger's simultaneous volley and one for each later
+round that actually leaves a time-separated burst. Projectile count, hits and pierce do not
+multiply either firing cue. `PickupPulse` is emitted once per contacted `GroundItem` removed by
+pickup resolution, whether it held a weapon, a powerup or a paired award and whether its loot was
+equipped, applied, displaced or scrapped. Ticks with none of those transitions emit no cue. Enemy
+and boss attacks emit none in this basic set.
 
 The browser adapter owns one Web Audio context, lazily created and resumed by the player gesture
-that starts or continues a game, and synthesizes all three cues with short gain-enveloped
-oscillator/noise patches: a falling airy swing no longer than 140 ms, a
-sharper falling fire burst no longer than 100 ms, and a soft rising pickup pulse no longer than
-120 ms. Each patch has peak gain at most 0.12 and stops and disconnects its nodes at the end of its
-envelope. There are no fetched or embedded sound files and no new dependency. The adapter performs
-no audio operation before that gesture; if the browser still suspends or rejects audio, the cue is
-skipped without throwing, changing game state or being
-queued for replay. A pause produces no simulation cues, and resuming never replays old ones.
+that starts or continues a game, and synthesizes all four cues with short gain-enveloped oscillator
+patches: a falling airy swing no longer than 140 ms, a sharper falling fire burst no longer than
+100 ms, a soft rising pickup pulse no longer than 120 ms, and a subtle psychic warp no longer than
+130 ms. The warp uses a smooth sine tone that starts near 320 Hz, bends down near 190 Hz, then rises
+near 540 Hz; its peak gain is at most 0.05 so it reads beneath the ranged-fire patch rather than as
+an alarm. Every patch has peak gain at most 0.12 and stops and disconnects its nodes at the end of
+its envelope. There are no fetched or embedded sound files and no new dependency. The adapter
+performs no audio operation before that gesture; if the browser still suspends or rejects audio,
+the cue is skipped without throwing, changing game state or being queued for replay. A pause
+produces no simulation cues, and resuming never replays old ones.
 
 Sound is supplementary: every cue duplicates the visible swing, firing effect or disappearing
 pickup, and no rule, warning or choice is communicated by audio alone. Cue values are
@@ -673,15 +677,16 @@ its `Return to title` button receives focus as before.
   outside `backdrop` or simulation digest. The development world sheet renders all ten themes for
   human review of dystopian readability, depth and playfield contrast.
 - **P-77** Basic audio cues: a player melee activation reports exactly one `MeleeSwing`; a ranged
-  single shot and a simultaneous spread each report exactly one `RangedFire`; every later round of
-  a timed burst reports one more on its actual emission tick. Psychic activations and enemy or boss
-  attacks report none. Removing a contacted weapon-only, powerup-only or paired `GroundItem`
-  reports exactly one `PickupPulse`, including same-weapon Scrap, refused/displaced powerup and
-  guaranteed outcomes; no contact reports none. Cue presence and consumption change neither
-  canonical save nor P-40 digest. Browser wiring forwards each report cue once and in order to an
-  injectable sink, forwards none while paused, never replays one after resume, and treats a
-  suspended or failing audio context as silence. Each synthesized patch obeys its duration and
-  peak-gain bound and references no runtime audio asset.
+  single shot and a simultaneous spread each report exactly one `RangedFire`; a psychic single shot
+  and simultaneous volley each report exactly one `PsychicFire`; every later round of either class's
+  timed burst reports one matching cue on its actual emission tick. Enemy and boss attacks report
+  none. Removing a contacted weapon-only, powerup-only or paired `GroundItem` reports exactly one
+  `PickupPulse`, including same-weapon Scrap, refused/displaced powerup and guaranteed outcomes; no
+  contact reports none. Cue presence and consumption change neither canonical save nor P-40 digest.
+  Browser wiring forwards each report cue once and in order to an injectable sink, forwards none
+  while paused, never replays one after resume, and treats a suspended or failing audio context as
+  silence. The psychic patch is distinct from all other patches, uses the specified bend, lasts at
+  most 130 ms and peaks at most 0.05; every patch references no runtime audio asset.
 - **P-78** Player death sequence: isolated lethal fixtures for acid, fire jet, barrel fire, Laser,
   spikes, ordinary and boss projectiles, and ordinary and boss melee attacks capture their declared
   cause effect; void and body contact capture none. When several sources overlap, the first

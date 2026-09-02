@@ -562,7 +562,7 @@ class GameSimulation(
                 resolveArc(shot, muzzle)
             }
             else -> {
-                if (weapon.spec.cls == WeaponClass.Ranged) emittedAudioCues += AudioCue.RangedFire
+                emitPlayerFireCue(weapon.spec.cls)
                 lastShot = MuzzleFlash(
                     direction = shot.direction,
                     secondsLeft = FLASH_VISIBLE_SECONDS,
@@ -582,6 +582,14 @@ class GameSimulation(
                     }
                 }
             }
+        }
+    }
+
+    private fun emitPlayerFireCue(weaponClass: WeaponClass) {
+        when (weaponClass) {
+            WeaponClass.Melee -> Unit
+            WeaponClass.Ranged -> emittedAudioCues += AudioCue.RangedFire
+            WeaponClass.Psychic -> emittedAudioCues += AudioCue.PsychicFire
         }
     }
 
@@ -751,7 +759,7 @@ class GameSimulation(
             return
         }
         val velocity = spawnRound(burst.weapon, muzzle, burst.direction, burst.aimPoint, offsetDegrees = 0.0)
-        if (velocity != null) emittedAudioCues += AudioCue.RangedFire
+        if (velocity != null) emitPlayerFireCue(burst.weapon.spec.cls)
         lastShot = MuzzleFlash(
             velocity?.normalisedOr(burst.direction) ?: burst.direction,
             FLASH_VISIBLE_SECONDS,

@@ -1,6 +1,7 @@
 package io.github.ksean.cyberslop.sim
 
 import io.github.ksean.cyberslop.combat.WeaponId
+import io.github.ksean.cyberslop.combat.WeaponSpec
 import io.github.ksean.cyberslop.combat.Weapons
 import io.github.ksean.cyberslop.core.Vec2
 import io.github.ksean.cyberslop.entity.EnemyArchetype
@@ -49,12 +50,39 @@ class AudioCueTest {
     }
 
     @Test
-    fun `psychic and enemy attacks report no player weapon cue`() {
-        val psychic = simulation(WeaponId.MigraineLoop)
-        val psychicReport = psychic.tick(InputFrame())
-        assertTrue(psychic.lastHit != null, "fixture: the psychic weapon did not activate")
-        assertEquals(emptyList(), psychicReport.audioCues)
+    fun `psychic single volley and timed burst report per firing event`() {
+        val single = simulation(WeaponId.MigraineLoop)
+        assertEquals(listOf(AudioCue.PsychicFire), single.tick(InputFrame()).audioCues)
+        assertTrue(single.lastHit != null, "fixture: the psychic weapon did not activate")
 
+        val volley = simulation(WeaponId.WetwareScreamer)
+        val volleyReport = volley.tick(InputFrame())
+        assertEquals(2, volley.projectiles.count { it.fromPlayer })
+        assertEquals(listOf(AudioCue.PsychicFire), volleyReport.audioCues)
+
+        val burst = simulation(
+            Weapons.of(WeaponId.WetwareScreamer).copy(
+                projectileCount = 3,
+                burstIntervalSeconds = 0.05,
+            ),
+        )
+        val burstCues = (1..7).map { burst.tick(InputFrame()).audioCues }
+        assertEquals(
+            listOf(
+                listOf(AudioCue.PsychicFire),
+                emptyList(),
+                emptyList(),
+                listOf(AudioCue.PsychicFire),
+                emptyList(),
+                emptyList(),
+                listOf(AudioCue.PsychicFire),
+            ),
+            burstCues,
+        )
+    }
+
+    @Test
+    fun `enemy attacks report no player weapon cue`() {
         val enemy = TestLevels.simulation().also {
             it.enemies.clear()
             it.autoFire.remaining = 100.0
@@ -118,9 +146,11 @@ class AudioCueTest {
         assertEquals(listOf(AudioCue.RangedFire), first.audioCues, "a later tick mutated an old report")
     }
 
-    private fun simulation(weapon: WeaponId): GameSimulation {
+    private fun simulation(weapon: WeaponId): GameSimulation = simulation(Weapons.of(weapon))
+
+    private fun simulation(weapon: WeaponSpec): GameSimulation {
         val run = RunState.begin(TestLevels.SEED).copy(
-            loadout = Loadout.starting().copy(weapon = Weapons.of(weapon)),
+            loadout = Loadout.starting().copy(weapon = weapon),
         )
         return GameSimulation(TestLevels.flat(committedColumns = 1..5), run, TestLevels.SEED).also {
             it.enemies.clear()

@@ -232,13 +232,14 @@ build of powerups collected on contact, and permadeath with persistent unlocks.
   for a weapon that has one, an activation pulse at the weapon for one that does not (the Kessler
   dish). Enemy and boss attack cues remain governed by PROD-063.
 - **PROD-102:** During active gameplay, each activation of the player's melee weapon must produce
-  one short swing sound and each firing event of the player's ranged weapon must produce one short
-  fire sound. A simultaneous spread is one firing event; each later round in a time-separated burst
-  is another. Contact that resolves one ground item containing a weapon, a powerup or both must
-  produce one small pickup pulse, including when the resolved item converts to Scrap or displaces
-  something. These sounds duplicate visible events, require no downloaded audio assets, and may
-  never affect simulation, input, saving or progression. This basic pass does not sonify psychic
-  activations or enemy and boss attacks.
+  one short swing sound, each firing event of the player's ranged weapon one short fire sound, and
+  each firing event of the player's psychic weapon one subtle warp-like sound distinct from both.
+  A simultaneous spread is one firing event; each later round in a time-separated burst is another.
+  Contact that resolves one ground item containing a weapon, a powerup or both must produce one
+  small pickup pulse, including when the resolved item converts to Scrap or displaces something.
+  These sounds duplicate visible events, require no downloaded audio assets, and may never affect
+  simulation, input, saving or progression. Enemy and boss attacks remain unsonified by this basic
+  set.
 - **PROD-071:** Every ranged or psychic attack must also show where it went, not only that it
   fired: a travelling projectile is drawn as a visible body with a tracer along its motion, and an
   attack that resolves instantly draws its hit geometry — a beam onto a strike point, a chain

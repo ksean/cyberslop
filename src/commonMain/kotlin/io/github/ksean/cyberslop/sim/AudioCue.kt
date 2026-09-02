@@ -4,5 +4,6 @@ package io.github.ksean.cyberslop.sim
 enum class AudioCue {
     MeleeSwing,
     RangedFire,
+    PsychicFire,
     PickupPulse,
 }
