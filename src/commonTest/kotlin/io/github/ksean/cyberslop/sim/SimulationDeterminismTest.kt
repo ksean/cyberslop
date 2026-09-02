@@ -56,6 +56,10 @@ class SimulationDeterminismTest {
         mutated("boss melee index") { it.boss.meleeIndex++ }
         mutated("boss ranged index") { it.boss.rangedIndex++ }
         mutated("boss choice rng") { it.boss.rng.nextULong() }
+        mutated("boss charge rng") { it.boss.chargeRng.nextULong() }
+        mutated("boss charge selection") { it.boss.meleeChargeSelected = !it.boss.meleeChargeSelected }
+        mutated("boss stopped charge") { it.boss.meleeChargeStopped = !it.boss.meleeChargeStopped }
+        mutated("boss consumed charge event") { it.boss.consumedChargeEvents += 2 }
         mutated("enemy leap") { it.enemies.first().leap = EnemyLeap(1, 64.0, 4..5) }
         mutated("boss locked aim") { it.boss.lockAim(Vec2(123.0, 45.0)) }
         mutated("boss beam") {
@@ -239,7 +243,7 @@ class SimulationDeterminismTest {
         val SEED = 0xD1CE5uL
         const val TICKS = 720
         const val RUN_TICKS = 300
-        const val GOLDEN = 13782930364277332050uL
+        const val GOLDEN = 3691409776939466779uL
         const val LOOT_MAP = 2
         const val LOOT_COLUMN = 20
         const val LOOT_KILLS = 80

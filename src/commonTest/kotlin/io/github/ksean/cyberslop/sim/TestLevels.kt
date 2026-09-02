@@ -135,7 +135,7 @@ object TestLevels {
     /** Perform exactly the active attack's declared real-input dodge. */
     fun dodgeActiveBossAttack(sim: GameSimulation): InputFrame {
         val attack = requireNotNull(sim.boss.currentAttack)
-        val spacing = closeOnBossWithoutContact(sim)
+        val spacing = if (sim.boss.meleeChargeSelected) retreatFromBoss(sim) else closeOnBossWithoutContact(sim)
         return when (attack.dodge) {
             Dodge.Jump -> InputFrame(
                 left = spacing.left,
@@ -151,6 +151,13 @@ object TestLevels {
                 jumpStart = sim.player.onGround,
             )
         }
+    }
+
+    /** A charge is faster than a crouched player, so use its telegraph to build clearance. */
+    private fun retreatFromBoss(sim: GameSimulation): InputFrame {
+        val playerCentreX = sim.player.x + Physics.Default.width / 2.0
+        val direction = if (playerCentreX < sim.boss.position.x) -1 else 1
+        return InputFrame(left = direction < 0, right = direction > 0)
     }
 
     /** Close to melee range without body contact, then never react while an attack is active. */

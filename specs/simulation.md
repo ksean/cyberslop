@@ -141,8 +141,9 @@ Kotlin/Wasm and the JVM agree bit-for-bit on IEEE-754 `+ − × ÷ √`; they ma
 
 - Randomness is a first-party SplitMix64 over `ULong` with per-phase derived streams (`spine`,
   `decor`, `enemy`, `loot`, `backdrop`, the run-wide `boss-roster`, and per-encounter boss attack
-  choice), so a change in one phase cannot shift another's output. Profile assignment is replayed
-  from the run seed on continue; it never consumes a mutable combat or loot stream.
+  choice and melee-charge selection), so a change in one phase cannot shift another's output.
+  Profile assignment is replayed from the run seed on continue; it never consumes a mutable combat
+  or loot stream.
 - Everything reachable from the tick uses basic arithmetic and comparisons; transcendentals go
   through `core.TrigTable`; exponential growth is repeated multiplication.
 - Non-finite values never enter hashed state.
@@ -181,9 +182,10 @@ Kotlin/Wasm and the JVM agree bit-for-bit on IEEE-754 `+ − × ÷ √`; they ma
   ticks of fixed input and viewport tapes on a fixed seed matches a committed golden value on both
   targets
   (enemies.md lists the fields). Enemy/boss leap state, selected boss profiles, scheduled multi-hit
-  events, boss-projectile ownership, deterministic death-drop positions and the player's active
-  `ArcSwing` are rule-bearing and included. An active death sequence's terminal phase and elapsed
-  fixed ticks are included because they govern the end-screen transition; its cause and pose/effect
-  geometry are presentation-only. A live projectile's gravity and already-hit target
+  events, the current boss melee-charge selection, charge-stream state and already-consumed charged
+  opportunities, boss-projectile ownership, deterministic death-drop positions and the player's
+  active `ArcSwing` are rule-bearing and included. An active death sequence's terminal phase and
+  elapsed fixed ticks are included because they govern the end-screen transition; its cause and
+  pose/effect geometry are presentation-only. A live projectile's gravity and already-hit target
   identities, and a pending lobbed burst's snapshotted aim point, are likewise included. Floating
   Scrap labels, enemy swing/flash visuals and other presentation-only fields are excluded.

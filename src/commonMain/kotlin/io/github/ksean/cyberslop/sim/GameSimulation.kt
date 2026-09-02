@@ -233,10 +233,12 @@ class GameSimulation(
     val miniboss = LiveBoss(
         Bosses.miniboss(level.mapIndex, bossRoster.miniboss(level.mapIndex)), level.miniboss, level.tiles,
         Rng.derive(seed, level.mapIndex, "miniboss-attacks"), level,
+        Rng.derive(seed, level.mapIndex, "miniboss-melee-charges"),
     )
     val boss = LiveBoss(
         Bosses.boss(level.mapIndex, bossRoster.boss(level.mapIndex)), level.boss, level.tiles,
         Rng.derive(seed, level.mapIndex, "boss-attacks"), level,
+        Rng.derive(seed, level.mapIndex, "boss-melee-charges"),
     )
 
     /** Declared above `init`, which places static pickups and therefore draws from it. */
@@ -503,7 +505,11 @@ class GameSimulation(
             add(b.vy); add(b.leap?.direction ?: 0); add(b.leap?.landingX ?: 0.0); add(b.landingCooldownLeft)
             add(b.elapsedSeconds)
             add(b.currentAttack?.module?.ordinal ?: -1); add(b.attackElapsed); add(b.restSecondsLeft)
-            add(b.meleeIndex); add(b.rangedIndex); add(b.rng.state); add(rewarded)
+            add(b.meleeIndex); add(b.rangedIndex); add(b.rng.state); add(b.chargeRng.state)
+            add(b.meleeChargeSelected); add(b.meleeChargeStopped)
+            val consumedChargeEvents = b.consumedChargeEvents.sorted()
+            add(consumedChargeEvents.size); consumedChargeEvents.forEach(::add)
+            add(rewarded)
         }
         // The exit state is geometry: the tiles `openGate` clears, not a flag standing in for them.
         val floor = level.boss.floorRow

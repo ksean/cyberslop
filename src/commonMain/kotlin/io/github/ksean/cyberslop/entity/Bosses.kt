@@ -33,6 +33,7 @@ object Bosses {
                 BossPhase(0.25, expanded),
             ),
             profile = profile,
+            mapIndex = mapIndex,
         )
     }
 
@@ -46,6 +47,7 @@ object Bosses {
             BossPhase(1.00, profile.primaryPair.map { attack(it, mapIndex, mainBoss = false) }),
         ),
         profile = profile.copy(signature = null),
+        mapIndex = mapIndex,
     )
 
     fun modulesFor(mapIndex: Int): List<BossModule> =

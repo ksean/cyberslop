@@ -5,7 +5,6 @@ import io.github.ksean.cyberslop.combat.ResolvedWeapon
 
 import io.github.ksean.cyberslop.core.Rng
 import io.github.ksean.cyberslop.core.Vec2
-import io.github.ksean.cyberslop.entity.AttackVisual
 import io.github.ksean.cyberslop.entity.BossAttack
 import io.github.ksean.cyberslop.entity.BossModule
 import io.github.ksean.cyberslop.entity.BossFight
@@ -151,6 +150,8 @@ class LiveBoss(
     internal val rng: Rng = Rng(0uL),
     /** Present in live games so leap previews include barrels and jets; tile-only unit fixtures omit it. */
     private val level: Level? = null,
+    /** Independent from attack choice: a melee charge must not shift which module is selected next. */
+    internal val chargeRng: Rng = Rng(0uL),
 ) {
     val fight = BossFight(spec)
 
@@ -230,6 +231,11 @@ class LiveBoss(
     internal var rangedIndex = 0
     internal var restSecondsLeft = OPENING_REST
 
+    /** Rule-bearing state for the current melee activation (PROD-104). */
+    internal var meleeChargeSelected = false
+    internal var meleeChargeStopped = false
+    internal val consumedChargeEvents = mutableSetOf<Int>()
+
     val healthFraction: Double get() = (fight.health / spec.maxHealth).coerceIn(0.0, 1.0)
 
     val telegraphing: Boolean
@@ -262,32 +268,104 @@ class LiveBoss(
             if (leap != null) return 0.0
             restSecondsLeft -= delta
             if (restSecondsLeft <= 0.0) {
-                currentAttack = chooseAttack((target.centre - position).length)
+                val selected = chooseAttack((target.centre - position).length)
+                currentAttack = selected
                 attackElapsed = 0.0
                 lockAim(target.centre)
+                meleeChargeSelected = !selected.visual.ranged && rollsCharge(spec.mapIndex, chargeRng)
+                meleeChargeStopped = false
+                consumedChargeEvents.clear()
             }
             return 0.0
         }
 
         val before = attackElapsed
         attackElapsed += delta
-        if (attackElapsed > attack.totalSeconds) {
-            currentAttack = null
-            restSecondsLeft = if (healthFraction <= CLOSING_HEALTH) CLOSING_REST else REST_BETWEEN
-            return 0.0
-        }
-
-        // A Rush carries through its whole active window; its one hit is still the first event.
-        if (attackElapsed >= attack.telegraphSeconds && attack.visual == AttackVisual.Lunge) {
-            step(facing * LUNGE_SPEED * delta)
-        }
+        val chargeStart = position
+        val activeSeconds = activeSecondsBetween(attack, before, attackElapsed)
+        if (meleeChargeSelected && activeSeconds > 0.0) advanceCharge(activeSeconds)
+        val chargeEnd = position
 
         var damage = 0.0
         attack.eventsBetween(before, attackElapsed).forEach { eventIndex ->
             emittedEvents += BossAttackEvent(attack, eventIndex, centre, aimDirection, aimedAt)
-            if (!attack.visual.ranged && hits(target, attack)) damage += attack.damage
+            if (!attack.visual.ranged && !meleeChargeSelected && hits(target, attack)) damage += attack.damage
+        }
+        if (meleeChargeSelected) {
+            damage += chargedDamage(attack, before, attackElapsed, chargeStart, chargeEnd, target)
+        }
+        if (attackElapsed > attack.totalSeconds) {
+            currentAttack = null
+            restSecondsLeft = if (healthFraction <= CLOSING_HEALTH) CLOSING_REST else REST_BETWEEN
+            meleeChargeSelected = false
+            meleeChargeStopped = false
+            consumedChargeEvents.clear()
         }
         return damage
+    }
+
+    /** Portion of this tick which lies inside the attack's active window. */
+    private fun activeSecondsBetween(attack: BossAttack, before: Double, after: Double): Double {
+        val start = maxOf(before, attack.telegraphSeconds)
+        val end = minOf(after, attack.totalSeconds)
+        return (end - start).coerceAtLeast(0.0)
+    }
+
+    /** Moves in half-tile-or-smaller pieces, stopping permanently when the charged path is unsafe. */
+    private fun advanceCharge(seconds: Double) {
+        if (meleeChargeStopped) return
+        var distanceLeft = LUNGE_SPEED * seconds
+        while (distanceLeft > Vec2.EPSILON) {
+            val distance = minOf(distanceLeft, TILE_SIZE / 2.0)
+            if (!step(facing * distance)) {
+                meleeChargeStopped = true
+                return
+            }
+            distanceLeft -= distance
+        }
+    }
+
+    /**
+     * A charged event remains live until the next event (or active-window end), and its ordinary
+     * radial reach is swept along the movement completed by this tick.
+     */
+    private fun chargedDamage(
+        attack: BossAttack,
+        before: Double,
+        after: Double,
+        pathStart: Vec2,
+        pathEnd: Vec2,
+        target: BossTarget,
+    ): Double {
+        val tickStart = maxOf(before, attack.telegraphSeconds)
+        val tickEnd = minOf(after, attack.totalSeconds)
+        val enteredActiveWindow = before < attack.telegraphSeconds && after >= attack.telegraphSeconds
+        if (tickEnd < tickStart || (tickEnd == tickStart && !enteredActiveWindow)) return 0.0
+
+        val tickDuration = tickEnd - tickStart
+        var damage = 0.0
+        attack.eventOffsets.indices.forEach { eventIndex ->
+            if (eventIndex in consumedChargeEvents) return@forEach
+            val eventStart = attack.telegraphSeconds + attack.eventOffsets[eventIndex]
+            val eventEnd = attack.telegraphSeconds +
+                (attack.eventOffsets.getOrNull(eventIndex + 1) ?: attack.activeSeconds)
+            val overlapStart = maxOf(tickStart, eventStart)
+            val overlapEnd = minOf(tickEnd, eventEnd)
+            if (overlapEnd < overlapStart || tickEnd < eventStart || tickStart > eventEnd) return@forEach
+
+            val from = positionAlongTick(pathStart, pathEnd, overlapStart - tickStart, tickDuration)
+            val to = positionAlongTick(pathStart, pathEnd, overlapEnd - tickStart, tickDuration)
+            if (hitsAlong(target, attack, from, to)) {
+                consumedChargeEvents += eventIndex
+                damage += attack.damage
+            }
+        }
+        return damage
+    }
+
+    private fun positionAlongTick(start: Vec2, end: Vec2, elapsed: Double, duration: Double): Vec2 {
+        if (duration <= Vec2.EPSILON) return start
+        return start + (end - start) * (elapsed / duration).coerceIn(0.0, 1.0)
     }
 
     /**
@@ -313,12 +391,29 @@ class LiveBoss(
      */
     private fun hits(target: BossTarget, attack: BossAttack): Boolean {
         if ((target.centre - position).lengthSquared > attack.reachPx * attack.reachPx) return false
-        return when (attack.dodge) {
+        return targetCanBeHit(target, attack)
+    }
+
+    /** The target centre touching the reach-expanded movement segment is a swept charged hit. */
+    private fun hitsAlong(target: BossTarget, attack: BossAttack, from: Vec2, to: Vec2): Boolean {
+        if (!targetCanBeHit(target, attack)) return false
+        val segment = to - from
+        val along = if (segment.lengthSquared <= Vec2.EPSILON) {
+            0.0
+        } else {
+            val offset = target.centre - from
+            ((offset.x * segment.x + offset.y * segment.y) / segment.lengthSquared).coerceIn(0.0, 1.0)
+        }
+        val nearest = from + segment * along
+        return (target.centre - nearest).lengthSquared <= attack.reachPx * attack.reachPx
+    }
+
+    private fun targetCanBeHit(target: BossTarget, attack: BossAttack): Boolean =
+        when (attack.dodge) {
             Dodge.Jump -> target.onGround
             Dodge.Crouch -> !target.crouched
             Dodge.MoveAside -> false
         }
-    }
 
     /**
      * Closes on the player, wherever they are, under the ledge rule: no step off an edge, onto a
@@ -446,7 +541,7 @@ class LiveBoss(
         private const val CLOSING_REST = 0.65
         private const val CLOSING_HEALTH = 0.25
         const val SPEED = 55.0
-        /** How fast a Rush carries the boss: 0.4 s of it covers about its 128 px reach. */
+        /** Every selected melee charge advances at this speed for its module's active window. */
         const val LUNGE_SPEED = 300.0
         private const val CLOSE_ENOUGH = 8.0
         private const val EDGE = 0.001
@@ -457,11 +552,25 @@ class LiveBoss(
         const val RANGED_WEIGHT_NEAR = 0.2
         const val RANGED_WEIGHT_FAR = 0.8
 
+        private const val CHARGE_CHANCE_FIRST = 0.50
+        private const val CHARGE_CHANCE_LAST = 0.90
+        private const val LAST_MAP_INDEX = 10
+
         /** Probability of a ranged attack at [distance]: linear between the two reaches. */
         fun rangedWeight(distance: Double): Double {
             val t = ((distance - MELEE_REACH) / (RANGED_PREFERRED_PX - MELEE_REACH)).coerceIn(0.0, 1.0)
             return RANGED_WEIGHT_NEAR + (RANGED_WEIGHT_FAR - RANGED_WEIGHT_NEAR) * t
         }
+
+        /** PROD-104: 50 % on map 1, 90 % on map 10, linear in between. */
+        fun chargeChance(mapIndex: Int): Double {
+            require(mapIndex in 1..LAST_MAP_INDEX) { "map index outside 1..$LAST_MAP_INDEX: $mapIndex" }
+            val depth = (mapIndex - 1).toDouble() / (LAST_MAP_INDEX - 1)
+            return CHARGE_CHANCE_FIRST + (CHARGE_CHANCE_LAST - CHARGE_CHANCE_FIRST) * depth
+        }
+
+        internal fun rollsCharge(mapIndex: Int, rng: Rng): Boolean =
+            rng.nextDouble() < chargeChance(mapIndex)
     }
 }
 

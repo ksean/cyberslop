@@ -117,7 +117,12 @@ data class BossSpec(
     val contactDamage: Double,
     val phases: List<BossPhase>,
     val profile: BossProfile,
+    val mapIndex: Int,
 ) {
+    init {
+        require(mapIndex in 1..10) { "map index outside 1..10: $mapIndex" }
+    }
+
     fun phaseAt(healthFraction: Double): BossPhase =
         phases.last { healthFraction <= it.fromHealthFraction }
 }

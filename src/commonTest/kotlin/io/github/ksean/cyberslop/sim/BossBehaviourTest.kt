@@ -5,7 +5,6 @@ import io.github.ksean.cyberslop.entity.BossAttack
 import io.github.ksean.cyberslop.entity.Bosses
 import io.github.ksean.cyberslop.entity.BossAttackKind
 import io.github.ksean.cyberslop.entity.BossModule
-import io.github.ksean.cyberslop.entity.BossRoster
 import io.github.ksean.cyberslop.entity.Dodge
 import io.github.ksean.cyberslop.physics.InputFrame
 import io.github.ksean.cyberslop.physics.TICK_SECONDS
@@ -13,7 +12,6 @@ import io.github.ksean.cyberslop.world.Arena
 import io.github.ksean.cyberslop.world.Barrel
 import io.github.ksean.cyberslop.world.FireJet
 import io.github.ksean.cyberslop.world.TileMap
-import kotlin.math.roundToInt
 import kotlin.test.Test
 import kotlin.test.assertEquals
 import kotlin.test.assertFalse
@@ -149,7 +147,10 @@ class BossBehaviourTest {
      */
     @Test
     fun `every attack is dodged with real inputs and lands on a player who only stands there`() {
-        fun fight(policy: (GameSimulation) -> InputFrame): Triple<Double, Map<String, Double>, Set<String>> {
+        fun fight(
+            expectHits: Boolean,
+            policy: (GameSimulation) -> InputFrame,
+        ): Triple<Double, Map<String, Double>, Set<String>> {
             val level = TestLevels.flat(
                 bossArena = Arena(30, 38, TestLevels.FLOOR_ROW + 1),
                 spawnColumn = 50,
@@ -169,7 +170,11 @@ class BossBehaviourTest {
             val seen = mutableSetOf<String>()
             var ticks = 0
             var activeName: String? = null
-            while (ticks < 6000 && (seen != expected || expected.any { it !in landed }) && !sim.run.dead) {
+            while (
+                ticks < 6000 &&
+                (seen != expected || (expectHits && expected.any { it !in landed })) &&
+                !sim.run.dead
+            ) {
                 val before = sim.run.health
                 activeName = sim.boss.currentAttack?.name ?: activeName
                 sim.tick(policy(sim))
@@ -189,10 +194,10 @@ class BossBehaviourTest {
             return Triple(sim.grossDamageTaken, landed, expected)
         }
 
-        val (dodged, dodgedHits, _) = fight(TestLevels::dodge)
+        val (dodged, dodgedHits, _) = fight(expectHits = false, TestLevels::dodge)
         assertEquals(0.0, dodged, "a player performing every listed dodge still took damage: $dodgedHits")
 
-        val (_, landed, expected) = fight(TestLevels::standStill)
+        val (_, landed, expected) = fight(expectHits = true, TestLevels::standStill)
         expected.forEach { name ->
             assertTrue((landed[name] ?: 0.0) > 0.0, "$name missed a player who did nothing: $landed")
         }
@@ -215,35 +220,6 @@ class BossBehaviourTest {
         assertEquals(-1, boss.facing, "the boss turned to follow the player during its telegraph")
     }
 
-    /** `specs/enemies.md`: a Rush is a lunge — the boss carries forward through its active window. */
-    @Test
-    fun `a rush carries the boss forward`() {
-        val map = 10
-        val seed = (1uL..2_000uL).first { BossModule.Rush in BossRoster.forRun(it).boss(map).modules }
-        val level = TestLevels.flat(bossArena = Arena(6, 30, TestLevels.FLOOR_ROW + 1), mapIndex = map)
-        val run = io.github.ksean.cyberslop.run.RunState.begin(seed).copy(mapIndex = map, health = 100_000.0)
-        val sim = GameSimulation(level, run, seed, optionalLoot = false)
-        val boss = sim.boss
-        boss.fight.engage()
-        boss.fight.damage(boss.spec.maxHealth * 0.8)
-        var startX: Double? = null
-        var endX: Double? = null
-        var ticks = 0
-        while (endX == null && ticks < 6000 && !sim.run.dead) {
-            sim.tick(TestLevels.standStill(sim))
-            ticks++
-            val attack = boss.currentAttack
-            if (attack?.name == "Rush" && boss.striking) {
-                if (startX == null) startX = boss.position.x
-            } else if (startX != null) {
-                endX = boss.position.x
-            }
-        }
-        assertTrue(startX != null && endX != null, "fixture: no Rush resolved in $ticks ticks")
-        val travelled = (endX!! - startX!!) * boss.facing
-        assertTrue(travelled > 40.0, "the Rush moved the boss only $travelled px forward")
-    }
-
     @Test
     fun `every ranged module has level spanning reach`() {
         (1..10).flatMap { Bosses.boss(it).phases.flatMap { phase -> phase.attacks } }
@@ -259,6 +235,12 @@ class BossBehaviourTest {
     /** Runs one attack through its whole window against a scripted target and sums the damage. */
     private fun damageWhen(attack: BossAttack, dodging: Boolean): Double {
         val sim = TestLevels.simulation()
+        val mapIndex = when (attack.module) {
+            BossModule.Slam, BossModule.Sweep -> 1
+            BossModule.Flurry -> 4
+            BossModule.Rush -> 10
+            else -> error("fixture expected melee, got ${attack.module}")
+        }
         val boss = LiveBoss(
             io.github.ksean.cyberslop.entity.BossSpec(
                 "fixture", 1000.0, 0.0,
@@ -267,6 +249,7 @@ class BossBehaviourTest {
                     io.github.ksean.cyberslop.entity.BossModule.Slam,
                     io.github.ksean.cyberslop.entity.BossModule.Bolt,
                 ),
+                mapIndex,
             ),
             sim.level.boss,
             sim.level.tiles,

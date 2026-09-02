@@ -42,7 +42,7 @@ class BossAttackEventTest {
         } else {
             BossProfile(Bosses.meleeModulesFor(map).first(), module)
         }
-        val spec = BossSpec("fixture", 1_000.0, 0.0, listOf(BossPhase(1.0, listOf(attack))), profile)
+        val spec = BossSpec("fixture", 1_000.0, 0.0, listOf(BossPhase(1.0, listOf(attack))), profile, map)
         val sim = TestLevels.simulation()
         val live = LiveBoss(spec, sim.level.boss, sim.level.tiles)
         live.fight.engage()

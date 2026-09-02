@@ -76,9 +76,19 @@ class FullMapRunTest {
         // For the whole attack, not merely its telegraph: the damage lands *after* the wind-up, so
         // reacting to the tell and then stepping back in is the same as not reacting at all.
         if (attack != null) {
+            val retreat = sim.boss.meleeChargeSelected
             return when (attack.dodge) {
-                Dodge.Jump -> InputFrame(jump = true, jumpStart = sim.player.onGround)
-                Dodge.Crouch -> InputFrame(crouch = true)
+                Dodge.Jump -> InputFrame(
+                    left = retreat && towardBoss,
+                    right = retreat && !towardBoss,
+                    jump = true,
+                    jumpStart = sim.player.onGround,
+                )
+                Dodge.Crouch -> InputFrame(
+                    left = retreat && towardBoss,
+                    right = retreat && !towardBoss,
+                    crouch = true,
+                )
                 Dodge.MoveAside -> InputFrame(left = towardBoss, right = !towardBoss)
             }
         }

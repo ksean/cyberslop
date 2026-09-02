@@ -129,6 +129,13 @@ and the loot-floor expectations only.
     progressively wider blooms, preserve the non-colour casing and pip cues, keep rings off held,
     HUD and discovery icons, and retain the constant item-batch bound. Complete RING-1 and RING-2
     in `tasks.md` test-first, inspect the all-tier icon sheet, then run `./scripts/check.sh`.
+15. **Map-scaled boss melee charges.** *(done)*
+    Add PROD-104 and P-79: each mini-boss and main-boss melee activation independently charges at
+    a probability scaling linearly from 50 % on map 1 to 90 % on map 10. A charged attack advances
+    in its locked direction and sweeps its normal attack geometry over the path actually travelled,
+    without extra damage opportunities or loss of the normal dodge and fairness rules. Complete
+    BMC-1 in `tasks.md` test-first, update deterministic state coverage and run
+    `./scripts/check.sh`.
 
 ## Agents
 

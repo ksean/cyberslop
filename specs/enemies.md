@@ -167,18 +167,20 @@ seeded profile changes how each named encounter fights and looks.
 | Mini-boss | 6 × trash | `0.80 × contactDamage(mapIndex)` | weapon ≥ T2; plus a powerup from map 4 |
 | Main boss | 12 × trash | `1.00 × contactDamage(mapIndex)` | weapon ≥ T3 with two tier shifts, powerup ≥ T2, 40 Scrap |
 
-The damage in the attack table is per listed hit or projectile. `contactDamage(mapIndex)` is
-strictly increasing, so the same module always hurts more on a later map; the attack bands also
-replace early narrow attacks with rapid, spread, rush and beam pressure. Telegraph interpolation
-still uses `d = (mapIndex − 1) / 9`: the left value is map 1, the right map 10, and the 0.4 s
-fairness floor never scales.
+The damage in the attack table is per listed hit or projectile. The resolution column gives the
+uncharged melee event schedule; a charged melee keeps the same number of opportunities but makes
+each opportunity live over the interval specified under **Melee charges** below.
+`contactDamage(mapIndex)` is strictly increasing, so the same module always hurts more on a later
+map; the attack bands also replace early narrow attacks with rapid, spread, rush and beam pressure.
+Telegraph interpolation still uses `d = (mapIndex − 1) / 9`: the left value is map 1, the right
+map 10, and the 0.4 s fairness floor never scales.
 
 | Attack | Kind | Telegraph (map 1 → 10) | Resolution | Damage | Dodge | Loadout silhouette |
 |---|---|---|---|---|---|---|
 | Slam | melee | 0.70 → 0.55 s | one 0.25 s downward swing; hits within 80 px only while the player is grounded | `1.10 × U` | jump | oversized weighted forearm and ground swoosh |
 | Sweep | melee | 0.65 → 0.50 s | one 0.30 s level swing; hits a standing player within 80 px | `0.85 × U` | crouch | one long lateral blade and level swoosh |
 | Flurry | melee | 0.60 → 0.45 s | three level swings at 0.00, 0.14 and 0.28 s of a 0.38 s active window; each tests a standing player within 72 px | `0.38 × U` each | crouch through the sequence | paired short blades, each swing drawn separately |
-| Rush | melee | 0.55 → 0.40 s | one hit at the start of a 0.40 s, 300 px/s forward lunge; hits a grounded player within 128 px | `1.45 × U` | jump | forward ram and piston legs with a trailing swoosh |
+| Rush | melee | 0.55 → 0.40 s | one forward-ram hit at the start of a 0.40 s active window; hits a grounded player within 128 px; attack-driven movement uses the shared melee-charge rule below | `1.45 × U` | jump | forward ram and piston legs with a trailing swoosh |
 | Bolt | ranged | 0.65 → 0.50 s | a 0.10 s window emits one terrain-blocked projectile at 280 px/s along the aim recorded at telegraph start | `0.50 × U` | move away from the recorded aim | one narrow barrel and one muzzle flash |
 | Burst | ranged | 0.65 → 0.50 s | a 0.36 s window emits three terrain-blocked projectiles at 300 px/s and 0.12 s intervals along one recorded line | `0.22 × U` each | move away through the sequence | one barrel with a long magazine and three flashes |
 | Scatter | ranged | 0.60 → 0.45 s | a 0.10 s window emits five terrain-blocked projectiles at 320 px/s, simultaneously at −15°, −7.5°, 0°, +7.5° and +15° about the recorded aim | `0.24 × U` each | move clear of the recorded fan | a short five-port muzzle and five flashes/tracers |
@@ -204,6 +206,43 @@ who does nothing is hit. For the three projectile rows, "move away" means choosi
 direction from the locked target point away from the boss and holding it until the last
 round expires; the real-input case, not a synthetic target flag, discharges that claim. Bosses
 resist slows entirely.
+
+### Melee charges (PROD-104)
+
+After either boss rank selects a melee module and before its telegraph begins, its encounter-local
+melee-charge stream rolls exactly once. Conditional on a melee selection, the probability is
+
+```text
+chargeChance(mapIndex) = 0.50 + 0.40 × (mapIndex − 1) / 9
+```
+
+so it is exactly 50 % on map 1, exactly 90 % on map 10 and linear for maps 2–9. Every melee
+module, including Rush, uses this roll; Rush is not an always-charging exception. Ranged attacks
+neither roll nor charge. Mini-boss and main-boss charge rolls use independent streams derived as
+`Rng.derive(seed, mapIndex, "miniboss-melee-charges")` and
+`Rng.derive(seed, mapIndex, "boss-melee-charges")`. These streams never shift attack choice,
+roster, loot, critical-hit or generation randomness. The result is fixed when the telegraph starts
+and is future-affecting replay state.
+
+On a charged activation, the boss starts moving when the active window begins and advances
+horizontally at `LUNGE_SPEED = 300 px/s` for the whole active window, in the direction from the boss
+to the target point locked at telegraph start. It never retargets mid-attack. This attack-driven
+movement uses fixed-tick swept steps and stops at the last standable position before solid terrain,
+a level boundary, unsupported or lethal ground, a damaging-hazard footprint or an active fire jet;
+it does not begin a leap. Only the path actually travelled is dangerous. An uncharged melee attack,
+including an uncharged Rush, makes no attack-driven movement.
+
+Each declared melee damage opportunity becomes live at its event offset and remains live until the
+next melee event, or until the active window ends for the last event. During that interval its
+ordinary reach geometry is translated along the boss's actual movement and swept continuously
+between consecutive fixed-tick positions, including both endpoints; tangency with the target is a
+hit. An opportunity is spent on its first hit and cannot damage the player twice. Thus Slam, Sweep
+and Rush still offer at most one hit and Flurry still offers at most three, but a boss cannot pass
+its attack across the player between event samples or fixed ticks without the corresponding hit.
+The module's ordinary grounded/crouched dodge is evaluated when contact would occur, and
+committed-span, landing-grace and boss-ground fairness remain unchanged. Charge movement does not
+displace the player, and ordinary boss-body contact remains a separate drain which may stack with
+a charged melee hit.
 
 **Choosing the next attack (PROD-072).** When a rest ends the boss chooses between its phase's
 melee and ranged modules by how far the player stands, measured boss feet to player centre. The
@@ -266,8 +305,9 @@ every damage event before lifesteal — separately from net health.
 - **Boss pressure**, on the maps the loot floor covers: after the route, fight with the dodge
   policy against the isolated main encounter (the earlier mini-boss, residual rank-and-file
   population and any uncollected award are absent) — answer each telegraphed attack with its dodge
-  for the attack's whole duration, otherwise maintain a nominal `64 px` horizontal centre-to-centre
-  standoff. Near an arena edge and between attacks, vault over the boss, advancing through its
+  for the attack's whole duration, retreating directly away during a selected charge's telegraph
+  and active window; otherwise maintain a nominal `64 px` horizontal centre-to-centre standoff.
+  Near an arena edge and between attacks, vault over the boss, advancing through its
   horizontal span only once the bodies are vertically clear. Any boss-body contact during the
   fight counts toward gross damage. Continue until the boss dies or
   `FIGHT_TICKS = 12 000` elapse; the map must be won.
@@ -367,7 +407,8 @@ inventory directly.
   ownership, boss activation and already-hit target identities), every ground
   item, the pending burst (rounds left, seconds to the next, aim, payload), each boss (position,
   velocity, profile and phase, health, engagement, attack, elapsed and scheduled events, rest,
-  melee and ranged attack indices, its attack-choice RNG state, reward flag),
+  melee and ranged attack indices, its attack-choice and melee-charge RNG states, current charge
+  selection and consumed charged-melee opportunities, reward flag),
   the player's active `ArcSwing` (snapshotted build and geometry, progress and already-hit targets),
   the terminal death phase and its elapsed fixed ticks, the exit state and the elapsed tick — with
   doubles encoded by their IEEE bits and lists by length then elements. Presentation-only fields
@@ -383,6 +424,18 @@ inventory directly.
   points) and with the player at or beyond `RANGED_PREFERRED_PX` in about 80 %; within a kind the
   modules cycle in profile order; a pinned seed's first twelve choices match one committed sequence
   on both targets; every telegraph, hit condition and dodge case of P-17 and P-35 is unchanged.
+- **P-79** Boss melee charges: the probability is 0.50 on map 1, 0.90 on map 10 and differs by
+  exactly `0.40 / 9` between adjacent maps; over a fixed large seed cohort each map's observed
+  charge share is within one percentage point of that formula and the shares rise strictly. Both
+  boss ranks and every melee module, including Rush, use the rule; a ranged selection consumes no
+  charge roll and never charges, and the independent charge stream leaves the pinned attack-choice
+  sequence unchanged. In forced charged fixtures the boss moves at 300 px/s in the telegraphed
+  direction without retargeting, stops before unsafe or blocked ground, and cannot tunnel through a
+  player placed anywhere in its actually travelled attack path. The hit deals the module's normal
+  damage no more than once per declared opportunity; a player performing the declared dodge, under
+  committed-span protection or beyond a clipped path takes none. The same forced uncharged modules
+  make no attack-driven movement. Charge selection, progress and consumed opportunities reproduce
+  across targets and perturb the P-40 digest when changed.
 - **P-66** Full-view boss range: on an unobstructed level, Bolt, every Burst round and every Scatter
   pellet remain live after crossing the former eight-tile limit and are removed only after a player
   hit or swept level-boundary crossing; a solid wall still stops each at its first contact. Laser's

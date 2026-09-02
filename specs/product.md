@@ -124,6 +124,12 @@ build of powerups collected on contact, and permadeath with persistent unlocks.
   distance: the further the player stands from it, the more often it opens with a ranged attack;
   the nearer, the more often with a melee one. The choice is made when an attack begins and holds
   for that attack; it never shortens a telegraph or removes a dodge.
+- **PROD-104:** When a mini-boss or main boss begins a melee attack, it must sometimes charge
+  forward in the direction locked by that attack's telegraph. Conditional on a melee attack, the
+  charge probability must scale linearly from 50 % on map 1 to 90 % on map 10. A charged attack
+  must damage an otherwise hittable player anywhere along the attack geometry's actual swept
+  path, without adding damage opportunities or bypassing the attack's telegraph, declared dodge,
+  terrain safety or committed-span fairness.
 - **PROD-087:** Every mini-boss and main-boss encounter must receive a run-seeded combat profile
   which is reproducible on continue but varies between encounters. Every profile must expose at
   least one telegraphed melee attack and one telegraphed ranged attack from full health; profiles
