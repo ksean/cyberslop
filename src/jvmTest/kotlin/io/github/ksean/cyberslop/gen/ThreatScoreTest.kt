@@ -3,12 +3,21 @@ package io.github.ksean.cyberslop.gen
 import io.github.ksean.cyberslop.entity.EnemyArchetype
 import io.github.ksean.cyberslop.entity.EnemyAttacks
 import io.github.ksean.cyberslop.entity.EnemySpawn
+import io.github.ksean.cyberslop.sim.TestLevels
+import io.github.ksean.cyberslop.world.Hazards
 import kotlin.test.Test
 import kotlin.test.assertEquals
 import kotlin.test.assertTrue
 
 /** P-39/P-80: generated threat rises by map and accounts for in-reach melee cadence. */
 class ThreatScoreTest {
+    @Test
+    fun `broken glass contributes its half-rate pressure once per patch`() {
+        val level = TestLevels.flat(glassColumns = 20..21)
+
+        assertEquals(Hazards.GLASS_RATE / (level.widthTiles / 100.0), ThreatScore.of(level), 1e-12)
+    }
+
     @Test
     fun `melee pressure uses accelerated in-reach timings while ranged pressure does not`() {
         listOf(EnemyArchetype.Swarm, EnemyArchetype.Flyer, EnemyArchetype.Brute).forEach { archetype ->

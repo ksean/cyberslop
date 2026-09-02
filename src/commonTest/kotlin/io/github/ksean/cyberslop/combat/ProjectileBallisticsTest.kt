@@ -60,6 +60,48 @@ class ProjectileBallisticsTest {
     }
 
     @Test
+    fun `a moving target is met at its constant velocity whole tick intercept`() {
+        val origin = Vec2(40.0, 180.0)
+        val target = Vec2(260.0, 150.0)
+        val targetVelocity = Vec2(72.0, -24.0)
+        val launch = ProjectileBallistics.solve(
+            origin = origin,
+            target = target,
+            targetVelocity = targetVelocity,
+            nominalSpeed = 420.0,
+            gravity = GRAVITY,
+            lifetimeSeconds = 2.0,
+            tickSeconds = TICK_SECONDS,
+        )
+        val expectedIntercept = target + targetVelocity * (launch.flightTicks * TICK_SECONDS)
+
+        assertClose(expectedIntercept.x, launch.intercept.x)
+        assertClose(expectedIntercept.y, launch.intercept.y)
+        val landing = land(origin, launch, GRAVITY)
+        assertClose(expectedIntercept.x, landing.x)
+        assertClose(expectedIntercept.y, landing.y)
+    }
+
+    @Test
+    fun `an unreachable moving intercept falls back to the stationary target`() {
+        val origin = Vec2.Zero
+        val target = Vec2(240.0, 0.0)
+        val launch = ProjectileBallistics.solve(
+            origin = origin,
+            target = target,
+            targetVelocity = Vec2(1_000.0, 0.0),
+            nominalSpeed = 420.0,
+            gravity = GRAVITY,
+            lifetimeSeconds = 2.0,
+            tickSeconds = TICK_SECONDS,
+        )
+
+        assertClose(target.x, launch.intercept.x)
+        assertClose(target.y, launch.intercept.y)
+        assertClose(target.x, land(origin, launch, GRAVITY).x)
+    }
+
+    @Test
     fun `an invalid lifetime is rejected instead of silently firing straight`() {
         assertFailsWith<IllegalArgumentException> {
             ProjectileBallistics.solve(

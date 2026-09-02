@@ -43,13 +43,15 @@ Settled before implementation; the specification amendments say the same thing n
    a player in. Each attack gets a hit condition its listed dodge defeats (Slam and Rush miss an
    airborne player, Sweep misses a crouched one, Volley misses a player who moved off the aimed
    x), tested both ways. The camera never frames an arena; Volley's reach is capped at eight tiles.
-5. **Damaging hazards are placed last and confirmed by replay.** Spike strips and burning barrels
-   hurt per second and are survivable; their whole footprint keeps two tiles from every witness
-   foothold and every static pickup and stays out of the `ArcMask` and the arenas; a confirming
-   replay removes any hazard the tape still touches. Density follows the curve from map 2.
+5. **Damaging hazards are placed last and confirmed by replay.** Spike strips, broken glass and
+   burning barrels hurt per second and are survivable; their whole footprint keeps two tiles from
+   every witness foothold and every static pickup, stays out of the `ArcMask` and arenas, and lies
+   strictly left of the boss gate; a confirming replay removes any hazard the tape still touches.
+   Density follows the shared curve from map 2.
 6. **Melee out-reaches and out-damages ranged.** Every melee weapon reaches ≥ 2 m, beyond any
-   enemy swing; per tier, melee mean DPS (bottle excluded) exceeds ranged mean DPS; tier bands stay
-   non-overlapping (the table in combat.md was checked against P-14).
+   enemy swing; per tier, melee mean DPS (bottle excluded) exceeds ranged mean DPS. The later
+   class-wide 1.5× melee increase permits adjacent tier bands to overlap while tier minimum, mean
+   and maximum DPS remain increasing.
 7. **A crouch is a pose, not a scale.** Limb lengths preserved, joints bent, within the crouch box.
 8. **Difficulty is measured.** `ThreatScore` over the generated population and hazards; a
    route-pressure harness over all ten maps (witness tape with the population acting, gross
@@ -142,6 +144,25 @@ and the loot-floor expectations only.
     damage. Keep ranged-enemy and boss cadence unchanged, account for both effective in-reach
     timings in `ThreatScore`, then complete MSH-1 in `tasks.md` test-first and run
     `./scripts/check.sh`.
+17. **Keep the boss gate and exit free of hazards.** *(done)*
+    Extend PROD-094 and add P-81 so every hazard kind is rejected from the gate column as well as
+    the exit corridor. Complete GATE-1 in `tasks.md` test-first.
+18. **Keep map starts clear of normal enemies.** *(done)*
+    Add PROD-106 and P-82: preserve each requested population while keeping every complete initial
+    patrol span strictly outside the player's inclusive 22-tile start exclusion. Complete SPAWN-1
+    in `tasks.md` test-first.
+19. **Lead moving targets with grenade launchers.** *(done)*
+    Add PROD-107 and P-83: record actual last-tick target movement and solve Ashfall's deterministic
+    whole-tick arc against its constant-velocity intercept, with a stationary fallback. Complete
+    LEAD-1 in `tasks.md` test-first and extend the determinism digest.
+20. **Add broken-glass ground hazards.** *(done)*
+    Add PROD-108, P-84 and P-85: place 1–2-cell glass patches inside the existing hazard budget,
+    drain at `0.5 × contactDamage` per second and draw small static rusty jagged debris. Complete
+    GLASS-1 in `tasks.md` test-first and inspect the representative world sheet.
+21. **Increase all player-melee damage by 50 %.** *(done)*
+    Add PROD-109 and P-86, update the nine registry rows exactly, preserve every non-damage field
+    and recalibrate affected assertions and pressure fixtures. Complete MELEE-1 in `tasks.md`
+    test-first.
 
 ## Agents
 

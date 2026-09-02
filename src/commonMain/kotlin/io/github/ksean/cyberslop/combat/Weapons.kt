@@ -6,9 +6,8 @@ import io.github.ksean.cyberslop.physics.TICK_SECONDS
 /**
  * The weapon registry.
  *
- * Tiers are rarity bands and are held apart in power by [WeaponRegistryTest]: a tier's weakest
- * weapon must out-damage the tier below's strongest by a margin. That is what makes a different,
- * rarer drop worth walking over, since walking over it always equips it (PROD-070).
+ * Tiers are rarity bands. Their DPS distributions rise by minimum, mean, and maximum, while some
+ * individual weapons may overlap adjacent bands (PROD-014).
  *
  * Melee is the high-risk class: every melee weapon reaches at least two metres, beyond any enemy
  * swing, and within a tier the melee mean DPS (bottle excluded) exceeds the ranged mean.
@@ -21,28 +20,28 @@ object Weapons {
         name = "Broken Bottle",
         cls = WeaponClass.Melee,
         tier = Tier.Street,
-        damage = 8.0, cooldown = 2.0, rangePx = 2.2 * METRE, projectileSpeed = 0.0,
+        damage = 12.0, cooldown = 2.0, rangePx = 2.2 * METRE, projectileSpeed = 0.0,
         pattern = FirePattern.ArcSwing(arcDegrees = 70.0, lingerSeconds = 0.1),
     )
 
     val all: List<WeaponSpec> = listOf(
         startingWeapon,
-        melee(WeaponId.RustlineMachete, "Rustline Machete", Tier.Street, 17.0, 1.4, 2.3, 80.0,
+        melee(WeaponId.RustlineMachete, "Rustline Machete", Tier.Street, 25.5, 1.4, 2.3, 80.0,
             onHit = listOf(HitEffect.Bleed(perSecond = 2.0, seconds = 3.0))),
-        melee(WeaponId.CorpoRiotBaton, "Corpo Riot Baton", Tier.Scav, 17.0, 1.1, 2.2, 90.0,
+        melee(WeaponId.CorpoRiotBaton, "Corpo Riot Baton", Tier.Scav, 25.5, 1.1, 2.2, 90.0,
             knockback = 320.0, onHit = listOf(HitEffect.Stun(chance = 1.0, seconds = 0.3))),
-        melee(WeaponId.ChromeFang, "Chrome Fang", Tier.Scav, 13.0, 1.2, 2.0, 35.0, projectiles = 2),
-        melee(WeaponId.StaticLash, "Static Lash", Tier.Chromed, 24.0, 0.9, 4.0, 60.0,
+        melee(WeaponId.ChromeFang, "Chrome Fang", Tier.Scav, 19.5, 1.2, 2.0, 35.0, projectiles = 2),
+        melee(WeaponId.StaticLash, "Static Lash", Tier.Chromed, 36.0, 0.9, 4.0, 60.0,
             onHit = listOf(HitEffect.Shock(extraTargets = 1))),
-        melee(WeaponId.GutterjackCleaver, "Gutterjack Cleaver", Tier.Chromed, 42.0, 1.3, 2.4, 75.0,
+        melee(WeaponId.GutterjackCleaver, "Gutterjack Cleaver", Tier.Chromed, 63.0, 1.3, 2.4, 75.0,
             onHit = listOf(HitEffect.Execute(healthFraction = 0.15))),
-        melee(WeaponId.KillSwitchKatana, "Kill-Switch Katana", Tier.Blacksite, 40.0, 0.65, 2.8, 50.0,
+        melee(WeaponId.KillSwitchKatana, "Kill-Switch Katana", Tier.Blacksite, 60.0, 0.65, 2.8, 50.0,
             onFire = listOf(FireEffect.DashStrike(reachPx = 3.0 * METRE, invulnerableSeconds = 0.2))),
-        melee(WeaponId.ChromewreckMaul, "Chromewreck Maul", Tier.Blacksite, 100.0, 1.6, 3.6, 100.0,
+        melee(WeaponId.ChromewreckMaul, "Chromewreck Maul", Tier.Blacksite, 150.0, 1.6, 3.6, 100.0,
             knockback = 640.0),
         WeaponSpec(
             id = WeaponId.MeatgrinderHalo, name = "Meatgrinder Halo", cls = WeaponClass.Melee,
-            tier = Tier.Ascended, damage = 40.0, cooldown = 0.35, rangePx = 2.8 * METRE,
+            tier = Tier.Ascended, damage = 60.0, cooldown = 0.35, rangePx = 2.8 * METRE,
             projectileSpeed = 0.0,
             pattern = FirePattern.Orbit(radius = 2.8 * METRE, revolutionsPerMinute = 220.0),
         ),

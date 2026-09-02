@@ -2,6 +2,7 @@ package io.github.ksean.cyberslop.sim
 
 import io.github.ksean.cyberslop.combat.Anchor
 import io.github.ksean.cyberslop.combat.AutoFire
+import io.github.ksean.cyberslop.combat.BallisticLaunch
 import io.github.ksean.cyberslop.combat.CombatBodies
 import io.github.ksean.cyberslop.combat.DamagePipeline
 import io.github.ksean.cyberslop.combat.Falloff
@@ -342,6 +343,9 @@ class GameSimulation(
             )
         }
         gameplayViewport = viewport
+        val enemyCentresBeforeTick = enemies.map(::centreOfEnemy)
+        val minibossCentreBeforeTick = miniboss.centre
+        val bossCentreBeforeTick = boss.centre
         previousPlayer = player
         playerHurtSecondsLeft = (playerHurtSecondsLeft - TICK_SECONDS).coerceAtLeast(0.0)
         advanceScrapGains()
@@ -351,7 +355,9 @@ class GameSimulation(
         elapsedTicks++
 
         val muzzle = centreOf(player)
-        val aim = Targeting.aimPoint(muzzle, targets(), facing)
+        val selectedTarget = selectedAimTarget(muzzle)
+        val aim = selectedTarget?.position
+            ?: Targeting.aimPoint(muzzle, emptyList(), facing)
         aimDirection = (aim - muzzle).normalisedOr(Vec2(facing.toDouble(), 0.0))
 
         // Distance, not time: a gait driven by elapsed time and a speed-dependent rate jumps
@@ -385,7 +391,7 @@ class GameSimulation(
         val shots = autoFire.tick(TICK_SECONDS, muzzle, aim)
         if (shots.isNotEmpty()) pendingBurst = null
         advanceBurst(muzzle)
-        shots.forEach { emit(it, muzzle, aim) }
+        shots.forEach { emit(it, muzzle, aim, selectedTarget?.velocity ?: Vec2.Zero) }
         advanceProjectiles()
         advanceBossBeams()
         advanceStatuses()
@@ -408,6 +414,13 @@ class GameSimulation(
         if (!run.dead && boss.fight.exitOpen && TileMap.toTile(muzzle.x) > level.gateColumn) {
             exitReached = true
         }
+
+        enemies.forEachIndexed { index, enemy ->
+            val before = enemyCentresBeforeTick.getOrNull(index) ?: centreOfEnemy(enemy)
+            enemy.aimingVelocity = (centreOfEnemy(enemy) - before) * (1.0 / TICK_SECONDS)
+        }
+        miniboss.aimingVelocity = (miniboss.centre - minibossCentreBeforeTick) * (1.0 / TICK_SECONDS)
+        boss.aimingVelocity = (boss.centre - bossCentreBeforeTick) * (1.0 / TICK_SECONDS)
 
         return TickReport(
             playerDied = run.dead,
@@ -472,7 +485,7 @@ class GameSimulation(
         }
         add(enemies.size)
         enemies.forEach { e ->
-            add(e.position); add(e.vy); add(e.health); add(e.facing); add(e.engaged)
+            add(e.position); add(e.vy); add(e.aimingVelocity); add(e.health); add(e.facing); add(e.engaged)
             add(e.leap?.direction ?: 0); add(e.leap?.landingX ?: 0.0); add(e.landingCooldownLeft)
             add(e.cooldownLeft); add(e.windUpLeft); add(e.windUpTotal); add(e.attackDirection); add(e.attackTarget)
             add(e.slowSecondsLeft); add(e.slowFraction); add(e.stunSecondsLeft)
@@ -500,7 +513,7 @@ class GameSimulation(
         listOf(miniboss to minibossRewarded, boss to bossRewarded).forEach { (b, rewarded) ->
             add(b.spec.profile.primaryMelee.ordinal); add(b.spec.profile.primaryRanged.ordinal)
             add(b.spec.profile.signature?.ordinal ?: -1)
-            add(b.position); add(b.fight.health); add(b.fight.engaged); add(b.facing); add(b.aimedX)
+            add(b.position); add(b.aimingVelocity); add(b.fight.health); add(b.fight.engaged); add(b.facing); add(b.aimedX)
             add(b.aimedAt); add(b.aimDirection)
             add(b.vy); add(b.leap?.direction ?: 0); add(b.leap?.landingX ?: 0.0); add(b.landingCooldownLeft)
             add(b.elapsedSeconds)
@@ -549,16 +562,24 @@ class GameSimulation(
         }
     }
 
-    /** Live targets for auto-aim: what is actually there now, not where things started. */
-    private fun targets(): List<Vec2> = buildList {
-        enemies.filter { it.alive }.forEach { add(centreOfEnemy(it)) }
-        if (miniboss.fight.vulnerable && !miniboss.fight.defeated) add(miniboss.centre)
-        if (boss.fight.vulnerable && !boss.fight.defeated) add(boss.centre)
+    private data class AimTarget(val position: Vec2, val velocity: Vec2)
+
+    /** Nearest live target by current position, carrying its last completed actual movement. */
+    private fun selectedAimTarget(muzzle: Vec2): AimTarget? {
+        val candidates = buildList {
+            enemies.filter { it.alive }.forEach { add(AimTarget(centreOfEnemy(it), it.aimingVelocity)) }
+            if (miniboss.fight.vulnerable && !miniboss.fight.defeated) {
+                add(AimTarget(miniboss.centre, miniboss.aimingVelocity))
+            }
+            if (boss.fight.vulnerable && !boss.fight.defeated) add(AimTarget(boss.centre, boss.aimingVelocity))
+        }
+        val nearest = Targeting.nearest(muzzle, candidates.map(AimTarget::position)) ?: return null
+        return candidates.first { it.position == nearest }
     }
 
     // ---- firing -------------------------------------------------------------------------------
 
-    private fun emit(shot: Shot, muzzle: Vec2, aim: Vec2) {
+    private fun emit(shot: Shot, muzzle: Vec2, aim: Vec2, targetVelocity: Vec2) {
         val weapon = shot.weapon
         val origin = if (weapon.spec.anchor == Anchor.Cursor) aim else muzzle
 
@@ -583,7 +604,7 @@ class GameSimulation(
                     is FirePattern.Orbit -> showHit(HitShape.Ring(origin, resolveBlast(shot, origin, pattern.radius)))
                     is FirePattern.Pull -> showHit(HitShape.Ring(origin, resolveBlast(shot, origin, pattern.radius)))
                     else -> {
-                        val launch = spawnProjectiles(shot, origin, aim)
+                        val launch = spawnProjectiles(shot, origin, aim, targetVelocity)
                         lastShot = lastShot?.copy(direction = launch)
                     }
                 }
@@ -727,21 +748,48 @@ class GameSimulation(
      * its projectiles at once across the spread. A new trigger always replaces a pending burst, so
      * a burst can never carry a stale build.
      */
-    private fun spawnProjectiles(shot: Shot, origin: Vec2, aimPoint: Vec2): Vec2 {
+    private fun spawnProjectiles(
+        shot: Shot,
+        origin: Vec2,
+        aimPoint: Vec2,
+        targetVelocity: Vec2,
+    ): Vec2 {
         val weapon = shot.weapon
         val interval = weapon.spec.burstIntervalSeconds
-        val lobbed = (weapon.spec.pattern as? FirePattern.Projectile)
-            ?.gravity
-            ?.let { gravity -> gravity > 0.0 } == true
+        val projectilePattern = weapon.spec.pattern as? FirePattern.Projectile
+        val lobbed = projectilePattern?.gravity?.let { gravity -> gravity > 0.0 } == true
+        val ballisticLaunch = if (lobbed) {
+            val speed = if (weapon.spec.projectileSpeed > 0.0) {
+                weapon.spec.projectileSpeed * weapon.reachScale
+            } else {
+                DEFAULT_PROJECTILE_SPEED
+            }
+            ProjectileBallistics.solve(
+                origin = origin,
+                target = aimPoint,
+                nominalSpeed = speed,
+                gravity = requireNotNull(projectilePattern).gravity,
+                lifetimeSeconds = projectilePattern.lifetimeSeconds,
+                tickSeconds = TICK_SECONDS,
+                targetVelocity = targetVelocity,
+            )
+        } else {
+            null
+        }
+        val snapshottedAim = ballisticLaunch?.intercept ?: aimPoint
         if (interval > 0.0) {
             pendingBurst = PendingBurst(
                 weapon.projectileCount - 1,
                 interval,
                 shot.direction,
                 weapon,
-                aimPoint = aimPoint.takeIf { lobbed },
+                aimPoint = snapshottedAim.takeIf { lobbed },
             )
-            return spawnRound(weapon, origin, shot.direction, aimPoint, offsetDegrees = 0.0)
+            return spawnRound(
+                weapon, origin, shot.direction, snapshottedAim,
+                offsetDegrees = 0.0,
+                ballisticLaunch = ballisticLaunch,
+            )
                 ?.normalisedOr(shot.direction) ?: shot.direction
         }
         // Fanned evenly across the whole spread: the outermost projectiles sit on its edges.
@@ -749,7 +797,10 @@ class GameSimulation(
         var launchDirection = shot.direction
         repeat(count) { index ->
             val offset = if (count == 1) 0.0 else (index - (count - 1) / 2.0) * (weapon.spec.spreadDegrees / (count - 1))
-            val velocity = spawnRound(weapon, origin, shot.direction, aimPoint, offset)
+            val velocity = spawnRound(
+                weapon, origin, shot.direction, snapshottedAim, offset,
+                ballisticLaunch = ballisticLaunch,
+            )
             if (index == 0 && velocity != null) launchDirection = velocity.normalisedOr(shot.direction)
         }
         return launchDirection
@@ -784,6 +835,7 @@ class GameSimulation(
         direction: Vec2,
         aimPoint: Vec2?,
         offsetDegrees: Double,
+        ballisticLaunch: BallisticLaunch? = null,
     ): Vec2? {
         if (projectiles.size >= MAX_PROJECTILES) return null
         val speed = if (weapon.spec.projectileSpeed > 0.0) {
@@ -794,7 +846,7 @@ class GameSimulation(
         val pattern = weapon.spec.pattern as? FirePattern.Projectile
         val gravity = pattern?.gravity ?: 0.0
         val baseVelocity = if (pattern != null && pattern.gravity > 0.0) {
-            ProjectileBallistics.solve(
+            ballisticLaunch?.velocity ?: ProjectileBallistics.solve(
                 origin = origin,
                 target = requireNotNull(aimPoint) { "lobbed projectile requires an aim point" },
                 nominalSpeed = speed,
@@ -1206,31 +1258,35 @@ class GameSimulation(
     private fun advanceEnemies() {
         val playerCentre = centreOf(player)
         enemies.filter { it.alive }.forEach { enemy ->
-            updateAwareness(enemy, playerCentre)
-            enemy.landingCooldownLeft = (enemy.landingCooldownLeft - TICK_SECONDS).coerceAtLeast(0.0)
-            if (!enemy.archetype.ignoresTerrain) {
-                if (enemy.leap != null) advanceLeap(enemy) else fall(enemy)
-            }
-            decayVisuals(enemy)
-            if (!enemy.alive) return@forEach
-            val attackTimerDelta = attackTimerDelta(enemy, playerCentre)
-            enemy.cooldownLeft -= if (enemy.cooldownLeft > 0.0) attackTimerDelta else TICK_SECONDS
-            if (enemy.stunned) return@forEach
-
-            // No attack starts or continues through a committed leap or its landing grace.
-            if (enemy.leap != null || enemy.vy != 0.0 || enemy.landingCooldownLeft > 0.0) return@forEach
-
-            if (enemy.windingUp) {
-                windUp(enemy, playerCentre, attackTimerDelta)
-                return@forEach
-            }
-
-            val speed = ENEMY_SPEED * enemy.speedScale(DamagePipeline.MIN_ENEMY_SPEED_FRACTION) *
-                enemy.archetype.speedScale
-            if (enemy.engaged) act(enemy, playerCentre, speed) else patrol(enemy, speed)
-
-            if (enemy.cooldownLeft <= 0.0) beginAttack(enemy, playerCentre)
+            advanceEnemy(enemy, playerCentre)
         }
+    }
+
+    private fun advanceEnemy(enemy: LiveEnemy, playerCentre: Vec2) {
+        updateAwareness(enemy, playerCentre)
+        enemy.landingCooldownLeft = (enemy.landingCooldownLeft - TICK_SECONDS).coerceAtLeast(0.0)
+        if (!enemy.archetype.ignoresTerrain) {
+            if (enemy.leap != null) advanceLeap(enemy) else fall(enemy)
+        }
+        decayVisuals(enemy)
+        if (!enemy.alive) return
+        val attackTimerDelta = attackTimerDelta(enemy, playerCentre)
+        enemy.cooldownLeft -= if (enemy.cooldownLeft > 0.0) attackTimerDelta else TICK_SECONDS
+        if (enemy.stunned) return
+
+        // No attack starts or continues through a committed leap or its landing grace.
+        if (enemy.leap != null || enemy.vy != 0.0 || enemy.landingCooldownLeft > 0.0) return
+
+        if (enemy.windingUp) {
+            windUp(enemy, playerCentre, attackTimerDelta)
+            return
+        }
+
+        val speed = ENEMY_SPEED * enemy.speedScale(DamagePipeline.MIN_ENEMY_SPEED_FRACTION) *
+            enemy.archetype.speedScale
+        if (enemy.engaged) act(enemy, playerCentre, speed) else patrol(enemy, speed)
+
+        if (enemy.cooldownLeft <= 0.0) beginAttack(enemy, playerCentre)
     }
 
     private fun attackTimerDelta(enemy: LiveEnemy, playerCentre: Vec2): Double {
@@ -1879,6 +1935,15 @@ class GameSimulation(
             hurt(
                 spikeRate * Balance.contactDamage(level.mapIndex) * TICK_SECONDS,
                 PlayerDamageSource.Spike,
+            )
+        }
+        val glassRate = Hazards.glassRatePerSecond(
+            level, player.x, player.y, Physics.Default.width, player.height(Physics.Default),
+        )
+        if (glassRate > 0.0) {
+            hurt(
+                glassRate * Balance.contactDamage(level.mapIndex) * TICK_SECONDS,
+                PlayerDamageSource.Glass,
             )
         }
         val fireRate = Hazards.fireRatePerSecond(

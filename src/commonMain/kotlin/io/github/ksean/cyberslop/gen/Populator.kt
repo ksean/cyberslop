@@ -26,6 +26,9 @@ object Populator {
     /** Clearance kept between a patrol and a span the player cannot steer out of. */
     const val COMMITTED_BUFFER = 3
 
+    /** Inclusive horizontal radius around map start that no complete initial patrol may enter. */
+    const val START_CLEAR_TILES = 22
+
     /**
      * No patrol touches an arena or the approach the witness walks in on: whatever stands there
      * arrives at the boss with the player, and the boss fight is tuned as a boss fight. Twenty
@@ -54,6 +57,7 @@ object Populator {
             val row = standableRow(level, column) ?: continue
             val spawn = EnemySpawn(archetype, column, row, patrol)
 
+            if (!isClearOfStart(level, spawn)) continue
             if (!isClearOfCommittedSpans(level, spawn)) continue
             if (!isClearOfArenas(level, spawn)) continue
             if (archetype.shoots && seesCommittedSpan(level, spawn)) continue
@@ -110,6 +114,11 @@ object Populator {
         if (spawn.rightTile >= miniboss.leftTile - ARENA_APPROACH_TILES && spawn.leftTile <= miniboss.rightTile) return false
         return spawn.rightTile < boss.leftTile - ARENA_APPROACH_TILES
     }
+
+    /** Keeps initial awareness and auto-aim quiet until the player advances from the spawn. */
+    fun isClearOfStart(level: Level, spawn: EnemySpawn): Boolean =
+        spawn.rightTile < level.spawnColumn - START_CLEAR_TILES ||
+            spawn.leftTile > level.spawnColumn + START_CLEAR_TILES
 
     /** No part of the patrol may sit on or beside a span the player crosses committed. */
     fun isClearOfCommittedSpans(level: Level, spawn: EnemySpawn): Boolean {

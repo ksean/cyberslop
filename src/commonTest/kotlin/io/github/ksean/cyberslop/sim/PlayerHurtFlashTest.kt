@@ -32,6 +32,19 @@ class PlayerHurtFlashTest {
     }
 
     @Test
+    fun `broken glass damage starts the player flash`() {
+        val sim = TestLevels.simulation(
+            TestLevels.flat(
+                glassColumns = TestLevels.SPAWN_COLUMN..TestLevels.SPAWN_COLUMN,
+            ),
+        )
+
+        sim.tick(InputFrame())
+
+        assertEquals(GameSimulation.HURT_FLASH_SECONDS, sim.playerHurtSecondsLeft)
+    }
+
+    @Test
     fun `suppressed enemy contact does not start the flash`() {
         val sim = TestLevels.simulation(
             TestLevels.flat(committedColumns = TestLevels.SPAWN_COLUMN..TestLevels.SPAWN_COLUMN),

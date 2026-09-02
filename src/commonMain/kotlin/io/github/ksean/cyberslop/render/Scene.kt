@@ -499,6 +499,10 @@ object Scene {
         val bubbleGlow = builder.batch(Layer.Hazard, palette.hazardGlow, Primitive.Dot)
         val bubbleBody = builder.batch(Layer.HazardSurface, palette.hazard, Primitive.Dot)
         val spikes = builder.batch(Layer.Hazard, palette.hazardGlow, Primitive.Segment, strokeWidth(STRIP_WIDTH))
+        val glassShards = builder.batch(
+            Layer.HazardSurface, GLASS_RUST, Primitive.Segment, strokeWidth(GLASS_WIDTH),
+        )
+        val glassCrumbs = builder.batch(Layer.HazardSurface, GLASS_EDGE, Primitive.Dot)
         val size = TILE_SIZE * ZOOM
 
         for (x in first..last) {
@@ -541,11 +545,44 @@ object Scene {
                         }
                     }
 
+                    TileKind.BrokenGlass -> brokenGlass(
+                        glassShards, glassCrumbs, screenX, screenY, size, x, y,
+                    )
+
                     else -> Unit
                 }
             }
         }
         barrels(builder, palette, level, camera, first..last, timeSeconds)
+    }
+
+    /** Five low disconnected slashes and three crumbs, varied by coordinate but never by time. */
+    private fun brokenGlass(
+        shards: DrawBatch,
+        crumbs: DrawBatch,
+        screenX: Double,
+        screenY: Double,
+        size: Double,
+        tileX: Int,
+        tileY: Int,
+    ) {
+        val base = screenY + size
+        for (index in GLASS_X_START.indices) {
+            val phase = positiveMod(tileX * 7 + tileY * 11 + index * 5, 17) / 16.0 - 0.5
+            val x1 = screenX + size * (GLASS_X_START[index] + phase * 0.025)
+            val y1 = base - size * (GLASS_Y_START[index] + phase * 0.018)
+            val x2 = screenX + size * (GLASS_X_END[index] - phase * 0.018)
+            val y2 = base - size * (GLASS_Y_END[index] - phase * 0.015)
+            shards.segment(x1, y1, x2, y2)
+        }
+        for (index in GLASS_CRUMB_X.indices) {
+            val phase = positiveMod(tileX * 13 + tileY * 3 + index * 7, 19) / 18.0 - 0.5
+            crumbs.dot(
+                screenX + size * (GLASS_CRUMB_X[index] + phase * 0.02),
+                base - size * (GLASS_CRUMB_Y[index] - phase * 0.015),
+                GLASS_CRUMB_RADIUS,
+            )
+        }
     }
 
     private fun exitSparks(
@@ -2677,6 +2714,16 @@ object Scene {
     private const val STRIP_BASE_PX = 4.0
     private const val STRIP_POINTS = 3
     private const val STRIP_TOP = 0.35
+    const val GLASS_RUST = "#7a3f2b"
+    const val GLASS_EDGE = "#b66a45"
+    private const val GLASS_WIDTH = 2.0
+    private const val GLASS_CRUMB_RADIUS = 1.5
+    private val GLASS_X_START = doubleArrayOf(0.08, 0.25, 0.43, 0.61, 0.79)
+    private val GLASS_X_END = doubleArrayOf(0.21, 0.36, 0.57, 0.75, 0.92)
+    private val GLASS_Y_START = doubleArrayOf(0.04, 0.16, 0.08, 0.20, 0.10)
+    private val GLASS_Y_END = doubleArrayOf(0.22, 0.06, 0.27, 0.09, 0.24)
+    private val GLASS_CRUMB_X = doubleArrayOf(0.18, 0.52, 0.84)
+    private val GLASS_CRUMB_Y = doubleArrayOf(0.08, 0.14, 0.05)
     private const val DRUM_WIDTH = 0.7
     private const val DRUM_HEIGHT = 1.0
     private const val BAND_PX = 2.0

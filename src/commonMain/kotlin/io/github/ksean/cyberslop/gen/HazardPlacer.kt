@@ -26,8 +26,11 @@ object HazardPlacer {
     /** The approach before an arena that stays clear, matching the generator's ramp. */
     const val RAMP_TILES = 6
 
-    private const val SPIKE_SHARE = 2
+    private const val SPIKE_WEIGHT = 2
+    private const val GLASS_WEIGHT = 2
+    private const val BARREL_WEIGHT = 1
     private const val MAX_STRIP = 3
+    private const val MAX_GLASS_PATCH = 2
     private const val ATTEMPTS_PER_HAZARD = 20
 
     /** Writes spike strips into the tiles and returns the barrels to carry on the level. */
@@ -46,21 +49,36 @@ object HazardPlacer {
         while (placed < wanted && attempts < wanted * ATTEMPTS_PER_HAZARD) {
             attempts++
             val at = candidates[rng.nextInt(candidates.size)]
-            // Keep the candidate array's seeded ordering stable, but never realise an exit hazard.
-            if (at.column > level.gateColumn) continue
-            if (rng.nextInt(SPIKE_SHARE + 1) < SPIKE_SHARE) {
-                val length = 1 + rng.nextInt(MAX_STRIP)
-                val strip = (0 until length).map { Cell(at.column + it, at.row) }
-                if (strip.any { it !in candidates || it in used }) continue
-                strip.forEach { level.tiles[it.column, it.row] = TileKind.Spikes }
-                used.addAll(strip)
-            } else {
-                val barrel = Barrel(at.column, at.row)
-                val flame = Cell(barrel.column, barrel.flameRow)
-                if (flame !in eligible || level.tiles.blocksMovement(flame.column, flame.row)) continue
-                if (barrel.cells.any { it in used }) continue
-                barrels.add(barrel)
-                used.addAll(barrel.cells)
+            // Keep the candidate array's seeded ordering stable, but never realise a gate/exit hazard.
+            if (at.column >= level.gateColumn) continue
+            when (rng.nextInt(SPIKE_WEIGHT + GLASS_WEIGHT + BARREL_WEIGHT)) {
+                in 0 until SPIKE_WEIGHT -> {
+                    val length = 1 + rng.nextInt(MAX_STRIP)
+                    val strip = (0 until length).map { Cell(at.column + it, at.row) }
+                    if (strip.any { it !in candidates || it in used }) continue
+                    strip.forEach { level.tiles[it.column, it.row] = TileKind.Spikes }
+                    used.addAll(strip)
+                }
+                in SPIKE_WEIGHT until SPIKE_WEIGHT + GLASS_WEIGHT -> {
+                    val length = 1 + rng.nextInt(MAX_GLASS_PATCH)
+                    val patch = (0 until length).map { Cell(at.column + it, at.row) }
+                    if (patch.any { it !in candidates || it in used }) continue
+                    val beside = listOf(
+                        Cell(patch.first().column - 1, at.row),
+                        Cell(patch.last().column + 1, at.row),
+                    )
+                    if (beside.any { level.tiles[it.column, it.row] == TileKind.BrokenGlass }) continue
+                    patch.forEach { level.tiles[it.column, it.row] = TileKind.BrokenGlass }
+                    used.addAll(patch)
+                }
+                else -> {
+                    val barrel = Barrel(at.column, at.row)
+                    val flame = Cell(barrel.column, barrel.flameRow)
+                    if (flame !in eligible || level.tiles.blocksMovement(flame.column, flame.row)) continue
+                    if (barrel.cells.any { it in used }) continue
+                    barrels.add(barrel)
+                    used.addAll(barrel.cells)
+                }
             }
             placed++
         }
@@ -78,6 +96,9 @@ object HazardPlacer {
         Hazards.spikeStrips(level)
             .filter { strip -> strip.any { it in touched } }
             .forEach { strip -> strip.forEach { level.tiles[it.column, it.row] = TileKind.Empty } }
+        Hazards.glassPatches(level)
+            .filter { patch -> patch.any { it in touched } }
+            .forEach { patch -> patch.forEach { level.tiles[it.column, it.row] = TileKind.Empty } }
         return exitSafeBarrels.filter { barrel -> barrel.cells.none { it in touched } }
     }
 
@@ -88,18 +109,21 @@ object HazardPlacer {
      */
     fun confirmPursuit(level: Level, barrels: List<Barrel>): List<Barrel> {
         val candidates = (
-            Hazards.spikeStrips(level).map { PursuitCandidate(strip = it) } +
+            Hazards.spikeStrips(level).map { PursuitCandidate(cells = it, kind = TileKind.Spikes) } +
+                Hazards.glassPatches(level).map {
+                    PursuitCandidate(cells = it, kind = TileKind.BrokenGlass)
+                } +
                 barrels.map { PursuitCandidate(barrel = it) }
             ).sortedWith(compareBy(PursuitCandidate::priority, PursuitCandidate::column))
-        candidates.flatMap { it.strip.orEmpty() }
+        candidates.flatMap { it.cells.orEmpty() }
             .forEach { level.tiles[it.column, it.row] = TileKind.Empty }
 
         val kept = mutableListOf<Barrel>()
         candidates.forEach { candidate ->
-            candidate.strip?.forEach { level.tiles[it.column, it.row] = TileKind.Spikes }
+            candidate.cells?.forEach { level.tiles[it.column, it.row] = requireNotNull(candidate.kind) }
             candidate.barrel?.let(kept::add)
             if (EnemyPursuitEnvelope.audit(level.withBarrels(kept)).isNotEmpty()) {
-                candidate.strip?.forEach { level.tiles[it.column, it.row] = TileKind.Empty }
+                candidate.cells?.forEach { level.tiles[it.column, it.row] = TileKind.Empty }
                 candidate.barrel?.let(kept::remove)
             }
         }
@@ -107,15 +131,17 @@ object HazardPlacer {
     }
 
     private data class PursuitCandidate(
-        val strip: List<Cell>? = null,
+        val cells: List<Cell>? = null,
+        val kind: TileKind? = null,
         val barrel: Barrel? = null,
     ) {
-        val column: Int get() = strip?.first()?.column ?: requireNotNull(barrel).column
+        val column: Int get() = cells?.first()?.column ?: requireNotNull(barrel).column
         /** Most pressure for the least occupied ground first, so safe capacity is not wasted. */
         val priority: Int get() = when {
-            strip?.size == 1 -> 0
+            kind == TileKind.Spikes && cells?.size == 1 -> 0
             barrel != null -> 1
-            else -> requireNotNull(strip).size
+            kind == TileKind.Spikes -> requireNotNull(cells).size
+            else -> MAX_STRIP + requireNotNull(cells).size
         }
     }
 
@@ -141,6 +167,7 @@ object HazardPlacer {
 
         return buildSet {
             for (row in 0 until height) for (column in 0 until width) {
+                if (column >= level.gateColumn) continue
                 if (forbidden[row][column] || level.arcMask[column, row]) continue
                 if (keepOut.any { column in it }) continue
                 add(Cell(column, row))
@@ -150,14 +177,16 @@ object HazardPlacer {
 
     /** Final invariant boundary, also covering fault-injected candidates used by verification. */
     private fun removeExitHazards(level: Level, barrels: List<Barrel>): List<Barrel> {
-        for (column in level.gateColumn + 1 until level.widthTiles) {
+        for (column in level.gateColumn until level.widthTiles) {
             for (row in 0 until level.tiles.height) {
-                if (level.tiles[column, row] == TileKind.Spikes) {
+                if (level.tiles[column, row] == TileKind.Spikes ||
+                    level.tiles[column, row] == TileKind.BrokenGlass
+                ) {
                     level.tiles[column, row] = TileKind.Empty
                 }
             }
         }
-        return barrels.filter { barrel -> barrel.cells.all { it.column <= level.gateColumn } }
+        return barrels.filter { barrel -> barrel.cells.all { it.column < level.gateColumn } }
     }
 
     private fun standable(level: Level, cell: Cell): Boolean =

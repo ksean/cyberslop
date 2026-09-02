@@ -59,11 +59,10 @@ class BalanceTest {
     }
 
     @Test
-    fun `the starting weapon is deliberately short of the first map's requirement`() {
-        // The first weapon pickup is the opening progression beat; the bottle is not meant to carry
-        // the player through map one on its own.
-        assertTrue(
-            io.github.ksean.cyberslop.combat.Weapons.startingWeapon.baseDps < Balance.requiredDps(1),
+    fun `the buffed starting weapon meets the first map's requirement`() {
+        assertClose(
+            Balance.requiredDps(1),
+            io.github.ksean.cyberslop.combat.Weapons.startingWeapon.baseDps,
         )
     }
 

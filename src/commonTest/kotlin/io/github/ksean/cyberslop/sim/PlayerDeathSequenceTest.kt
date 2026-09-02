@@ -21,6 +21,7 @@ class PlayerDeathSequenceTest {
                 PlayerDamageSource.Fire to PlayerDeathEffect.Flame,
                 PlayerDamageSource.Laser to PlayerDeathEffect.Flame,
                 PlayerDamageSource.Spike to PlayerDeathEffect.Bleed,
+                PlayerDamageSource.Glass to PlayerDeathEffect.Bleed,
                 PlayerDamageSource.Projectile to PlayerDeathEffect.Bleed,
                 PlayerDamageSource.Melee to PlayerDeathEffect.Bleed,
                 PlayerDamageSource.Void to PlayerDeathEffect.None,
@@ -48,7 +49,7 @@ class PlayerDeathSequenceTest {
     }
 
     @Test
-    fun `acid fire spike and void enter their semantic terminal sources`() {
+    fun `acid fire spike glass and void enter their semantic terminal sources`() {
         assertEquals(PlayerDamageSource.Acid, lethalTile(TileKind.Acid).deathSequence?.cause)
         assertEquals(PlayerDamageSource.Void, lethalTile(TileKind.Void).deathSequence?.cause)
 
@@ -74,6 +75,13 @@ class PlayerDeathSequenceTest {
         )
         spike.tick(InputFrame())
         assertEquals(PlayerDamageSource.Spike, spike.deathSequence?.cause)
+
+        val glass = simulation(
+            TestLevels.flat(glassColumns = TestLevels.SPAWN_COLUMN..TestLevels.SPAWN_COLUMN),
+            health = 0.001,
+        )
+        glass.tick(InputFrame())
+        assertEquals(PlayerDamageSource.Glass, glass.deathSequence?.cause)
     }
 
     @Test

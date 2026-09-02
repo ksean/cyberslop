@@ -129,6 +129,41 @@ class WorldFrameSheetTest {
     }
 
     @Test
+    fun `a close world frame with broken glass is written for inspection`() {
+        val glass = (TestLevels.SPAWN_COLUMN + 2)..(TestLevels.SPAWN_COLUMN + 3)
+        val level = TestLevels.flat(glassColumns = glass)
+        val sim = TestLevels.simulation(level)
+        val camera = Camera(
+            sim.player.x - GLASS_MARGIN,
+            sim.player.y - GLASS_RISE,
+            GLASS_VIEW_WIDTH,
+            GLASS_VIEW_HEIGHT,
+        )
+        val frame = Scene.compose(
+            sim,
+            camera,
+            Backdrops.of(SEED, level),
+            HudModel.of(sim),
+            0.0,
+            SceneBuilder(),
+        )
+        val sink = SvgPaintSink(
+            GLASS_VIEW_WIDTH * Scene.ZOOM,
+            GLASS_VIEW_HEIGHT * Scene.ZOOM,
+            "#05060a",
+        )
+        FramePainter.paint(frame, sink)
+        val out = File("build/icon-sheets").also { it.mkdirs() }.resolve("broken-glass.svg")
+        out.writeText(sink.toSvg())
+
+        assertTrue(out.length() > 0, "no broken-glass frame was written")
+        assertTrue(
+            frame.batches.count { it.layer == Layer.HazardSurface } == 2,
+            "broken glass did not retain its two constant-batch surface layers",
+        )
+    }
+
+    @Test
     fun `early middle and late mini and main boss frames are written for inspection`() {
         val directory = File("build/icon-sheets/boss-profiles").also { it.mkdirs() }
         val cards = mutableListOf<String>()
@@ -214,6 +249,10 @@ class WorldFrameSheetTest {
         const val BACKDROP_RISE = 105.0
         const val BACKDROP_VIEW_WIDTH = 230.0
         const val BACKDROP_VIEW_HEIGHT = 130.0
+        const val GLASS_MARGIN = 30.0
+        const val GLASS_RISE = 42.0
+        const val GLASS_VIEW_WIDTH = 120.0
+        const val GLASS_VIEW_HEIGHT = 80.0
         val BOSS_SEED = 0xB055uL
         val BOSS_MAPS = listOf(1, 5, 10)
         val ATTACK_LAYERS = setOf(Layer.ShotGlow, Layer.ShotBody, Layer.ShotCore, Layer.Effects)

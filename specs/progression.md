@@ -74,7 +74,7 @@ All three tracks have five ranks and use the same prices for ranks 1 through 5: 
 |---|---:|---:|---|
 | Reinforced Chassis | +10 % maximum health | +50 % | `Balance.playerMaxHealth(mapIndex)` when a run starts and whenever the current maximum is queried |
 | Black-Market Firmware | +5 % weapon damage | +25 % | the resolved player weapon hit, before its blast, chain, ignite and life-steal consequences |
-| Reactive Dermal Weave | −5 % incoming non-lethal damage | −25 % | enemy and boss attacks, enemy and boss contact, spike strips and burning barrels |
+| Reactive Dermal Weave | −5 % incoming non-lethal damage | −25 % | enemy and boss attacks, enemy and boss contact, spike strips, broken glass and burning barrels |
 
 Bonuses combine only within their own formula: maximum health and weapon damage multiply their
 unupgraded values by `1 + rate × rank`; non-lethal incoming damage multiplies by

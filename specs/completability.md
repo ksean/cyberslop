@@ -14,9 +14,10 @@ shipping build, and the seed sweep in `jvmTest` is a regression check, not the g
 CG covers traversal of static geometry and timed hazards to the boss door. It does not cover
 enemies (dynamic and killable — see *Enemies on the route* below and enemies.md), killing the boss
 (the loot floor in enemies.md), damaging hazards (hazards.md, placed off the route), or human
-execution (human validation). The corridor strictly beyond the boss gate is outside the witness
-because entering it completes the map; generation nevertheless carves it as flat safe floor and
-forbids every placed hazard there (PROD-094, hazards.md).
+execution (human validation). The boss-gate wall column and the corridor strictly beyond it are
+outside the witness because entering the corridor completes the map; generation nevertheless
+carves the corridor as flat safe floor and forbids every placed hazard on the wall or beyond it
+(PROD-094, hazards.md).
 
 ## How it is discharged
 
@@ -88,8 +89,10 @@ A **committed column** is one that holds a lethal tile in any row, or whose corr
 a trajectory they cannot change. `Level.committedColumns` records them for the simulation. The
 player **occupies** a committed column while any column their AABB overlaps is committed.
 
-1. **Placement.** No enemy spawn or patrol sits on or within three columns of a committed column;
-   no ranged or turret spawn has unobstructed line of fire into a committed span of `ArcMask`.
+1. **Placement.** No enemy spawn or patrol sits on or within three columns of a committed column,
+   and every complete initial patrol span is strictly outside the inclusive 22-tile horizontal
+   exclusion around the player spawn; no ranged or turret spawn has unobstructed line of fire into
+   a committed span of `ArcMask`.
 2. **Runtime.** An engaged Flyer may fly through a committed column and a ground enemy may cross it
    only on a leap whose fixed-step preview found a safe landing (enemies.md, PROD-088). Movement is
    not the safety boundary: no rank-and-file or boss swing, projectile, beam or contact drain deals

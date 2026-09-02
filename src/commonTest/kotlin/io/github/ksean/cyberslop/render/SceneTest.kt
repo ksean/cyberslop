@@ -834,6 +834,54 @@ class SceneTest {
         assertTrue(hazardPrimitives(sim) > 0, "spikes and a barrel drew nothing on the hazard layer")
     }
 
+    @Test
+    fun `broken glass is a static low rusty scatter with constant batches`() {
+        fun frame(columns: IntRange, time: Double) = TestLevels.simulation(
+            TestLevels.flat(glassColumns = columns),
+        ).let { sim -> Scene.compose(sim, camera(), backdrop(sim), hudOf(sim), time, SceneBuilder()) }
+
+        fun glassBatches(draw: DrawList) = draw.batches.filter {
+            it.layer == Layer.HazardSurface && it.style in setOf("#7a3f2b", "#b66a45")
+        }
+
+        val column = TestLevels.SPAWN_COLUMN + 2
+        val single = glassBatches(frame(column..column, 0.0))
+        assertEquals(2, single.size)
+        assertEquals(5, single.single { it.primitive == Primitive.Segment }.size)
+        assertEquals(3, single.single { it.primitive == Primitive.Dot }.size)
+
+        val tileTop = TestLevels.FLOOR_ROW * 16.0 * Scene.ZOOM
+        val minimumY = tileTop + 16.0 * Scene.ZOOM * 0.70
+        single.forEach { batch ->
+            val stride = batch.primitive.stride
+            for (index in 0 until batch.size) {
+                val offset = index * stride
+                val ys = when (batch.primitive) {
+                    Primitive.Segment -> listOf(batch[offset + 1], batch[offset + 3])
+                    Primitive.Dot -> listOf(batch[offset + 1])
+                    else -> emptyList()
+                }
+                assertTrue(ys.all { it >= minimumY }, "glass rose above the bottom 30 percent: $ys")
+            }
+        }
+
+        fun coordinates(batches: List<DrawBatch>) = batches.map { batch ->
+            List(batch.size * batch.primitive.stride) { batch[it] }
+        }
+        assertEquals(coordinates(single), coordinates(glassBatches(frame(column..column, 1.0))))
+        val firstShard = single.single { it.primitive == Primitive.Segment }
+        val nextShard = glassBatches(frame(column + 1..column + 1, 0.0))
+            .single { it.primitive == Primitive.Segment }
+        val firstLocal = List(firstShard.size * Primitive.Segment.stride) { index ->
+            if (index % 2 == 0) firstShard[index] - column * 16.0 * Scene.ZOOM else firstShard[index]
+        }
+        val nextLocal = List(nextShard.size * Primitive.Segment.stride) { index ->
+            if (index % 2 == 0) nextShard[index] - (column + 1) * 16.0 * Scene.ZOOM else nextShard[index]
+        }
+        assertTrue(firstLocal != nextLocal, "neighbouring glass tiles are identical translations")
+        assertEquals(2, glassBatches(frame(column..column + 8, 0.0)).size)
+    }
+
     /** Round-3 finding: a shot resolves on the aim taken at wind-up start, so that is what the telegraph shows. */
     @Test
     fun `a shooter's telegraph holds the aim it took, not where the player is now`() {
@@ -1357,7 +1405,18 @@ class SceneTest {
             run = run.copy(loadout = run.loadout.copy(weapon = Weapons.of(weapon)))
         }
         if (slots != null) run = run.copy(loadout = run.loadout.copy(slots = slots))
-        return GameSimulation(level, run, SEED)
+        return GameSimulation(level, run, SEED).also { sim ->
+            // Generated patrols now stay outside the start exclusion zone. Presentation tests that
+            // wait for auto-fire need an explicit nearby target rather than weakening that rule.
+            val x = sim.player.x + CLOSE
+            sim.enemies += LiveEnemy(
+                archetype = EnemyArchetype.Swarm,
+                position = Vec2(x, sim.player.y),
+                health = EnemyArchetype.Swarm.healthOn(level.mapIndex),
+                homeX = x,
+                patrolPx = 0.0,
+            )
+        }
     }
 
     private fun camera() = Camera(0.0, 0.0, VIEW_WIDTH, VIEW_HEIGHT)

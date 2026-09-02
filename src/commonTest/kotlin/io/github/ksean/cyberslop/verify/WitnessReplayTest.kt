@@ -96,11 +96,17 @@ class WitnessReplayTest {
     fun `damaging hazards cannot change where the tape goes`() {
         val generated = LevelGenerator.generate(SEED, 10)
         val level = generated.level
-        assertTrue(level.barrels.isNotEmpty() || Hazards.spikeCells(level).isNotEmpty(), "map 10 placed no hazards, so nothing is proved")
+        assertTrue(
+            level.barrels.isNotEmpty() || Hazards.spikeCells(level).isNotEmpty() ||
+                Hazards.glassCells(level).isNotEmpty(),
+            "map 10 placed no hazards, so nothing is proved",
+        )
 
         val cleared = TileMap(level.tiles.width, level.tiles.height)
         for (x in 0 until level.tiles.width) for (y in 0 until level.tiles.height) {
-            cleared[x, y] = level.tiles[x, y].takeIf { it != TileKind.Spikes } ?: TileKind.Empty
+            cleared[x, y] = level.tiles[x, y]
+                .takeIf { it != TileKind.Spikes && it != TileKind.BrokenGlass }
+                ?: TileKind.Empty
         }
         val bare = Level(
             mapIndex = level.mapIndex, theme = level.theme, tiles = cleared,

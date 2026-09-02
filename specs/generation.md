@@ -12,7 +12,8 @@ theme    = Themes.forMap(mapIndex)
 spine    : for each half — spawn plateau → moves clamped to budget → ramp → arena
            every move writes FloorMask and ArcMask and appends its input program to the witness
 decorate : derived stream "decor"; writes nothing in FloorMask, no solid tile in ArcMask
-populate : derived stream "enemy"; enemies under completability.md's placement invariants
+populate : derived stream "enemy"; enemies under completability.md's placement invariants and
+           outside the player's 22-tile start exclusion
 replay   : the witness through MovementModel; a failed attempt is discarded (8 attempts, then fail)
 place    : static drops on the replay's footholds ("cache"), then damaging hazards ("hazard")
 confirm  : replay again; remove any damaging hazard the tape touches
@@ -23,8 +24,9 @@ pursuit  : reject an attempt with a gap, step or ground-hazard span outside any 
 Arenas are carved during the spine pass: flat contiguous floor of at least `theme.arenaWidthTiles`,
 ceiling clearance ≥ 6, zero hazards, a left entry and a right exit at floor level, footprint in
 `FloorMask`. The mini-boss arena is centred within ±5 % of `width / 2`; the boss arena ends the
-challenge route. Its gate is `boss.rightTile + 1`; every later in-map column is a flat, hazard-free
-exit corridor whose floor presentation marks the map-completion zone (PROD-094).
+challenge route. Its gate is `boss.rightTile + 1`; the gate column and every later in-map column
+are hazard-free, and the later columns form the flat exit corridor whose floor presentation marks
+the map-completion zone (PROD-094).
 
 A rhythm-shaped constructive spine is used rather than wave-function collapse or cellular automata
 with repair, because it is the only approach where completability is a property of the construction
@@ -83,7 +85,7 @@ the proposal curve prevents rejection noise from making the emitted final map mi
 
 The player envelope remains the authority for completability. Separately, `EnemyLeap` measures its
 fixed arc against each required real box (14 × 14 rank-and-file and 44 × 56 boss) and the pursuit
-audit checks generated pits, acid/void gaps, spike/barrel spans and step-ups against those results.
+audit checks generated pits, acid/void gaps, spike/glass/barrel spans and step-ups against those results.
 An attempt outside either requirement is not shown; the enemy audit does not rewrite the witness or
 make enemy movement part of the player's completability proof.
 
@@ -100,8 +102,8 @@ test and a change to terrain is not masked by one.
 ## Verified properties
 
 - **P-05** Arenas: floor flat and contiguous, width ≥ `arenaWidthTiles`, clearance ≥ 6, zero
-  hazards, reachable entry and reachable exit; every column strictly after the boss gate is flat
-  safe floor with no acid, jet, spike or barrel.
+  hazards, reachable entry and reachable exit; the boss gate column and every column after it are
+  hazard-free, and the later columns are flat safe floor with no acid, jet, spike, glass or barrel.
 - **P-06** Mini-boss arena centre within ±5 % of `width / 2`.
 - **P-07** `FloorMask` integrity: decoration changes no masked cell.
 - **P-08** `ArcMask` integrity: no solid tile is placed in any swept spine-move volume.

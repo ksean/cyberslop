@@ -43,6 +43,7 @@ class PlayerDeathPresentationTest {
             PlayerDamageSource.Fire to setOf(Scene.BURN_OUTER, Scene.BURN_CORE),
             PlayerDamageSource.Laser to setOf(Scene.BURN_OUTER, Scene.BURN_CORE),
             PlayerDamageSource.Spike to setOf(Scene.BLEED),
+            PlayerDamageSource.Glass to setOf(Scene.BLEED),
             PlayerDamageSource.Projectile to setOf(Scene.BLEED),
             PlayerDamageSource.Melee to setOf(Scene.BLEED),
         )

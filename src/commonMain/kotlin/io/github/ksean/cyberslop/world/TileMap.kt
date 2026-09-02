@@ -10,6 +10,9 @@ enum class TileKind(val blocksMovement: Boolean, val isLethal: Boolean) {
     /** A damaging hazard on walkable floor: survivable, never blocking (`specs/hazards.md`). */
     Spikes(blocksMovement = false, isLethal = false),
 
+    /** Low, non-blocking damaging debris placed on walkable floor (`specs/hazards.md`). */
+    BrokenGlass(blocksMovement = false, isLethal = false),
+
     /** Everything below the world. Falling out of the map kills rather than strands. */
     Void(blocksMovement = false, isLethal = true),
 }

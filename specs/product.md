@@ -29,7 +29,7 @@ build of powerups collected on contact, and permadeath with persistent unlocks.
   showing the `You died` screen. Starting from the pose visible on the lethal tick, the player
   collapses into a prone pose over the first two seconds and remains prone for the other two. An
   acid/poison-pit death animates poison bubbles on the player; a fire-hazard or laser-beam death
-  animates flame; and a spike, projectile or melee-attack death animates bleeding. The complete
+  animates flame; and a spike, broken-glass, projectile or melee-attack death animates bleeding. The complete
   cause, timing, input and fallback rules are specified in [simulation.md](simulation.md) and
   [presentation.md](presentation.md).
 - **PROD-032:** `Continue game` must resume an in-progress run only — never a run that has ended,
@@ -108,12 +108,21 @@ build of powerups collected on contact, and permadeath with persistent unlocks.
 - **PROD-063:** Every enemy and boss attack must be animated: a visible wind-up before it can hurt,
   the swing or shot itself, and a muzzle flash for a shot.
 - **PROD-064:** Maps must carry visible, survivable damaging hazards in the dystopian idiom — at
-  least spike strips and burning barrels — that hurt per second of contact, placed off the proven
-  route, at a density that rises across the run and is zero on map one.
-- **PROD-094:** No lethal or damaging hazard may be placed in the exit corridor strictly beyond the
-  main boss's gate, where entering completes the map. That corridor's safe floor must be visibly
-  marked by an animated blue sparkling surface so the completion zone reads before the player
-  crosses it; the animation is presentational and changes neither collision nor completion.
+  least spike strips, broken-glass patches and burning barrels — that hurt per second of contact,
+  placed off the proven route, at a density that rises across the run and is zero on map one.
+- **PROD-094:** No lethal or damaging hazard may occupy the main boss's gate column or the exit
+  corridor strictly beyond it, where entering completes the map. Nothing damaging may therefore
+  sit on top of the wall behind the boss. The corridor's safe floor must be visibly marked by an
+  animated blue sparkling surface so the completion zone reads before the player crosses it; the
+  animation is presentational and changes neither collision nor completion.
+- **PROD-106:** A generated rank-and-file enemy's complete initial patrol span must remain outside
+  a 22-tile horizontal exclusion zone on both sides of the player's map-start column. No normal
+  enemy may therefore begin a map within the player's initial awareness radius; population targets
+  and all other placement protections remain in force.
+- **PROD-108:** Broken glass must be a non-blocking, survivable ground hazard which drains health
+  at `0.5 × contactDamage(mapIndex)` per second of player overlap. It must be generated in small
+  patches under the normal damaging-hazard placement and confirmation rules and presented as low,
+  rusty, jagged shards visibly distinct from spike strips and ordinary floor.
 - **PROD-068:** Difficulty pressure must rise across the run and be measured: over a seed cohort,
   the population's threat score rises strictly in cohort mean from map to map, and a reference bot
   replaying each map's route with the guaranteed loadout takes gross incoming damage per hundred
@@ -148,8 +157,8 @@ build of powerups collected on contact, and permadeath with persistent unlocks.
   may expire at the former fixed eight-tile distance.
 - **PROD-088:** Every engaged enemy must be able to continue pursuing across generated traversal
   hazards: a ground-bound rank-and-file enemy, mini-boss or main boss must jump a safe, reachable
-  arc over pits, acid, spike strips and low obstructions instead of stopping at them, while a Flyer
-  crosses them in flight. A fixed-looking Turret must unfold into a slower mobile form when it
+  arc over pits, acid, spike strips, broken glass and low obstructions instead of stopping at them,
+  while a Flyer crosses them in flight. A fixed-looking Turret must unfold into a slower mobile form when it
   engages. An enemy must not launch a jump with no safe landing, enter another boss's protected
   arena ground, or gain permission to hurt a player during a committed crossing.
 
@@ -194,6 +203,14 @@ build of powerups collected on contact, and permadeath with persistent unlocks.
   it directly along the line of sight. The Ashfall Grenade Lobber is a lobber, and the same rule
   applies to every future projectile pattern with positive gravity. Straight ranged and psychic
   shots, and enemy and boss shots, keep their declared trajectories.
+- **PROD-107:** A player grenade launcher must lead its selected enemy or boss when that target is
+  moving: at trigger time its ballistic solution must aim for the constant-velocity future point
+  implied by the target's most recently completed fixed-tick movement. A stationary target keeps
+  the current-point solution, target selection remains based on current positions, and a grenade
+  never retargets after launch.
+- **PROD-109:** Every player melee weapon, including the Broken Bottle and Meatgrinder Halo, must
+  have exactly 1.5 times its previous declared base damage. Cooldown, reach, attack geometry,
+  fixed status magnitudes and all non-melee weapon damage remain unchanged.
 - **PROD-098:** A player projectile must damage every eligible enemy or boss whose projectile-hit
   region its swept path intersects, subject to its pierce budget and intervening terrain. A fast
   shot must not pass harmlessly through a target merely because it crossed the complete target

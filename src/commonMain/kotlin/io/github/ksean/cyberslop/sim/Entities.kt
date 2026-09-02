@@ -52,6 +52,9 @@ class LiveEnemy(
 ) {
     var facing: Int = 1
 
+    /** Actual combat-centre displacement from the most recently completed tick, per second. */
+    var aimingVelocity: Vec2 = Vec2.Zero
+
     /**
      * Whether this enemy has noticed the player (`specs/enemies.md`, Awareness). Engaged, it acts by
      * role instead of patrolling, and is no longer confined to its patrol span.
@@ -214,6 +217,10 @@ class LiveBoss(
     var hurtSecondsLeft: Double = 0.0
     var moving: Boolean = false
         private set
+
+    /** Actual combat-centre displacement from the most recently completed tick, per second. */
+    var aimingVelocity: Vec2 = Vec2.Zero
+        internal set
 
     var vy: Double = 0.0
         private set

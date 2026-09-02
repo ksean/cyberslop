@@ -71,6 +71,17 @@ one rigid shape. The flame remains within the jet's one-column lethal footprint 
 `topRow..bottomRow` vertical span. It is absent whenever `FireJet.isOnAt` is false, and changing
 its shape never changes that on/off decision.
 
+A broken-glass tile draws a static scatter only in the bottom 30 % of its cell: five disconnected,
+unequal shard segments and three small crumbs, derived from tile coordinates without RNG. Fixed
+rusty-brown `GLASS_RUST = #7a3f2b` shards and corroded-edge `GLASS_EDGE = #b66a45` crumbs form
+irregular acute joins and broken slashes but no filled or closed triangle, common baseline or mark
+taller than the 30 % band, so the patch reads as small jagged
+ground debris rather than spikes. All shard segments use `GLASS_RUST` at one fixed stroke width and
+all crumbs use `GLASS_EDGE` at one fixed radius, so one tile and any number of tiles open the same
+two `HazardSurface` style batches. The
+geometry is static presentation derived from `TileKind.BrokenGlass` and changes no collision,
+damage, RNG state or digest.
+
 Every jet also marks its supporting solid tile at `(column, bottomRow + 1)` with a permanently
 visible broken pipe. A dull metal neck protrudes from the tile, a dark open mouth sits under the
 flame, and an asymmetric split rim plus a descending crack makes the break readable without
@@ -644,7 +655,8 @@ its `Return to title` button receives focus as before.
   collision, map-clear tick, RNG consumption or digest; its styles are distinct from every item
   ring and shot look.
 - **P-69** Player hurt flash: enemy projectile, boss hit, normal-enemy contact, boss contact and
-  damaging-hazard fixtures each lower health and start `playerHurtSecondsLeft`; a
+  spike, broken-glass and barrel damaging-hazard fixtures each lower health and start
+  `playerHurtSecondsLeft`; a
   fairness-suppressed hit and healing do not. The window refreshes under continued damage, decays
   to zero after damage stops and is frozen by pause. While active every player figure style is
   `Palettes.HURT`, while the eye and held weapon retain their normal styles. Mutating the timer
@@ -665,6 +677,14 @@ its `Return to title` button receives focus as before.
   pause freezes the shape. Barrels at different coordinates do not all share the same pose.
   Composing any phase changes neither damaging contact, barrel geometry nor the simulation digest,
   and one barrel and many barrels open the same set of flame style batches.
+- **P-85** Broken-glass presentation: every `BrokenGlass` tile draws exactly five unequal,
+  disconnected `#7a3f2b` shard segments and three `#b66a45` crumbs within the bottom 30 % of its
+  cell. The geometry contains no closed triangle or common baseline and differs
+  at two representative coordinates while reproducing exactly at the same coordinate and every
+  presentation time. A solid, spike or empty control draws none of these marks. One patch and many
+  patches add exactly the same two style batches; composing them consumes no RNG and changes no
+  tile, health, collision or digest. The development world sheet is inspected for small, rusty,
+  jagged ground readability and clear distinction from spikes.
 - **P-76** Backdrop identity and detail: the backdrop-profile registry is total over the ten
   `ThemeId`s; every profile has a unique colour-independent structural signature containing at
   least the motifs required by its table row. For a representative level, all three depths contain
@@ -688,7 +708,7 @@ its `Return to title` button receives focus as before.
   silence. The psychic patch is distinct from all other patches, uses the specified bend, lasts at
   most 130 ms and peaks at most 0.05; every patch references no runtime audio asset.
 - **P-78** Player death sequence: isolated lethal fixtures for acid, fire jet, barrel fire, Laser,
-  spikes, ordinary and boss projectiles, and ordinary and boss melee attacks capture their declared
+  spikes, broken glass, ordinary and boss projectiles, and ordinary and boss melee attacks capture their declared
   cause effect; void and body contact capture none. When several sources overlap, the first
   terminal event remains the cause. The lethal frame starts at age zero in its normal resolved
   pose; after 120 death-only ticks the same limb lengths form the final prone pose and the end

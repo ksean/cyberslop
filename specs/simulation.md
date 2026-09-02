@@ -99,7 +99,7 @@ source, not inferred later from nearby actors, projectiles or tiles:
 |---|---|
 | `Acid` tile — the poison pit | poison bubbles |
 | active fire jet, burning-barrel body or flame, boss `Laser` beam, or a future source explicitly typed as fire or laser | flame |
-| `Spikes` tile, any hostile projectile (`Bolt`, `Burst` or `Scatter` included), or any enemy or boss melee attack | bleed |
+| `Spikes` or `BrokenGlass` tile, any hostile projectile (`Bolt`, `Burst` or `Scatter` included), or any enemy or boss melee attack | bleed |
 | `Void`, enemy or boss body contact, or an otherwise unclassified future source | none |
 
 Distinct damage sources resolve in the simulation's deterministic event order. The first one to

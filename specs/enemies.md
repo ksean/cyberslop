@@ -19,10 +19,15 @@ Population: `Populator` places `widthTiles / 100 × enemiesPerHundredTiles` enem
 8–60) with archetype weights Swarm 0.38, Brute 0.22, Flyer 0.18, Shooter 0.15, Turret 0.07, each
 standing on the lowest standable row of its column with a patrol span of 1–3 tiles either side,
 subject to the placement invariants in completability.md, and with no part of the patrol inside
-either arena, the twenty-tile approach before it, or anywhere past the boss arena's approach — what
+the inclusive horizontal start exclusion `spawnColumn ± START_CLEAR_TILES`, where
+`START_CLEAR_TILES = 22`, either arena, the twenty-tile approach before it, or anywhere past the
+boss arena's approach — what
 stands there arrives at the boss with the player, or shoots into the fight from the exit corridor,
-and the boss fight is tuned as a boss fight. Twenty tiles is what leaves a Swarm engaged at the
-awareness radius and outrun on the approach beyond `DISENGAGE_PX` of the boss's centre.
+and the boss fight is tuned as a boss fight. The generator resamples from the remaining legal
+columns so this exclusion does not reduce the requested population. Twenty-two start tiles equal
+the awareness radius, guaranteeing that no initial rank-and-file enemy is already aware of or
+targetable by the player. Twenty approach tiles leave a Swarm engaged at the awareness radius and
+outrun on the approach beyond `DISENGAGE_PX` of the boss's centre.
 
 For a player's direct `ArcSwing`, every rank-and-file silhouette is contained by a 24 px combat
 disc about the enemy centre. This disc is intentionally larger than the 14 px movement box: the
@@ -50,7 +55,8 @@ on the player.
   rules at `0.45 × ENEMY_SPEED`.
 - **Ground steps and leaps.** A grounded walker first attempts its voluntary horizontal step. If
   the next tile in its chase direction begins an unsupported span, acid or void, a spike strip, a
-  barrel footprint, or a solid obstruction at body height, it asks `EnemyLeap.plan` for a landing
+  broken-glass patch, a barrel footprint, or a solid obstruction at body height, it asks
+  `EnemyLeap.plan` for a landing
   in that direction. The planner advances the shipped fixed-step gravity and collision rules with
   `LEAP_VX = 240 px/s`, `LEAP_VY = -680 px/s`, the walker's real box and half-tile collision
   substeps. It selects the nearest landing beyond the blocking/hazard span whose whole swept box is
@@ -60,7 +66,8 @@ on the player.
   boundary. The horizontal direction is committed at take-off, no attack may begin while airborne,
   and another leap may not begin until `LEAP_COOLDOWN = 0.25 s` after landing. The generated gap,
   step and damaging-hazard bounds must lie inside this measured leap envelope, so a physically
-  possible pursuit crosses every generated pit, acid span, spike strip and low step rather than
+  possible pursuit crosses every generated pit, acid span, spike strip, broken-glass patch and low
+  step rather than
   treating it as a permanent wall. An active fire jet is not jumpable cover: a walker waits for
   its off-window before crossing its corridor.
 - **Pursuit (melee).** An engaged Swarm or Brute moves toward the player by ground steps and safe
@@ -290,8 +297,9 @@ if walked past.
 
 Mini-boss and boss kill-time bands are the health multipliers times the trash band. The boss
 multipliers are sized for roughly three-quarters uptime, because dodging a telegraph means moving
-out of reach. The broken bottle's 4.0 DPS sits deliberately below map 1's required 6.0: the first
-weapon pickup is the first progression beat, and the starter cache guarantees it.
+out of reach. The broken bottle's 6.0 DPS now meets map 1's required 6.0. The guaranteed starter
+cache remains the first weapon-progression beat, but is no longer required solely to bring the
+starter above the map-one rate.
 
 ## Threat and pressure (PROD-068)
 
@@ -415,12 +423,12 @@ inventory directly.
 - **P-40** Simulation determinism (simulation.md): `GameSimulation.digest()` is a canonical
   encoding of every mutable, future-affecting field — the player state and run (health, loadout,
   scrap), the auto-fire accumulator, the loot RNG state, every enemy in list order (position,
-  velocity, health, facing, engagement, leap target/cooldown, cooldown, wind-up and its aim, slow,
+  velocity, aiming velocity, health, facing, engagement, leap target/cooldown, cooldown, wind-up and its aim, slow,
   stun, burn, bleed), every projectile in list order (position, velocity, damage, pierce, life,
   ownership, boss activation and already-hit target identities), every ground
   item, the pending burst (rounds left, seconds to the next, aim, payload), each boss (position,
   velocity, profile and phase, health, engagement, attack, elapsed and scheduled events, rest,
-  melee and ranged attack indices, its attack-choice and melee-charge RNG states, current charge
+  melee and ranged attack indices, its attack-choice and melee-charge RNG states, aiming velocity, current charge
   selection and consumed charged-melee opportunities, reward flag),
   the player's active `ArcSwing` (snapshotted build and geometry, progress and already-hit targets),
   the terminal death phase and its elapsed fixed ticks, the exit state and the elapsed tick — with
@@ -432,6 +440,12 @@ inventory directly.
   it.
 - Shooters and turrets are at most 35 % of any map's population; every map holds at least three
   archetypes; enemies stand on the route rather than pooling at the arena.
+- **P-82** Start clearance: every initially populated rank-and-file patrol span lies strictly
+  outside `spawnColumn ± 22`, so every enemy centre begins at or beyond the strict 22-tile
+  awareness/auto-aim boundary. Boundary fixtures reject a patrol that touches either endpoint and
+  accept the next column outside it. Across the generation cohort no enemy begins engaged or
+  targetable, while the requested population count, maximum ranged share, minimum archetype count
+  and all arena exclusions remain satisfied.
 - **P-44** Boss attack choice: a phase-three main boss with the player inside `MELEE_REACH`
   opens with a ranged attack in about 20 % of attacks over a long fixed-seed run (within ±5
   points) and with the player at or beyond `RANGED_PREFERRED_PX` in about 80 %; within a kind the
@@ -472,8 +486,9 @@ inventory directly.
   map index, a main version exceeds the mini version on the same map, and mean no-dodge boss damage
   per second is strictly increasing from maps 1–3 to 4–6 to 7–10. The dodge bot still wins every
   loot-floor-covered boss fight on every cohort seed.
-- **P-61** Pursuit across hazards: fixtures for a one- to three-tile spike strip, the widest
-  generated flat acid/void gap and the tallest generated step are each crossed by every engaged
+- **P-61** Pursuit across hazards: fixtures for a one- to three-tile spike strip, a one- to
+  two-tile broken-glass patch, the widest generated flat acid/void gap and the tallest generated
+  step are each crossed by every engaged
   ground archetype and by both boss ranks, with no swept lethal contact and a non-lethal supported
   landing; a Flyer crosses the same committed span in flight. No unengaged enemy launches, a
   fault-injected span beyond the measured envelope produces no launch, a rank-and-file trajectory

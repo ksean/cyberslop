@@ -22,7 +22,7 @@ entry in `tasks.md`. Specifications carry no history; history lives in git.
 | [combat.md](combat.md) | Weapons, powerups, the damage formula and its caps, drops and rarity |
 | [progression.md](progression.md) | Persistent Scrap, the title-screen shop, permanent upgrades and first-pickup discovery cards |
 | [enemies.md](enemies.md) | Enemy archetypes and behaviour, mini-bosses and bosses, balance calibration, the loot floor |
-| [hazards.md](hazards.md) | Map hazards: acid, fire jets, spike traps, burning barrels and their contact rules |
+| [hazards.md](hazards.md) | Map hazards: acid, fire jets, spike traps, broken glass, burning barrels and their contact rules |
 | [presentation.md](presentation.md) | The draw list, character rigs and animation, enemy looks, palettes, icons, camera, browser rendering |
 | [iconography.md](iconography.md) | The intended silhouette of every weapon and powerup icon |
 

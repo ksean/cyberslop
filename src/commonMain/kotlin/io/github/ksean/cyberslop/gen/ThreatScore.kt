@@ -17,6 +17,7 @@ object ThreatScore {
     fun of(level: Level): Double {
         val enemies = level.enemies.sumOf { pressureOf(it) }
         val hazards = Hazards.spikeStrips(level).size * Hazards.SPIKE_RATE +
+            Hazards.glassPatches(level).size * Hazards.GLASS_RATE +
             level.barrels.size * Hazards.BARREL_RATE
         return (enemies + hazards) / (level.widthTiles / 100.0)
     }

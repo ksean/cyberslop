@@ -15,11 +15,13 @@ are placed off the witness route so the proven path stays hazard-free.
 | Void | lethal | below the bottom row of the map | death |
 | Fire jet | lethal while on | one per jet corridor, spanning the six rows above the floor, timed `period / duty / phase` | death |
 | Spike strip | damaging | a `Spikes` tile on walkable floor, 1–3 tiles long | `1.0 × contactDamage` per second of overlap |
+| Broken glass | damaging | a `BrokenGlass` tile on walkable floor, in patches 1–2 tiles long | `0.5 × contactDamage` per second of overlap |
 | Burning barrel | damaging | a `Barrel` object standing on a floor tile, with a flame one tile above it | `1.5 × contactDamage` per second of overlap with the barrel or its flame |
 
-Acid, void and spikes are tile kinds (`Acid`, `Void`, `Spikes`; none blocks movement). A fire jet
-and a barrel are objects on the `Level`, not tiles. A jet's state is `isOnAt(t) = ((t + phase) mod
-period) < on` on the level clock, so a witness replay and the live game agree on every jet.
+Acid, void, spikes and broken glass are tile kinds (`Acid`, `Void`, `Spikes`, `BrokenGlass`; none
+blocks movement). A fire jet and a barrel are objects on the `Level`, not tiles. A jet's state is
+`isOnAt(t) = ((t + phase) mod period) < on` on the level clock, so a witness replay and the live
+game agree on every jet.
 
 Acid's liquid identity is presentational: an exposed surface has a bright edge and several
 differently phased bubbles rising through the pool (PROD-085, presentation.md P-58). Bubble phase,
@@ -37,6 +39,11 @@ Their geometry stays within the existing flame cell above the barrel. Flame phas
 barrel footprint, damaging-contact calculation or level digest; the barrel and its entire flame
 cell remain equally damaging at every animation phase.
 
+Broken glass is static presentation over its exact tile footprint. Each tile shows a low scatter
+of rusty, jagged shard segments as specified by presentation.md P-85. The drawn shard tips never
+extend beyond the bottom 30 % of the tile, so a patch reads as small ground debris rather than a
+spike wall. Its colour and shape do not change its non-blocking collision or contact rate.
+
 ## Contact rules
 
 - The movement model samples lethal overlap **per sub-step** (half a tile), so a terminal-velocity
@@ -44,14 +51,16 @@ cell remain equally damaging at every animation phase.
   the current level clock. Either sets health to zero at the end of the tick, after all other
   damage.
 - Damaging overlap is tested against the player's AABB each tick and drains `rate × contactDamage
-  × dt`; overlapping two damaging hazards drains both. It can kill a player who stands in it, and
-  it never displaces the player (ENG-051).
+  × dt`; one maximal spike strip or broken-glass patch counts once however many of its tiles the
+  box overlaps, and overlapping distinct hazards drains each. It can kill a player who stands in
+  it, and it never displaces the player (ENG-051). A terminal broken-glass contact has the semantic
+  `Glass` damage source and the bleed death effect.
 - Enemy traversal does not change those effects. An engaged ground enemy treats an acid/void span,
-  a spike strip and a barrel footprint as something its verified leap must clear; a Flyer crosses
-  in flight. Spikes and barrels do not acquire a second enemy-damage model. An active fire jet is a
-  closed corridor to a ground pursuer until its normal off-window; enemy waiting or jumping never
-  changes the jet's phase. Safe launch, swept clearance and landing are specified and verified by
-  enemies.md P-61.
+  a spike strip, a broken-glass patch and a barrel footprint as something its verified leap must
+  clear; a Flyer crosses in flight. These hazards do not acquire a second enemy-damage model. An
+  active fire jet is a closed corridor to a ground pursuer until its normal off-window; enemy
+  waiting or jumping never changes the jet's phase. Safe launch, swept clearance and landing are
+  specified and verified by enemies.md P-61.
 
 ## Generation constraints
 
@@ -64,35 +73,51 @@ cell remain equally damaging at every animation phase.
   jets from map 4.
 - **Damaging hazards are placed last**: carve → decorate → populate → replay → static pickups →
   damaging hazards → confirming replay. A candidate is a standable cell (solid below, free above)
-  such that every cell of the hazard's footprint — each cell of a spike strip; a barrel's cell and
-  the flame cell above it — is at Chebyshev distance ≥ 2 from every recorded foothold, is not in
-  the `ArcMask`, is outside both arenas and the entry ramp before each, and is at Chebyshev
-  distance ≥ 2 from every static pickup cell. Candidates are drawn from the `hazard` stream at
-  `damagingHazardsPerHundredTiles × widthTiles / 100` (generation.md), rounded down, spikes twice
-  as often as barrels, strips 1–3 cells long. The confirming replay counts damaging contact; any
-  hazard the tape still overlaps is removed, deterministically, so the shipped level's route is
-  hazard-free by measurement and not only by construction.
+  such that every cell of the hazard's footprint — each cell of a spike strip or glass patch; a
+  barrel's cell and the flame cell above it — is at Chebyshev distance ≥ 2 from every recorded
+  foothold, is not in the `ArcMask`, is outside both arenas and the entry ramp before each, is
+  strictly left of `gateColumn`, and is at Chebyshev distance ≥ 2 from every static pickup cell.
+  Candidates are drawn from the `hazard` stream at `damagingHazardsPerHundredTiles × widthTiles /
+  100` (generation.md), rounded down, with kind weights spike:glass:barrel = 2:2:1, spike strips
+  1–3 cells long and glass patches 1–2 cells long. Separate glass candidates may not be
+  edge-adjacent, so each maximal horizontal glass run remains one declared 1–2-cell patch. This is
+  one shared hazard budget rather than an increase to the density curve. The confirming replay
+  counts damaging contact; any whole strip, patch or barrel the tape still overlaps is removed,
+  deterministically, so the shipped level's route is hazard-free by measurement and not only by
+  construction.
 - The **exit corridor** is every in-map column strictly greater than `gateColumn`, where the first
   player-centre crossing completes the map after the gate opens. Spine construction carves that
-  corridor as plain safe floor; no acid gap or fire-jet corridor is proposed there, and damaging-
-  hazard candidate selection rejects every spike or barrel footprint touching it. Therefore no
-  acid, jet, spike or barrel occupies any exit-corridor column. Its blue sparkling surface is the
+  corridor as plain safe floor; no acid gap or fire-jet corridor is proposed on the gate or beyond,
+  and damaging-hazard candidate selection rejects every spike, glass or barrel footprint touching
+  `gateColumn` or a later column. Therefore no hazard can sit on top of the gate wall and no acid,
+  jet, spike, glass or barrel occupies the exit corridor. Its blue sparkling surface is the
   presentation-only completion marker specified in presentation.md, not a new hazard kind.
 
 ## Verified properties
 
 - **P-10** Every jet corridor contains exactly one jet volume with pixel-measured safe zones and an
   off-window that fits the crossing plus reaction time (completability.md).
-- **P-36** Damaging hazards: overlapping a spike strip, a barrel's body or a barrel's flame drains
-  health at the hazard's rate per second and a single tick of contact does not kill; every footprint
+- **P-36** Damaging hazards: overlapping a spike strip, broken-glass patch, barrel body or barrel
+  flame drains health at the hazard's rate per second and a single tick of contact does not kill; every footprint
   cell is at Chebyshev distance ≥ 2 from every witness foothold and every static pickup, outside
-  the `ArcMask` and both arenas, and at or left of `gateColumn`; the confirming replay reports no
-  damaging contact on every map of a seed cohort; a spike and a barrel fault-injected onto the
-  replayed route are removed by the confirming pass, deterministically, and nothing else is; the
-  per-map count rises with map index in cohort mean and is zero on map 1. No acid, jet, spike or
-  barrel cell lies strictly right of `gateColumn`.
-- **P-61** Enemy hazard traversal is verified in enemies.md; the same spike, barrel, acid, void and
-  fire-jet geometry remains unchanged for the player and for witness replay.
+  the `ArcMask` and both arenas, and strictly left of `gateColumn`; the confirming replay reports
+  no damaging contact on every map of a seed cohort; a spike, glass patch and barrel fault-injected
+  onto the replayed route are removed by the confirming pass, deterministically, and nothing else
+  is; the per-map count rises with map index in cohort mean and is zero on map 1.
+- **P-81** Gate hazard exclusion: over the generation cohort, no acid, fire jet, spike, glass or
+  barrel footprint touches `gateColumn` or any later column. Boundary fixtures that attempt to
+  carve an acid gap or fire-jet corridor there are rejected; fault-injected spike, glass and barrel
+  footprints on the gate itself and beyond it are removed by final confirmation without changing
+  earlier hazards.
+- **P-84** Broken glass: a player's AABB overlapping one or several cells of one maximal glass
+  patch drains exactly `0.5 × contactDamage × dt` per tick, two distinct overlapping patches
+  stack, and a one-pixel-clear player takes nothing. Glass is non-blocking, refreshes the ordinary
+  hurt flash, can kill with semantic `Glass`/bleed cause, participates in `Hazards.count` and
+  `ThreatScore`, and is placed/confirmed within the shared damaging-hazard budget at the declared
+  weights and 1–2-cell length. Map 1 still has zero damaging hazards and cohort pressure remains
+  increasing.
+- **P-61** Enemy hazard traversal is verified in enemies.md; the same spike, glass, barrel, acid,
+  void and fire-jet geometry remains unchanged for the player and for witness replay.
 - Hazard contact: safe ground reports no lethal contact; falling into acid does; a single fast tick
   through a hazard is still caught; acid does not block movement; jet-bearing themes generate jets
   on every map that allows them.

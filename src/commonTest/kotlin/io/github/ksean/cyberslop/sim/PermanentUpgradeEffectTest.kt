@@ -84,11 +84,11 @@ class PermanentUpgradeEffectTest {
     }
 
     @Test
-    fun `weave reduces enemy projectiles swings contact spikes barrels and boss damage`() {
+    fun `weave reduces enemy projectiles swings contact spikes glass barrels and boss damage`() {
         assertReduced(::enemyProjectileDamage, "enemy projectile")
         assertReduced(::enemySwingDamage, "enemy swing")
         assertReduced(::enemyContactDamage, "enemy contact")
-        assertReduced(::hazardDamage, "spikes and barrel")
+        assertReduced(::hazardDamage, "spikes, glass and barrel")
         assertReduced(::bossAttackDamage, "boss attack")
         assertReduced(::bossContactDamage, "boss contact")
     }
@@ -179,13 +179,16 @@ class PermanentUpgradeEffectTest {
 
     private fun hazardDamage(ranks: UpgradeRanks): Double {
         val level = TestLevels.flat(
-            spikeColumns = TestLevels.SPAWN_COLUMN..TestLevels.SPAWN_COLUMN,
+            glassColumns = TestLevels.SPAWN_COLUMN..TestLevels.SPAWN_COLUMN,
             barrels = listOf(Barrel(TestLevels.SPAWN_COLUMN, TestLevels.FLOOR_ROW)),
-        )
+        ).also {
+            it.tiles[TestLevels.SPAWN_COLUMN, TestLevels.FLOOR_ROW - 1] = TileKind.Spikes
+        }
         val sim = simulation(level, ranks)
         val before = sim.run.health
         sim.tick(InputFrame())
-        val expected = (Hazards.SPIKE_RATE + Hazards.BARREL_RATE) * Balance.contactDamage(1) * TICK_SECONDS
+        val expected = (Hazards.SPIKE_RATE + Hazards.GLASS_RATE + Hazards.BARREL_RATE) *
+            Balance.contactDamage(1) * TICK_SECONDS
         assertEquals(expected * ranks.incomingDamageMultiplier, before - sim.run.health, 1e-6)
         return before - sim.run.health
     }

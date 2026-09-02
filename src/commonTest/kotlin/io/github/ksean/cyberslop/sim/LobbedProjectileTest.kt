@@ -2,6 +2,8 @@ package io.github.ksean.cyberslop.sim
 
 import io.github.ksean.cyberslop.combat.WeaponId
 import io.github.ksean.cyberslop.combat.Weapons
+import io.github.ksean.cyberslop.combat.FirePattern
+import io.github.ksean.cyberslop.combat.ProjectileBallistics
 import io.github.ksean.cyberslop.core.TrigTable
 import io.github.ksean.cyberslop.core.Vec2
 import io.github.ksean.cyberslop.entity.EnemyArchetype
@@ -9,6 +11,7 @@ import io.github.ksean.cyberslop.loot.Loadout
 import io.github.ksean.cyberslop.loot.PowerupId
 import io.github.ksean.cyberslop.loot.PowerupSlots
 import io.github.ksean.cyberslop.physics.InputFrame
+import io.github.ksean.cyberslop.physics.Physics
 import io.github.ksean.cyberslop.physics.TICK_SECONDS
 import io.github.ksean.cyberslop.run.RunState
 import io.github.ksean.cyberslop.world.Level
@@ -20,6 +23,70 @@ import kotlin.test.assertTrue
 
 /** P-71: Ashfall's launch and gravity are simulation-owned fixed-step state. */
 class LobbedProjectileTest {
+    @Test
+    fun `Ashfall leads with the target's most recently completed movement tick`() {
+        val sim = simulation()
+        sim.autoFire.remaining = 1.0
+        val target = TestLevels.enemyAt(sim, EnemyArchetype.Swarm, column = 14)
+        sim.tick(InputFrame())
+        assertTrue(target.aimingVelocity.lengthSquared > 0.0, "fixture target did not move")
+
+        sim.autoFire.remaining = 0.0
+        val origin = Vec2(
+            sim.player.x + Physics.Default.width / 2.0,
+            sim.player.y + sim.player.height(Physics.Default) / 2.0,
+        )
+        val targetAtTrigger = enemyCentre(target)
+        val pattern = sim.autoFire.weapon.spec.pattern as FirePattern.Projectile
+        val expected = ProjectileBallistics.solve(
+            origin = origin,
+            target = targetAtTrigger,
+            targetVelocity = target.aimingVelocity,
+            nominalSpeed = sim.autoFire.weapon.spec.projectileSpeed,
+            gravity = pattern.gravity,
+            lifetimeSeconds = pattern.lifetimeSeconds,
+            tickSeconds = TICK_SECONDS,
+        )
+
+        sim.tick(InputFrame())
+
+        val grenade = sim.projectiles.single { it.fromPlayer }
+        val initialVelocity = Vec2(grenade.velocity.x, grenade.velocity.y - grenade.gravity * TICK_SECONDS)
+        assertVector(expected.velocity, initialVelocity)
+    }
+
+    @Test
+    fun `Ashfall applies the same completed-tick lead to a moving boss`() {
+        val sim = simulation()
+        sim.autoFire.remaining = 1.0
+        sim.boss.placeAt(Vec2(14 * 16.0, (TestLevels.FLOOR_ROW + 1) * 16.0))
+        sim.boss.fight.engage()
+        sim.tick(InputFrame())
+        assertTrue(sim.boss.aimingVelocity.lengthSquared > 0.0, "fixture boss did not move")
+
+        sim.autoFire.remaining = 0.0
+        val origin = Vec2(
+            sim.player.x + Physics.Default.width / 2.0,
+            sim.player.y + sim.player.height(Physics.Default) / 2.0,
+        )
+        val pattern = sim.autoFire.weapon.spec.pattern as FirePattern.Projectile
+        val expected = ProjectileBallistics.solve(
+            origin = origin,
+            target = sim.boss.centre,
+            targetVelocity = sim.boss.aimingVelocity,
+            nominalSpeed = sim.autoFire.weapon.spec.projectileSpeed,
+            gravity = pattern.gravity,
+            lifetimeSeconds = pattern.lifetimeSeconds,
+            tickSeconds = TICK_SECONDS,
+        )
+
+        sim.tick(InputFrame())
+
+        val grenade = sim.projectiles.single { it.fromPlayer }
+        val initialVelocity = Vec2(grenade.velocity.x, grenade.velocity.y - grenade.gravity * TICK_SECONDS)
+        assertVector(expected.velocity, initialVelocity)
+    }
+
     @Test
     fun `Ashfall launches upward and gains its declared downward velocity every tick`() {
         val sim = simulation()

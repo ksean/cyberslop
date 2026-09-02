@@ -2,6 +2,7 @@ package io.github.ksean.cyberslop.entity
 
 import io.github.ksean.cyberslop.gen.LevelGenerator
 import io.github.ksean.cyberslop.gen.Populator
+import io.github.ksean.cyberslop.gen.DifficultyCurve
 import kotlin.test.Test
 import kotlin.test.assertTrue
 
@@ -11,6 +12,37 @@ import kotlin.test.assertTrue
  * little about a placement rule driven by chance.
  */
 class PopulationInvariantTest {
+    @Test
+    fun `complete patrols stay outside the player start exclusion without reducing population`() {
+        forEachLevel { level, label ->
+            val expected = (level.widthTiles / 100.0 * DifficultyCurve.at(level.mapIndex).enemiesPerHundredTiles)
+                .toInt()
+                .coerceIn(8, 72)
+            assertTrue(level.enemies.size == expected, "$label: ${level.enemies.size} enemies against target $expected")
+            level.enemies.forEach { spawn ->
+                assertTrue(
+                    Populator.isClearOfStart(level, spawn),
+                    "$label: ${spawn.archetype} patrol ${spawn.leftTile}..${spawn.rightTile} enters " +
+                        "start exclusion ${level.spawnColumn - Populator.START_CLEAR_TILES}.." +
+                        "${level.spawnColumn + Populator.START_CLEAR_TILES}",
+                )
+            }
+        }
+    }
+
+    @Test
+    fun `start exclusion endpoints are rejected and the next columns are accepted`() {
+        val level = LevelGenerator.generate(BASE, 1).level
+        val sample = level.enemies.first()
+        val left = level.spawnColumn - Populator.START_CLEAR_TILES
+        val right = level.spawnColumn + Populator.START_CLEAR_TILES
+
+        assertTrue(!Populator.isClearOfStart(level, sample.copy(column = left - sample.patrolTiles)))
+        assertTrue(Populator.isClearOfStart(level, sample.copy(column = left - sample.patrolTiles - 1)))
+        assertTrue(!Populator.isClearOfStart(level, sample.copy(column = right + sample.patrolTiles)))
+        assertTrue(Populator.isClearOfStart(level, sample.copy(column = right + sample.patrolTiles + 1)))
+    }
+
     @Test
     fun `no patrol sits on a span the player crosses committed`() {
         forEachLevel { level, label ->

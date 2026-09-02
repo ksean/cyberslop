@@ -30,8 +30,9 @@ nailgun. A weapon with a `burstIntervalSeconds > 0` is a **machine gun**: the tr
 first round and queues the rest, one every interval, each leaving the muzzle where it is *then*
 along the aim recorded when the trigger fell, so the rounds trail one another in a straight line
 whatever the target does in the meantime. If a future lobbed weapon uses a burst, the recorded
-aim is its target point rather than merely a direction: each delayed round leaves the muzzle of
-its own tick on a newly solved arc toward that unchanged point. A burst weapon declares no spread.
+aim is the stationary or led intercept point selected on the trigger tick rather than merely a
+direction: each delayed round leaves the muzzle of its own tick on a newly solved arc toward that
+unchanged point. A burst weapon declares no spread.
 Every round is a
 whole projectile of the build that pulled the trigger (`LiveProjectile.weapon`, PROD-070) and
 draws its own muzzle flash; Fork Bomb's extra projectiles join the burst rather than a fan. The
@@ -124,19 +125,21 @@ Tiers: T1 Street · T2 Scav · T3 Chromed · T4 Blacksite · T5 Ascended. DPS is
 `damage × projectiles ÷ cooldown`, single target, crit-free. Reach is in metres (1 m = 16 px).
 Melee is the high-risk class (PROD-065): every melee weapon reaches at least 2 m — beyond any
 enemy swing's 1.5 tiles — and within each tier the melee mean DPS, bottle excluded, exceeds the
-ranged mean.
+ranged mean. PROD-109 multiplies every player melee weapon's base direct damage by exactly 1.5;
+cooldown and every non-damage field are unchanged. Adjacent tier DPS bands may overlap after this
+class-wide premium, while minimum, mean and maximum DPS still rise strictly by tier.
 
 | Weapon | Class | T | Dmg | CD | DPS | Reach / range | Mechanic |
 |---|---|---|---|---|---|---|---|
-| Broken Bottle | Melee | 1 | 8 | 2.00 | 4.0 | 2.2 m, 70° | Starting weapon |
-| Rustline Machete | Melee | 1 | 17 | 1.40 | 12.1 | 2.3 m, 80° | Bleed |
-| Corpo Riot Baton | Melee | 2 | 17 | 1.10 | 15.5 | 2.2 m, 90° | Knockback, 0.3 s stun |
-| Chrome Fang | Melee | 2 | 13×2 | 1.20 | 21.7 | 2.0 m, 35° | Two-hit combo |
-| Static Lash | Melee | 3 | 24 | 0.90 | 26.7 | 4.0 m, 60° | Shocks one extra target |
-| Gutterjack Cleaver | Melee | 3 | 42 | 1.30 | 32.3 | 2.4 m, 75° | Executes under 15 % HP |
-| Kill-Switch Katana | Melee | 4 | 40 | 0.65 | 61.5 | 2.8 m, 50° | Dash-strike: the hitbox lunges 3 m, 0.2 s i-frames; the player does not move |
-| Chromewreck Maul | Melee | 4 | 100 | 1.60 | 62.5 | 3.6 m, 100° | Shockwave, heavy knockback |
-| Meatgrinder Halo | Melee | 5 | 40 | 0.35 | 114.3 | 2.8 m ring | Persistent saw ring |
+| Broken Bottle | Melee | 1 | 12 | 2.00 | 6.0 | 2.2 m, 70° | Starting weapon |
+| Rustline Machete | Melee | 1 | 25.5 | 1.40 | 18.2 | 2.3 m, 80° | Bleed |
+| Corpo Riot Baton | Melee | 2 | 25.5 | 1.10 | 23.2 | 2.2 m, 90° | Knockback, 0.3 s stun |
+| Chrome Fang | Melee | 2 | 19.5×2 | 1.20 | 32.5 | 2.0 m, 35° | Two-hit combo |
+| Static Lash | Melee | 3 | 36 | 0.90 | 40.0 | 4.0 m, 60° | Shocks one extra target |
+| Gutterjack Cleaver | Melee | 3 | 63 | 1.30 | 48.5 | 2.4 m, 75° | Executes under 15 % HP |
+| Kill-Switch Katana | Melee | 4 | 60 | 0.65 | 92.3 | 2.8 m, 50° | Dash-strike: the hitbox lunges 3 m, 0.2 s i-frames; the player does not move |
+| Chromewreck Maul | Melee | 4 | 150 | 1.60 | 93.8 | 3.6 m, 100° | Shockwave, heavy knockback |
+| Meatgrinder Halo | Melee | 5 | 60 | 0.35 | 171.4 | 2.8 m ring | Persistent saw ring |
 | Scrapline Zip Pistol | Ranged | 1 | 7 | 0.80 | 8.8 | 20 m | Single slug |
 | Tenement Nailgun | Ranged | 1 | 4×2 | 0.70 | 11.4 | 20 m | 12° spread, pierce 1 |
 | Ganglord SMG | Ranged | 2 | 4×3 | 0.75 | 16.0 | 20 m | Machine gun: 3-round burst, 0.05 s apart, straight |
@@ -181,37 +184,50 @@ ranged mean.
 Each run draws **8 of the 18** powerups, tier-weighted, as its drop pool, so duplicates are common
 enough for stacking to happen.
 
-### Lobbed projectiles (PROD-097)
+### Lobbed projectiles (PROD-097, PROD-107)
 
-At the trigger tick, a positive-gravity projectile snapshots the supplied aim point; it does not
-lead a moving target. Let `dt` be the fixed simulation step, `(dx, dy)` the displacement from that
-round's muzzle to the snapshot, `s` its resolved projectile speed and `g` its declared positive
-gravity. The launch solver selects the smallest whole-tick flight length `N` for which
+Target acquisition still chooses the nearest valid combat target by its current centre. Each
+rank-and-file enemy and boss also exposes an **aiming velocity**: its actual combat-centre
+displacement during the most recently completed active fixed tick, divided by `dt`. Actual walk,
+flight, leap, knockback and charge displacement all count. The velocity is zero when the actor did
+not move during that tick and for a newly spawned actor with no completed movement tick. This is
+future-affecting state under P-40.
+
+At the trigger tick, a positive-gravity projectile snapshots an intercept rather than blindly
+using the current centre when the selected target is moving. Let `p` be that centre, `v` its aiming
+velocity, `dt` the fixed simulation step, `m` the round's muzzle, `s` its resolved projectile speed
+and `g` its declared positive gravity. For each candidate whole-tick flight length `N`, the solver
+uses the constant-velocity future point `pN = p + v × N × dt` and displacement
+`(dxN, dyN) = pN - m`, then accepts the smallest `N` within the projectile's lifetime for which
 
 ```
-N × dt >= max(distance / s, MIN_LOB_SECONDS)
-vy0 = dy / (N × dt) - g × dt × (N + 1) / 2
+N × dt >= max(length(dxN, dyN) / s, MIN_LOB_SECONDS)
+vy0 = dyN / (N × dt) - g × dt × (N + 1) / 2
 vy0 <= -MIN_LOB_UP_SPEED
 ```
 
 where `MIN_LOB_SECONDS = 0.40 s` and `MIN_LOB_UP_SPEED = 120 px/s`; screen y increases downward.
-It sets `vx0 = dx / (N × dt)`. Each tick thereafter first applies any homing turn, then adds
+It sets `vx0 = dxN / (N × dt)`. Each tick thereafter first applies any homing turn, then adds
 `g × dt` to `vy`, then performs the swept terrain-and-actor move specified below. In an unobstructed,
-non-homing flight this semi-implicit update places the projectile centre on the snapshotted point
-after exactly `N` ticks. A lobbed registry entry must have enough lifetime for a solution throughout
-the game's target-acquisition distance; construction rejects one that does not. Ashfall declares
-`gravity = 600 px/s²`; every other current player projectile declares zero.
+non-homing fixture where the target continues at `v`, this semi-implicit update places projectile
+and target centres together after exactly `N` ticks. A stationary target is the exact existing
+`v = 0` solution. If no moving-target solution fits the lifetime, the solver falls back to the
+stationary solution at `p`; a registry entry must have enough lifetime for that fallback throughout
+the game's target-acquisition distance. Ashfall declares `gravity = 600 px/s²`; every other current
+player projectile declares zero.
 
 The initial upward velocity is gameplay state, not a drawn offset: ceilings and walls can stop the
 grenade, and an obstruction below a clear arc is passed over. Gravity continues after a Ricochet
-ROM reflection. Ranger Optics' resolved speed participates in the flight-time bound; Fork Bomb
-rounds each use the same snapshotted aim point; spread, if a future lobber declares it, rotates the
+ROM reflection. Ranger Optics' resolved speed participates in the flight-time bound; simultaneous
+Fork Bomb rounds each use the same snapshotted intercept; spread, if a future lobber declares it, rotates the
 solved initial velocity around the base arc. Seeker Daemon may steer a lob after launch and does
-not suppress gravity. `LiveProjectile` carries gravity and the determinism digest includes it; a
-pending lobbed burst also carries its snapshotted aim point. Zero-gravity projectiles retain their
-existing constant-velocity path exactly. Damage, falloff, crit, blast and all other landing rules
-are unchanged by this requirement, including the pre-existing projectile-landing gaps recorded
-below.
+not suppress gravity. Later target motion never bends a launched grenade. A future lobbed burst
+keeps the intercept selected on its trigger tick, and each delayed round solves from its then-current
+muzzle to that unchanged point. `LiveProjectile` carries gravity and the determinism digest includes
+it; a pending lobbed burst also carries its snapshotted intercept. Zero-gravity player projectiles
+and all enemy and boss attacks retain their existing aim rules exactly. Damage, falloff, crit,
+blast and all other landing rules are unchanged by this requirement, including the pre-existing
+projectile-landing gaps recorded below.
 
 ### Swept projectile hits (PROD-098)
 
@@ -358,9 +374,9 @@ same-weapon pickup pays exactly one weapon value and no values for the powerups 
 
 ## Verified properties
 
-- **P-14** Weapon registry: ≥ 20 weapons, all three classes; `minDPS(T) ≥ 1.05 × maxDPS(T−1)`;
-  min, mean and max DPS strictly increasing by tier; every entry has a finite score against the
-  reference target.
+- **P-14** Weapon registry: ≥ 20 weapons and all three classes; minimum, mean and maximum DPS are
+  strictly increasing by tier, though adjacent tier bands may overlap; every entry has a finite
+  score against the reference target.
 - **P-15** Powerup registry: ≥ 15 entries, each with a tier and a scalar magnitude whose stack
   curve is never super-linear (`v(2) ≤ 2·v(1)`, `v(3) ≤ 3·v(1)`); every weapon × every powerup at
   every stack count resolves to a `ResolvedWeapon` with finite, positive damage and cooldown;
@@ -368,7 +384,14 @@ same-weapon pickup pays exactly one weapon value and no values for the powerups 
 - **P-16** Cooldown fidelity (simulation.md).
 - **P-37** Melee class: every melee weapon's reach is ≥ 2 m and greater than the enemy swing
   reach; in every tier that holds both classes, mean melee DPS excluding the Broken Bottle exceeds
-  mean ranged DPS; the bottle's DPS stays below map 1's required rate.
+  mean ranged DPS; the bottle's 6.0 DPS meets map 1's required rate.
+- **P-86** Player-melee damage: the registered base direct damage of Broken Bottle, Rustline
+  Machete, Corpo Riot Baton, Chrome Fang, Static Lash, Gutterjack Cleaver, Kill-Switch Katana,
+  Chromewreck Maul and Meatgrinder Halo is exactly 1.5 times its pre-PROD-109 value. Projectile
+  count, cooldown, reach, arc, linger, wind-up, knockback, status magnitudes, execute threshold and
+  other mechanics are byte-for-byte-equivalent controls. Damage fractions subsequently derived
+  from the direct hit use the larger base; fixed bleed, stun, execute and knockback values do not
+  receive a second multiplier.
 - **P-25** Kill drop rate is 0.20 at every map index, three in ten of them weapons; static drops
   average 2.0 ± 0.15 per map over a seed cohort, each count in {1, 2, 3}.
 - **P-44** Boss attack choice (enemies.md).
@@ -398,13 +421,23 @@ same-weapon pickup pays exactly one weapon value and no values for the powerups 
   every enemy or boss projectile remains at zero. For same-height, higher and lower targets on
   both sides of the player, the whole-tick solver produces an initial `vy <= -120 px/s`, applies
   exactly `gravity × dt` downward per tick after any homing turn, crosses an apex, and reaches the
-  snapshotted point on tick `N` in an unobstructed non-homing fixture. A moving target does not
-  bend an already launched grenade. A low obstruction beneath the swept arc is cleared, while a
+  snapshotted stationary point on tick `N` in an unobstructed non-homing fixture. A moving target
+  does not bend an already launched grenade. A low obstruction beneath the swept arc is cleared, while a
   terrain cell intersected by the arc stops or reflects it under the existing bounce rule.
-  Ranger Optics changes the nominal flight bound, Fork Bomb rounds share the snapshot, and Seeker
+  Ranger Optics changes the nominal flight bound, Fork Bomb rounds share the intercept, and Seeker
   Daemon and Ricochet ROM retain gravity. A Zip Pistol control keeps its existing constant-velocity
   path exactly. Changing live gravity or a pending lob aim point changes P-40's digest;
   changing only its drawn marks does not.
+- **P-83** Moving-target lob lead: horizontal, vertical and diagonal constant-velocity enemy and
+  boss fixtures expose their most recently completed actual movement and an unobstructed Ashfall
+  grenade meets each continuing target centre on the solver's selected whole tick. A stationary
+  target exactly preserves P-71's launch; a newly spawned or stopped target reports zero velocity;
+  walk, flight, leap, knockback and boss charge displacement update the snapshot. If the moving
+  intercept exceeds lifetime the stationary fallback is used. Nearest-target selection remains
+  based on current centres, simultaneous Fork Bomb rounds share one intercept, and changing target
+  motion after launch does not bend the grenade. Zip Pistol and enemy/boss-shot controls retain
+  their prior aim. Changing an actor's aiming velocity or a pending lob intercept changes P-40's
+  digest.
 - **P-72** Swept player-projectile collision: fixtures place a rank-and-file enemy wholly between
   the Sable Railgun's start and end positions for one tick at its base 1,400 px/s and at the
   Ranger-Optics maximum 2,100 px/s; both take exactly one hit. Tangency hits and one epsilon of

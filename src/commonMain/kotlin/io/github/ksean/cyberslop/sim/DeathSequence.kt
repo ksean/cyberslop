@@ -16,6 +16,7 @@ enum class PlayerDamageSource(val effect: PlayerDeathEffect) {
     Fire(PlayerDeathEffect.Flame),
     Laser(PlayerDeathEffect.Flame),
     Spike(PlayerDeathEffect.Bleed),
+    Glass(PlayerDeathEffect.Bleed),
     Projectile(PlayerDeathEffect.Bleed),
     Melee(PlayerDeathEffect.Bleed),
     Void(PlayerDeathEffect.None),

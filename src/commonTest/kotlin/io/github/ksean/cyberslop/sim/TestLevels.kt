@@ -38,6 +38,8 @@ object TestLevels {
         committedColumns: IntRange = IntRange.EMPTY,
         /** Spike strips written into the standing row. */
         spikeColumns: IntRange = IntRange.EMPTY,
+        /** Broken-glass patches written into the standing row. */
+        glassColumns: IntRange = IntRange.EMPTY,
         barrels: List<Barrel> = emptyList(),
         jets: List<FireJet> = emptyList(),
         pickups: List<PickupSite> = emptyList(),
@@ -52,6 +54,7 @@ object TestLevels {
         for (x in committedColumns) tiles[x, 0] = TileKind.Acid
         wallColumn?.let { x -> for (y in FLOOR_ROW - 2..FLOOR_ROW) tiles[x, y] = TileKind.Solid }
         for (x in spikeColumns) tiles[x, FLOOR_ROW] = TileKind.Spikes
+        for (x in glassColumns) tiles[x, FLOOR_ROW] = TileKind.BrokenGlass
 
         val floorMask = Mask(WIDTH, HEIGHT)
         for (x in 0 until WIDTH) for (y in 1 until HEIGHT) {

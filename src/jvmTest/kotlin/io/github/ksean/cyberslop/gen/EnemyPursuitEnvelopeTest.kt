@@ -26,6 +26,13 @@ class EnemyPursuitEnvelopeTest {
     }
 
     @Test
+    fun `a generated-width broken glass patch is accepted for both real boxes`() {
+        val level = TestLevels.flat(glassColumns = 18..19)
+
+        assertTrue(EnemyPursuitEnvelope.audit(level).isEmpty())
+    }
+
+    @Test
     fun `duplicate body violations do not remove the next safe hazard`() {
         val level = TestLevels.flat(spikeColumns = 18..27)
         level.tiles[40, TestLevels.FLOOR_ROW] = TileKind.Spikes

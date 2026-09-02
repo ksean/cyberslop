@@ -44,6 +44,7 @@ class SimulationDeterminismTest {
         mutated("loot rng") { it.lootRng.nextULong() }
         mutated("enemies") { it.enemies.first().health -= 1.0 }
         mutated("enemy engagement") { it.enemies.first().engaged = !it.enemies.first().engaged }
+        mutated("enemy aiming velocity") { it.enemies.first().aimingVelocity = Vec2.Right }
         mutated("projectiles") {
             it.projectiles.add(LiveProjectile(Vec2.Zero, Vec2.Right, 1.0, 0, 1.0, passesTerrain = false, fromPlayer = true))
         }
@@ -52,6 +53,7 @@ class SimulationDeterminismTest {
         }
         mutated("items") { it.items.add(GroundItem(Vec2.Zero, null, null)) }
         mutated("bosses") { it.boss.fight.engage() }
+        mutated("boss aiming velocity") { it.boss.aimingVelocity = Vec2.Right }
         mutated("boss rest") { it.miniboss.restSecondsLeft += 0.1 }
         mutated("boss melee index") { it.boss.meleeIndex++ }
         mutated("boss ranged index") { it.boss.rangedIndex++ }
@@ -242,8 +244,8 @@ class SimulationDeterminismTest {
     private companion object {
         val SEED = 0xD1CE5uL
         const val TICKS = 720
-        const val RUN_TICKS = 300
-        const val GOLDEN = 12084957755044927449uL
+        const val RUN_TICKS = 600
+        const val GOLDEN = 15581592848669027342uL
         const val LOOT_MAP = 2
         const val LOOT_COLUMN = 20
         const val LOOT_KILLS = 80
