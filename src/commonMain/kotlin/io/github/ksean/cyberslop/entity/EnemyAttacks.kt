@@ -35,6 +35,9 @@ object EnemyAttacks {
     /** Public so the renderer's tracking pose reads the same range the shot does. */
     const val SHOT_RANGE_PX = 220.0
 
+    /** Wind-up and cooldown seconds consumed per second while a normal melee target is in reach. */
+    const val MELEE_ATTACK_RATE_IN_REACH = 2.0
+
     /** A living body drains this many `contactDamage` per second of overlap (`specs/enemies.md`). */
     const val CONTACT_DRAIN = 1.0
 

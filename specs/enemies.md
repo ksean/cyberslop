@@ -81,7 +81,7 @@ on the player.
   whenever it can. Its voluntary movement uses the same safe leap planner when ground steps cannot
   cross the intervening obstacle.
 
-## Attacks (PROD-061, PROD-063)
+## Attacks (PROD-061, PROD-063, PROD-105)
 
 `contactDamage(mapIndex)` is the unit every enemy attack and contact drain scales from.
 
@@ -111,6 +111,16 @@ on the player.
   | Swarm | 0.30 s | 0.6 × contact | 0.6 s |
   | Flyer | 0.30 s | 0.8 × contact | 0.8 s |
   | Brute | 0.45 s | 1.2 × contact | 1.1 s |
+
+  A living Swarm, Flyer or Brute whose swing is winding up or cooling down progresses that timer at
+  `MELEE_ATTACK_RATE_IN_REACH = 2.0` seconds per simulated second while the player's current centre
+  is at or inside the swing's `SWING_REACH`, and at the ordinary 1.0 second per simulated second
+  while the player is outside it (PROD-105). Entering or leaving reach changes the rate on that
+  fixed tick, so time accumulated across mixed in-range and out-of-range intervals is proportional
+  rather than resetting. A player who remains in reach therefore makes the effective wind-up
+  0.15 s for Swarm and Flyer and 0.225 s for Brute, and halves the table's post-strike wait. The
+  table's damage, reach, locked direction, arc and one-hit rule are unchanged. The rate does not
+  apply to Shooter or Turret shots, contact drain, or either boss rank.
 
 - **Shot.** A Shooter or Turret whose cooldown has elapsed, whose target is within
   `SHOOTER_RANGE` and in line of sight, winds up for `SHOT_WINDUP = 0.25 s` (holding its aim), then
@@ -286,9 +296,12 @@ weapon pickup is the first progression beat, and the starter cache guarantees it
 ## Threat and pressure (PROD-068)
 
 `ThreatScore.of(level)` measures the generated population and hazards, excluding map index: for
-each enemy, `damage per attack ÷ (wind-up + cooldown)` using the archetype's swing or shot; for
-each damaging hazard, its per-second rate; both summed and divided by `widthTiles / 100`. Bosses
-are excluded (every map has one of each).
+each melee enemy,
+`damage per attack ÷ ((wind-up + cooldown) ÷ MELEE_ATTACK_RATE_IN_REACH)`, the rate seen by a
+target who remains in reach; for each ranged enemy,
+`damage per attack ÷ (wind-up + cooldown)`; for each damaging hazard, its per-second rate. These
+contributions are summed and divided by `widthTiles / 100`. Bosses are excluded (every map has one
+of each).
 
 Two play harnesses in `jvmTest` measure survivability. Both start a map with the guaranteed loadout a player
 *arrives* with (`LootFloor.weaponArrivingAt`, `LootFloor.slotsArrivingAt`: the awards of the maps
@@ -436,6 +449,15 @@ inventory directly.
   committed-span protection or beyond a clipped path takes none. The same forced uncharged modules
   make no attack-driven movement. Charge selection, progress and consumed opportunities reproduce
   across targets and perturb the P-40 digest when changed.
+- **P-80** Close-range melee cadence: while a Swarm, Flyer or Brute is winding up or cooling down,
+  its applicable timer decreases by exactly `2 × dt` on a fixed tick when the player's centre is
+  at or inside `SWING_REACH`, and by exactly `dt` when the player is outside; intervals on the two
+  sides accumulate without a reset. Remaining in reach halves each archetype's wind-up and
+  post-strike wait, but wind-up still deals no damage and the existing damage, reach, arc and
+  one-hit rule remain unchanged. Shooter and Turret cadence and every mini-boss and main-boss
+  attack are unchanged. `ThreatScore.pressureOf` uses the accelerated in-reach wind-up and cooldown
+  for melee archetypes and the existing full timings for ranged archetypes, and its cohort mean
+  still rises strictly across maps 1→10.
 - **P-66** Full-view boss range: on an unobstructed level, Bolt, every Burst round and every Scatter
   pellet remain live after crossing the former eight-tile limit and are removed only after a player
   hit or swept level-boundary crossing; a solid wall still stops each at its first contact. Laser's

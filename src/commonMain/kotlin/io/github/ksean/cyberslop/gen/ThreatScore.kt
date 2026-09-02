@@ -8,10 +8,10 @@ import io.github.ksean.cyberslop.world.Level
 /**
  * How much the generated population and hazards can hurt, per hundred tiles, **excluding map
  * index** (`specs/enemies.md`, Threat and pressure): each enemy contributes its attack's damage
- * share over its wind-up plus cooldown, each damaging hazard its rate per second. Bosses are
- * excluded because every map has one of each. Measured from what was generated, so a change to
- * enemies is visible to a test and a change to terrain is not masked by one — the counterpart to
- * [DifficultyScore], which deliberately ignores the population.
+ * share over its effective in-reach wind-up plus cooldown, each damaging hazard its rate per
+ * second. Bosses are excluded because every map has one of each. Measured from what was generated,
+ * so a change to enemies is visible to a test and a change to terrain is not masked by one — the
+ * counterpart to [DifficultyScore], which deliberately ignores the population.
  */
 object ThreatScore {
     fun of(level: Level): Double {
@@ -27,6 +27,8 @@ object ThreatScore {
         shot.damageShare / (shot.windUpSeconds + shot.cooldownSeconds)
     } else {
         val swing = EnemyAttacks.swing(spawn.archetype)
-        swing.damageShare / (swing.windUpSeconds + swing.cooldownSeconds)
+        val inReachCycle = (swing.windUpSeconds + swing.cooldownSeconds) /
+            EnemyAttacks.MELEE_ATTACK_RATE_IN_REACH
+        swing.damageShare / inReachCycle
     }
 }

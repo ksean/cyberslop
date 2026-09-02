@@ -130,6 +130,11 @@ build of powerups collected on contact, and permadeath with persistent unlocks.
   must damage an otherwise hittable player anywhere along the attack geometry's actual swept
   path, without adding damage opportunities or bypassing the attack's telegraph, declared dodge,
   terrain safety or committed-span fairness.
+- **PROD-105:** A rank-and-file melee enemy must progress both its swing wind-up and its swing
+  cooldown twice as quickly while the player's centre is within that enemy's swing reach. Leaving
+  reach must immediately restore ordinary timer progression without resetting either timer. This
+  close-range cadence must not increase the swing's damage or affect ranged enemies, mini-bosses
+  or main bosses.
 - **PROD-087:** Every mini-boss and main-boss encounter must receive a run-seeded combat profile
   which is reproducible on continue but varies between encounters. Every profile must expose at
   least one telegraphed melee attack and one telegraphed ranged attack from full health; profiles

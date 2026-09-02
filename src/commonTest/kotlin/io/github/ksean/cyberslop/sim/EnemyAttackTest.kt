@@ -2,9 +2,16 @@ package io.github.ksean.cyberslop.sim
 
 import io.github.ksean.cyberslop.core.Vec2
 import io.github.ksean.cyberslop.entity.Balance
+import io.github.ksean.cyberslop.entity.BossAttackKind
+import io.github.ksean.cyberslop.entity.BossModule
+import io.github.ksean.cyberslop.entity.BossPhase
+import io.github.ksean.cyberslop.entity.BossProfile
+import io.github.ksean.cyberslop.entity.BossSpec
+import io.github.ksean.cyberslop.entity.Bosses
 import io.github.ksean.cyberslop.entity.EnemyArchetype
 import io.github.ksean.cyberslop.entity.EnemyAttacks
 import io.github.ksean.cyberslop.physics.InputFrame
+import io.github.ksean.cyberslop.physics.Physics
 import io.github.ksean.cyberslop.physics.TICK_SECONDS
 import io.github.ksean.cyberslop.world.Arena
 import io.github.ksean.cyberslop.world.TileMap
@@ -13,8 +20,121 @@ import kotlin.test.Test
 import kotlin.test.assertEquals
 import kotlin.test.assertTrue
 
-/** Telegraphed swings and shots, and the committed-span fairness rule (P-34; `specs/enemies.md`). */
+/** Telegraphed swings, close-range cadence, shots and committed-span fairness (P-34/P-80). */
 class EnemyAttackTest {
+    @Test
+    fun `melee wind-ups advance twice as quickly while the player is in reach`() {
+        meleeArchetypes.forEach { archetype ->
+            val sim = TestLevels.simulation()
+            val enemy = TestLevels.enemyAt(sim, archetype, column = TestLevels.SPAWN_COLUMN + 1)
+            val swing = EnemyAttacks.swing(archetype)
+
+            sim.tick(InputFrame())
+            assertEquals(swing.windUpSeconds, enemy.windUpLeft, 1e-9, "$archetype did not begin its wind-up")
+
+            val healthBeforeWindUp = sim.run.health
+            sim.tick(InputFrame())
+
+            assertEquals(
+                swing.windUpSeconds - EXPECTED_MELEE_RATE * TICK_SECONDS,
+                enemy.windUpLeft,
+                1e-9,
+                "$archetype did not use the in-reach wind-up rate",
+            )
+            assertEquals(healthBeforeWindUp, sim.run.health, 1e-9, "$archetype dealt damage during its wind-up")
+        }
+    }
+
+    @Test
+    fun `melee cooldowns recover twice as quickly while the player is in reach`() {
+        meleeArchetypes.forEach { archetype ->
+            val sim = TestLevels.simulation()
+            val enemy = TestLevels.enemyAt(sim, archetype, column = TestLevels.SPAWN_COLUMN + 1)
+            enemy.cooldownLeft = 1.0
+
+            sim.tick(InputFrame())
+
+            assertEquals(
+                1.0 - EXPECTED_MELEE_RATE * TICK_SECONDS,
+                enemy.cooldownLeft,
+                1e-9,
+                "$archetype did not use the in-reach cooldown rate",
+            )
+        }
+    }
+
+    @Test
+    fun `melee timer rates follow the inclusive reach boundary without resetting progress`() {
+        val sim = TestLevels.simulation()
+        val flyer = TestLevels.enemyAt(sim, EnemyArchetype.Flyer, column = TestLevels.SPAWN_COLUMN)
+        val reach = EnemyAttacks.swing(EnemyArchetype.Flyer).reachPx
+        flyer.cooldownLeft = 1.0
+
+        placeAtHorizontalDistance(sim, flyer, reach)
+        sim.tick(InputFrame())
+        assertEquals(1.0 - 2.0 * TICK_SECONDS, flyer.cooldownLeft, 1e-9, "reach itself was not in range")
+
+        placeAtHorizontalDistance(sim, flyer, reach + 0.25)
+        sim.tick(InputFrame())
+        assertEquals(1.0 - 3.0 * TICK_SECONDS, flyer.cooldownLeft, 1e-9, "outside reach did not use normal time")
+
+        placeAtHorizontalDistance(sim, flyer, reach / 2.0)
+        sim.tick(InputFrame())
+        assertEquals(1.0 - 5.0 * TICK_SECONDS, flyer.cooldownLeft, 1e-9, "crossing reach reset or lost progress")
+    }
+
+    @Test
+    fun `close range does not accelerate ranged enemy timers`() {
+        listOf(EnemyArchetype.Shooter, EnemyArchetype.Turret).forEach { archetype ->
+            val windUpSim = TestLevels.simulation()
+            val winding = TestLevels.enemyAt(windUpSim, archetype, column = TestLevels.SPAWN_COLUMN + 1)
+            winding.windUpLeft = EnemyAttacks.SHOT.windUpSeconds
+            winding.windUpTotal = EnemyAttacks.SHOT.windUpSeconds
+            windUpSim.tick(InputFrame())
+            assertEquals(
+                EnemyAttacks.SHOT.windUpSeconds - TICK_SECONDS,
+                winding.windUpLeft,
+                1e-9,
+                "$archetype wind-up was accelerated",
+            )
+
+            val cooldownSim = TestLevels.simulation()
+            val cooling = TestLevels.enemyAt(cooldownSim, archetype, column = TestLevels.SPAWN_COLUMN + 1)
+            cooling.cooldownLeft = 1.0
+            cooldownSim.tick(InputFrame())
+            assertEquals(1.0 - TICK_SECONDS, cooling.cooldownLeft, 1e-9, "$archetype cooldown was accelerated")
+        }
+    }
+
+    @Test
+    fun `close range does not accelerate a boss melee telegraph`() {
+        val attack = Bosses.attack(BossModule.Slam, mapIndex = 1, mainBoss = true)
+        val profile = BossProfile(BossModule.Slam, BossModule.Bolt)
+        val spec = BossSpec(
+            name = "cadence-fixture",
+            maxHealth = 1_000.0,
+            contactDamage = 0.0,
+            phases = listOf(BossPhase(1.0, listOf(attack))),
+            profile = profile,
+            mapIndex = 1,
+        )
+        val sim = TestLevels.simulation()
+        val boss = LiveBoss(spec, sim.level.boss, sim.level.tiles)
+        val target = BossTarget(
+            centre = boss.centre.copy(x = boss.centre.x - 16.0),
+            onGround = true,
+            crouched = false,
+        )
+        boss.fight.engage()
+        boss.restSecondsLeft = 0.0
+
+        boss.tick(TICK_SECONDS, target)
+        assertEquals(BossAttackKind.Melee, boss.currentAttack?.kind, "fixture did not select melee")
+        boss.tick(TICK_SECONDS, target)
+
+        assertEquals(TICK_SECONDS, boss.attackElapsed, 1e-9, "boss telegraph was accelerated")
+    }
+
     /** Round-2 finding (gate 4): the scene's projectile cap bounds enemy shots as well as the player's. */
     @Test
     fun `an enemy shot is withheld at the scene's projectile cap`() {
@@ -61,7 +181,7 @@ class EnemyAttackTest {
         val sim = TestLevels.simulation()
         TestLevels.enemyAt(sim, EnemyArchetype.Swarm, column = TestLevels.SPAWN_COLUMN + 1)
         val swing = EnemyAttacks.swing(EnemyArchetype.Swarm)
-        val windUpTicks = (swing.windUpSeconds / TICK_SECONDS).roundToInt()
+        val windUpTicks = (swing.windUpSeconds / (EXPECTED_MELEE_RATE * TICK_SECONDS)).roundToInt()
         val drain = EnemyAttacks.CONTACT_DRAIN * Balance.contactDamage(1) * TICK_SECONDS
         val expected = Balance.contactDamage(1) * swing.damageShare
 
@@ -71,10 +191,26 @@ class EnemyAttackTest {
         assertEquals(1, first.size, "the swing did not land once")
         assertEquals(expected, first.single(), drain + 1e-9, "the swing's damage is not its share")
 
-        val cooldownTicks = (swing.cooldownSeconds / TICK_SECONDS).roundToInt()
+        val cooldownTicks = (swing.cooldownSeconds / (EXPECTED_MELEE_RATE * TICK_SECONDS)).roundToInt()
         assertEquals(emptyList(), strikesOver(sim, cooldownTicks - 2), "a second strike landed inside the cooldown")
 
         assertEquals(1, strikesOver(sim, windUpTicks + 4).size, "the second swing did not land")
+    }
+
+    private fun placeAtHorizontalDistance(sim: GameSimulation, enemy: LiveEnemy, distance: Double) {
+        val playerCentre = Vec2(
+            sim.player.x + Physics.Default.width / 2.0,
+            sim.player.y + sim.player.height(Physics.Default) / 2.0,
+        )
+        enemy.position = Vec2(
+            playerCentre.x + distance - GameSimulation.ENEMY_HALF,
+            playerCentre.y - GameSimulation.ENEMY_HALF,
+        )
+    }
+
+    private companion object {
+        const val EXPECTED_MELEE_RATE = 2.0
+        val meleeArchetypes = listOf(EnemyArchetype.Swarm, EnemyArchetype.Flyer, EnemyArchetype.Brute)
     }
 
     @Test
@@ -120,7 +256,7 @@ class EnemyAttackTest {
         val sim = TestLevels.simulation()
         val brute = TestLevels.enemyAt(sim, EnemyArchetype.Brute, column = TestLevels.SPAWN_COLUMN + 1)
         val swing = EnemyAttacks.swing(EnemyArchetype.Brute)
-        val windUpTicks = (swing.windUpSeconds / TICK_SECONDS).roundToInt()
+        val windUpTicks = (swing.windUpSeconds / (EXPECTED_MELEE_RATE * TICK_SECONDS)).roundToInt()
 
         // The brute winds up facing left, at the player; the player runs through it and stops behind.
         repeat(10) { sim.tick(InputFrame(right = true)) }

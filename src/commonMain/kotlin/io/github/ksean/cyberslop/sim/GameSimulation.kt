@@ -1213,14 +1213,15 @@ class GameSimulation(
             }
             decayVisuals(enemy)
             if (!enemy.alive) return@forEach
-            enemy.cooldownLeft -= TICK_SECONDS
+            val attackTimerDelta = attackTimerDelta(enemy, playerCentre)
+            enemy.cooldownLeft -= if (enemy.cooldownLeft > 0.0) attackTimerDelta else TICK_SECONDS
             if (enemy.stunned) return@forEach
 
             // No attack starts or continues through a committed leap or its landing grace.
             if (enemy.leap != null || enemy.vy != 0.0 || enemy.landingCooldownLeft > 0.0) return@forEach
 
             if (enemy.windingUp) {
-                windUp(enemy, playerCentre)
+                windUp(enemy, playerCentre, attackTimerDelta)
                 return@forEach
             }
 
@@ -1230,6 +1231,18 @@ class GameSimulation(
 
             if (enemy.cooldownLeft <= 0.0) beginAttack(enemy, playerCentre)
         }
+    }
+
+    private fun attackTimerDelta(enemy: LiveEnemy, playerCentre: Vec2): Double {
+        if (enemy.archetype.shoots) return TICK_SECONDS
+        val swing = EnemyAttacks.swing(enemy.archetype)
+        val offset = playerCentre - centreOfEnemy(enemy)
+        val rate = if (offset.lengthSquared <= swing.reachPx * swing.reachPx) {
+            EnemyAttacks.MELEE_ATTACK_RATE_IN_REACH
+        } else {
+            1.0
+        }
+        return rate * TICK_SECONDS
     }
 
     private fun decayVisuals(enemy: LiveEnemy) {
@@ -1264,8 +1277,8 @@ class GameSimulation(
         }
     }
 
-    private fun windUp(enemy: LiveEnemy, playerCentre: Vec2) {
-        enemy.windUpLeft -= TICK_SECONDS
+    private fun windUp(enemy: LiveEnemy, playerCentre: Vec2, timerDelta: Double) {
+        enemy.windUpLeft -= timerDelta
         // Half a tick of slack, so a wind-up of n ticks resolves on tick n rather than n + 1 when
         // the subtraction leaves a residue of 1e-17.
         if (enemy.windUpLeft > TICK_SECONDS / 2.0) return

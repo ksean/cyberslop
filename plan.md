@@ -136,6 +136,12 @@ and the loot-floor expectations only.
     without extra damage opportunities or loss of the normal dodge and fairness rules. Complete
     BMC-1 in `tasks.md` test-first, update deterministic state coverage and run
     `./scripts/check.sh`.
+16. **Close-range rank-and-file melee cadence.** *(done)*
+    Add PROD-105 and P-80: while the player is within swing reach, a Swarm, Flyer or Brute
+    progresses its wind-up and post-strike cooldown at twice the ordinary rate without changing
+    damage. Keep ranged-enemy and boss cadence unchanged, account for both effective in-reach
+    timings in `ThreatScore`, then complete MSH-1 in `tasks.md` test-first and run
+    `./scripts/check.sh`.
 
 ## Agents
 
