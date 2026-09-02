@@ -140,8 +140,10 @@ Kotlin/Wasm and the JVM agree bit-for-bit on IEEE-754 `+ − × ÷ √`; they ma
 `sin`, `cos` or `pow`. Therefore (ENG-053, ENG-054):
 
 - Randomness is a first-party SplitMix64 over `ULong` with per-phase derived streams (`spine`,
-  `decor`, `enemy`, `loot`, `backdrop`, the run-wide `boss-roster`, and per-encounter boss attack
-  choice and melee-charge selection), so a change in one phase cannot shift another's output.
+  `decor`, `enemy`, `loot`, `ramen`, `backdrop`, the run-wide `boss-roster`, and per-encounter boss
+  attack choice and melee-charge selection), so a change in one phase cannot shift another's
+  output. The map-scoped `ramen` stream consumes exactly one draw per resolved rank-and-file death
+  and is isolated from weapon/powerup loot and combat rolls (PROD-110).
   Profile assignment is replayed from the run seed on continue; it never consumes a mutable combat
   or loot stream.
 - Everything reachable from the tick uses basic arithmetic and comparisons; transcendentals go
@@ -188,4 +190,6 @@ Kotlin/Wasm and the JVM agree bit-for-bit on IEEE-754 `+ − × ÷ √`; they ma
   elapsed fixed ticks are included because they govern the end-screen transition; its cause and
   pose/effect geometry are presentation-only. A live projectile's gravity and already-hit target
   identities, and a pending lobbed burst's snapshotted aim point, are likewise included. Floating
-  Scrap labels, enemy swing/flash visuals and other presentation-only fields are excluded.
+  Scrap labels, enemy swing/flash visuals, the player's heal-flash timer and other presentation-only
+  fields are excluded. A grounded ramen item's payload and position and the `ramen` stream state
+  are included because they can change future health and drops.

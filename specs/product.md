@@ -231,6 +231,13 @@ build of powerups collected on contact, and permadeath with persistent unlocks.
 - **PROD-046:** One slain rank-and-file enemy in five drops something at every map index, three in
   ten of those a weapon. Mini-bosses and main bosses award loot on every death and are outside this
   rate.
+- **PROD-110:** Every slain rank-and-file enemy must independently have a one-in-eight chance to
+  drop one bowl of ramen. The bowl rests on safe ground and is collectible by walking over it,
+  unlike weapon and powerup death drops. Collecting it removes it, restores 5 % of the player's
+  current maximum health without exceeding that maximum, and briefly flashes the player green.
+  It must read as a small worn bowl with wavy noodles above its rim and two angled chopsticks
+  emerging from the right side. Exact roll isolation, placement, collection and presentation are
+  specified in [combat.md](combat.md) and [presentation.md](presentation.md).
 - **PROD-047:** Each map carries statically placed pickups averaging two per map across seeds,
   each on a cell the map's own verified witness stood on, outside both arenas and outside any
   committed span, no two within twelve tiles where the map allows it. Each rolls its rarity twice
@@ -263,8 +270,9 @@ build of powerups collected on contact, and permadeath with persistent unlocks.
   one short swing sound, each firing event of the player's ranged weapon one short fire sound, and
   each firing event of the player's psychic weapon one subtle warp-like sound distinct from both.
   A simultaneous spread is one firing event; each later round in a time-separated burst is another.
-  Contact that resolves one ground item containing a weapon, a powerup or both must produce one
-  small pickup pulse, including when the resolved item converts to Scrap or displaces something.
+  Contact that resolves one ground item containing a weapon, a powerup, both, or ramen must produce
+  one small pickup pulse, including when the resolved item converts to Scrap, displaces something
+  or is capped by full health.
   These sounds duplicate visible events, require no downloaded audio assets, and may never affect
   simulation, input, saving or progression. Enemy and boss attacks remain unsonified by this basic
   set.

@@ -894,7 +894,46 @@ object Scene {
             item.powerup?.let {
                 pickup(builder, camera, item.powerupPosition, PickupLook.of(it), PowerupIcons.of(it.id), timeSeconds)
             }
+            if (item.ramen) ramen(builder, camera, item.position)
         }
+    }
+
+    /** A fixed ground-aligned bowl, separate from hovering weapon and powerup icon grammar. */
+    private fun ramen(builder: SceneBuilder, camera: Camera, at: Vec2) {
+        val x = (at.x - camera.x) * ZOOM
+        if (x < -OFF_SCREEN || x > camera.viewWidth * ZOOM + OFF_SCREEN) return
+        val groundY = (at.y + TILE_SIZE / 2.0 - camera.y) * ZOOM
+        val rimY = groundY - RAMEN_RIM_RISE
+        val baseY = groundY - RAMEN_OUTLINE_WIDTH / 2.0
+
+        fun bowl(batch: DrawBatch) {
+            batch.segment(x - 8.0, rimY, x + 8.0, rimY)
+            batch.segment(x - 7.5, rimY + 0.5, x - 4.0, baseY)
+            batch.segment(x + 7.5, rimY + 0.5, x + 4.0, baseY)
+            batch.segment(x - 4.0, baseY, x + 4.0, baseY)
+        }
+
+        bowl(builder.batch(Layer.ItemHalo, RAMEN_OUTLINE, Primitive.Segment, RAMEN_OUTLINE_WIDTH))
+        bowl(builder.batch(Layer.Items, RAMEN_BOWL, Primitive.Segment, RAMEN_BODY_WIDTH))
+        builder.batch(Layer.ItemWear, RAMEN_WEAR, Primitive.Segment, RAMEN_DETAIL_WIDTH)
+            .segment(x + 3.5, baseY - 0.8, x + 6.4, rimY + 1.2)
+
+        val noodles = builder.batch(Layer.Items, RAMEN_NOODLE, Primitive.Segment, RAMEN_DETAIL_WIDTH)
+        noodles.segment(x - 5.0, rimY, x - 6.5, rimY - 2.0)
+        noodles.segment(x - 6.5, rimY - 2.0, x - 4.5, rimY - 4.0)
+        noodles.segment(x - 4.5, rimY - 4.0, x - 6.0, rimY - 6.0)
+        noodles.segment(x - 1.0, rimY, x + 0.5, rimY - 2.0)
+        noodles.segment(x + 0.5, rimY - 2.0, x - 1.5, rimY - 4.0)
+        noodles.segment(x - 1.5, rimY - 4.0, x, rimY - 6.0)
+
+        val chopsticks = builder.batch(
+            Layer.Items,
+            RAMEN_CHOPSTICK,
+            Primitive.Segment,
+            RAMEN_DETAIL_WIDTH,
+        )
+        chopsticks.segment(x + 2.0, rimY + 0.5, x + 7.0, groundY - 15.5)
+        chopsticks.segment(x + 4.0, rimY + 0.5, x + 9.0, groundY - 15.5)
     }
 
     /**
@@ -1783,6 +1822,12 @@ object Scene {
     /** The hurt flash is a style swap (PROD-076), so it costs no batch a frame did not already open. */
     private fun hurtOr(hurt: Boolean, own: String): String = if (hurt) Palettes.HURT else own
 
+    private fun playerFeedback(hurt: Boolean, healing: Boolean, own: String): String = when {
+        hurt -> Palettes.HURT
+        healing -> Palettes.HEAL
+        else -> own
+    }
+
     private fun projectiles(
         builder: SceneBuilder,
         palette: Palette,
@@ -2082,14 +2127,15 @@ object Scene {
         val x = (muzzle.x - camera.x) * ZOOM
         val feet = (muzzle.y + state.height(Physics.Default) / 2.0 - camera.y) * ZOOM
         val hurt = sim.playerHurtSecondsLeft > 0.0
+        val healing = sim.playerHealSecondsLeft > 0.0
 
         figure(
             builder, palette, pose, x, feet,
             look = null,
-            bodyStyle = hurtOr(hurt, PLAYER_BODY),
-            limbStyle = hurtOr(hurt, PLAYER_LIMB),
-            trimStyle = hurtOr(hurt, palette.accent),
-            armStyle = hurtOr(hurt, PLAYER_ARM),
+            bodyStyle = playerFeedback(hurt, healing, PLAYER_BODY),
+            limbStyle = playerFeedback(hurt, healing, PLAYER_LIMB),
+            trimStyle = playerFeedback(hurt, healing, palette.accent),
+            armStyle = playerFeedback(hurt, healing, PLAYER_ARM),
             // The player carries a weapon at all times (PROD-023), and `specs/presentation.md` says it
             // attaches to the lead hand. It did not: the geometry was gated on an enemy archetype
             // being armed, and the player has no archetype, so the one figure that always holds
@@ -2793,6 +2839,16 @@ object Scene {
     const val PLAYER_LIMB = "#2a3a4a"
     const val PLAYER_ARM = "#38566d"
     const val PLAYER_EYE = "#67e8f9"
+
+    const val RAMEN_OUTLINE = "#20110f"
+    const val RAMEN_BOWL = "#8f4a32"
+    const val RAMEN_WEAR = "#c36b45"
+    const val RAMEN_NOODLE = "#d6b85f"
+    const val RAMEN_CHOPSTICK = "#7b4a2d"
+    private const val RAMEN_RIM_RISE = 7.0
+    private const val RAMEN_OUTLINE_WIDTH = 2.0
+    private const val RAMEN_BODY_WIDTH = 1.5
+    private const val RAMEN_DETAIL_WIDTH = 1.5
 
     const val SCRAP_GAIN_GOLD = "#ffd45a"
     private const val SCRAP_GAIN_SIZE = 18.0

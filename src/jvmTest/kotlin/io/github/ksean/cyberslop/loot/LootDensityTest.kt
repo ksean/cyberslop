@@ -82,11 +82,13 @@ class LootDensityTest {
                         "the fatal burn left ${sim.enemies.count { it.alive }} enemies alive",
                     )
                     kills += living
-                    drops += sim.items.size - before
-                    // The kinds of exactly the items this round appended.
-                    for (index in before until sim.items.size) {
-                        if (sim.items[index].weapon != null) weapons++
-                    }
+                    // PROD-110's independent food drop is not PROD-046 equipment loot. Count only
+                    // the weapon/powerup items this round appended, just as the asserted 30/70
+                    // split does.
+                    val equipment = sim.items.subList(before, sim.items.size)
+                        .filter { it.weapon != null || it.powerup != null }
+                    drops += equipment.size
+                    weapons += equipment.count { it.weapon != null }
                 }
             }
         }

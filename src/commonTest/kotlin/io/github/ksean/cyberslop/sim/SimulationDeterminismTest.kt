@@ -42,6 +42,7 @@ class SimulationDeterminismTest {
         mutated("player and run") { it.tick(InputFrame(jumpStart = true, jump = true)) }
         mutated("auto-fire accumulator") { it.autoFire.remaining += 0.01 }
         mutated("loot rng") { it.lootRng.nextULong() }
+        mutated("ramen rng") { it.ramenRng.nextULong() }
         mutated("enemies") { it.enemies.first().health -= 1.0 }
         mutated("enemy engagement") { it.enemies.first().engaged = !it.enemies.first().engaged }
         mutated("enemy aiming velocity") { it.enemies.first().aimingVelocity = Vec2.Right }
@@ -245,7 +246,8 @@ class SimulationDeterminismTest {
         val SEED = 0xD1CE5uL
         const val TICKS = 720
         const val RUN_TICKS = 600
-        const val GOLDEN = 15581592848669027342uL
+        // Updated for PROD-110: the digest now includes the independent ramen stream and payload.
+        const val GOLDEN = 2366608133780968037uL
         const val LOOT_MAP = 2
         const val LOOT_COLUMN = 20
         const val LOOT_KILLS = 80

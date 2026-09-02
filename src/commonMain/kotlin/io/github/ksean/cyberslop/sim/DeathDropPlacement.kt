@@ -15,9 +15,10 @@ import kotlin.math.ceil
 import kotlin.math.sqrt
 
 /**
- * Chooses the fixed simulation position of loot created by an actor's death (PROD-090).
+ * Chooses the fixed simulation position of an item created by an actor's death.
  *
- * The slain actor's x is preferred. Invalid projections fall back through a stable list of safe
+ * Equipment uses PROD-090's raised jump site; ramen uses PROD-110's grounded walk-over site. The
+ * slain actor's x is preferred. Invalid projections fall back through a stable list of safe
  * supports, without consuming randomness or depending on presentation state.
  */
 class DeathDropPlacement(
@@ -34,9 +35,10 @@ class DeathDropPlacement(
     private val reachableCells: Set<Pair<Int, Int>> by lazy(::findReachableCells)
 
     fun place(death: Vec2, paired: Boolean): Vec2 {
-        projectedSite(death)?.takeIf { valid(it, paired) }?.let { return it.position }
+        projectedSite(death, DEATH_DROP_RISE)?.takeIf { validRaised(it, paired) }
+            ?.let { return it.position }
 
-        val fallback = fallbackSites()
+        val fallback = fallbackSites(DEATH_DROP_RISE)
             .sortedWith(
                 compareBy(
                     { site: Site -> abs(site.position.x - death.x) },
@@ -45,35 +47,54 @@ class DeathDropPlacement(
                     { it.openRow },
                 ),
             )
-            .firstOrNull { valid(it, paired) }
+            .firstOrNull { validRaised(it, paired) }
             ?: error("a valid level has no jump-collectable death-drop site for $death")
         return fallback.position
     }
 
-    private fun projectedSite(death: Vec2): Site? {
+    /** A walk-over death drop whose pickup point sits in the clear cell above its support. */
+    fun placeGrounded(death: Vec2): Vec2 {
+        projectedSite(death, GROUND_DROP_RISE)?.takeIf(::validGrounded)
+            ?.let { return it.position }
+
+        val fallback = fallbackSites(GROUND_DROP_RISE)
+            .sortedWith(
+                compareBy(
+                    { site: Site -> abs(site.position.x - death.x) },
+                    { abs(it.position.y - death.y) },
+                    { it.column },
+                    { it.openRow },
+                ),
+            )
+            .firstOrNull(::validGrounded)
+            ?: error("a valid level has no grounded death-drop site for $death")
+        return fallback.position
+    }
+
+    private fun projectedSite(death: Vec2, rise: Double): Site? {
         val column = TileMap.toTile(death.x)
         if (column !in 0 until level.widthTiles) return null
         val firstRow = TileMap.toTile(death.y).coerceAtLeast(0)
         for (supportRow in firstRow until level.tiles.height) {
             if (safeSupport(column, supportRow)) {
-                return site(death.x, column, supportRow)
+                return site(death.x, column, supportRow, rise)
             }
         }
         return null
     }
 
-    private fun fallbackSites(): List<Site> = buildList {
+    private fun fallbackSites(rise: Double): List<Site> = buildList {
         for (column in 0 until level.widthTiles) {
             for (supportRow in 1 until level.tiles.height) {
                 if (!safeSupport(column, supportRow)) continue
-                add(site(TileMap.toWorld(column) + TILE_SIZE / 2.0, column, supportRow))
+                add(site(TileMap.toWorld(column) + TILE_SIZE / 2.0, column, supportRow, rise))
             }
         }
     }
 
-    private fun site(x: Double, column: Int, supportRow: Int): Site =
+    private fun site(x: Double, column: Int, supportRow: Int, rise: Double): Site =
         Site(
-            position = Vec2(x, TileMap.toWorld(supportRow) - DEATH_DROP_RISE),
+            position = Vec2(x, TileMap.toWorld(supportRow) - rise),
             column = column,
             openRow = supportRow - 1,
             supportRow = supportRow,
@@ -82,7 +103,7 @@ class DeathDropPlacement(
     private fun safeSupport(column: Int, row: Int): Boolean =
         level.tiles.blocksMovement(column, row) && !level.tiles.isLethal(column, row)
 
-    private fun valid(site: Site, paired: Boolean): Boolean {
+    private fun validRaised(site: Site, paired: Boolean): Boolean {
         val icons = buildList {
             add(site.position)
             if (paired) add(site.position + Vec2(GroundItem.PAIRED_OFFSET, 0.0))
@@ -92,6 +113,28 @@ class DeathDropPlacement(
             icons.none(::groundedPoseCanCollect) &&
             collectingJumpExists(site, icons)
     }
+
+    private fun validGrounded(site: Site): Boolean {
+        val standing = PlayerState(
+            x = site.position.x - physics.width / 2.0,
+            y = TileMap.toWorld(site.supportRow) - physics.standingHeight,
+            onGround = true,
+        )
+        return site.column to site.openRow in reachableCells &&
+            clearIcon(site.position) &&
+            hazardFreeCell(site.column, site.openRow) &&
+            canRestAt(site.position.x, site.supportRow, Stance.Stand) &&
+            inReach(site.position, standing)
+    }
+
+    private fun hazardFreeCell(column: Int, row: Int): Boolean =
+        Hazards.overlapped(
+            level,
+            TileMap.toWorld(column),
+            TileMap.toWorld(row),
+            TILE_SIZE.toDouble(),
+            TILE_SIZE.toDouble(),
+        ).isEmpty()
 
     private fun clearIcon(icon: Vec2): Boolean {
         val column = TileMap.toTile(icon.x)
@@ -289,6 +332,7 @@ class DeathDropPlacement(
 
     companion object {
         const val DEATH_DROP_RISE = 2.0 * TILE_SIZE
+        const val GROUND_DROP_RISE = TILE_SIZE / 2.0
         const val PICKUP_REACH = TILE_SIZE.toDouble()
         private const val MAX_JUMP_TICKS = 240
         private const val POSE_SAMPLE = 0.5

@@ -441,6 +441,24 @@ derives the bound from the ladder, including the two fixed tier-bloom widths on 
 counts against it rather than believing arithmetic in prose (P-31 states it). Whether an icon is *recognisable*, or looks
 aged, is a human judgement made against the icon sheet, not a test.
 
+## Ramen pickup and heal flash (PROD-110)
+
+Ramen is a small grounded food pickup, not a weapon or powerup icon. Its fixed drawing fits within
+a 20 × 18 screen-pixel box: a dark-backed, shallow rust-red bowl (`#8f4a32`) has a thick rim,
+two inward-sloping sides and a short base, with a worn highlight (`#c36b45`). At least two connected
+pale-gold noodle strokes (`#d6b85f`) alternate slope as they rise just above the rim. Two distinct,
+parallel brown chopsticks (`#7b4a2d`) emerge from the bowl's right half and angle upward to the
+right. The silhouette must remain identifiable with colour removed. The bowl's bottom is aligned
+to its selected support surface. It has no kind ring, tier pips, coloured bloom, rarity scaling or
+hover; presentation time never changes its geometry or position.
+
+Collecting a bowl starts `playerHealSecondsLeft = HEAL_FLASH_SECONDS = 0.12 s`, including when the
+health cap prevents an increase. While positive, the player's body, limbs, head, trim and arms use
+`Palettes.HEAL` (`#39d353`); the eye and held weapon keep their identifying styles. An overlapping
+red hurt flash retains priority and the green timer does not decay while red is visible, so neither
+feedback event erases the other. The heal timer advances only on simulation ticks, freezes with
+pause, is not saved or digested, and changes no health, damage, invulnerability or input rule.
+
 ## Scrap-gain feedback (PROD-086)
 
 All four positive in-run Scrap paths — the 2-Scrap enemy kill, the main boss's 40 Scrap, weapon
@@ -470,8 +488,9 @@ each later round that actually leaves a time-separated burst. `PsychicFire` foll
 boundary for a psychic weapon: one cue for the trigger's simultaneous volley and one for each later
 round that actually leaves a time-separated burst. Projectile count, hits and pierce do not
 multiply either firing cue. `PickupPulse` is emitted once per contacted `GroundItem` removed by
-pickup resolution, whether it held a weapon, a powerup or a paired award and whether its loot was
-equipped, applied, displaced or scrapped. Ticks with none of those transitions emit no cue. Enemy
+pickup resolution, whether it held a weapon, a powerup, a paired award or ramen and whether its
+loot was equipped, applied, displaced, scrapped, healed or capped by full health. Ticks with none
+of those transitions emit no cue. Enemy
 and boss attacks emit none in this basic set.
 
 The browser adapter owns one Web Audio context, lazily created and resumed by the player gesture
@@ -685,6 +704,16 @@ its `Return to title` button receives focus as before.
   patches add exactly the same two style batches; composing them consumes no RNG and changes no
   tile, health, collision or digest. The development world sheet is inspected for small, rusty,
   jagged ground readability and clear distinction from spikes.
+- **P-88** Ramen and heal presentation: a ramen fixture draws a bowl no larger than 20 × 18 screen
+  px with a thick rim, two inward-sloping sides, a base and a worn highlight; at least two connected
+  alternating-slope noodle strokes rise above the rim, and exactly two distinct parallel
+  chopsticks emerge from the right half and angle upward right. A colour-stripped fixture retains
+  that bowl/noodle/chopstick silhouette. Its bottom meets the selected support, its draw list is
+  identical at two presentation times, and it draws no ring, pips, bloom or hover. On collection,
+  the player's figure uses `Palettes.HEAL` for exactly 0.12 active seconds while its eye and held
+  weapon retain their styles, then returns to normal. Pause freezes the timer. If a hurt flash
+  overlaps, red renders for its complete window while the green timer remains unchanged, then the
+  complete green window renders. Mutating only the heal timer changes neither save nor P-40 digest.
 - **P-76** Backdrop identity and detail: the backdrop-profile registry is total over the ten
   `ThemeId`s; every profile has a unique colour-independent structural signature containing at
   least the motifs required by its table row. For a representative level, all three depths contain
@@ -700,9 +729,10 @@ its `Return to title` button receives focus as before.
   single shot and a simultaneous spread each report exactly one `RangedFire`; a psychic single shot
   and simultaneous volley each report exactly one `PsychicFire`; every later round of either class's
   timed burst reports one matching cue on its actual emission tick. Enemy and boss attacks report
-  none. Removing a contacted weapon-only, powerup-only or paired `GroundItem` reports exactly one
-  `PickupPulse`, including same-weapon Scrap, refused/displaced powerup and guaranteed outcomes; no
-  contact reports none. Cue presence and consumption change neither canonical save nor P-40 digest.
+  none. Removing a contacted weapon-only, powerup-only, paired or ramen `GroundItem` reports exactly
+  one `PickupPulse`, including same-weapon Scrap, refused/displaced powerup, guaranteed, healed and
+  full-health-capped outcomes; no contact reports none. Cue presence and consumption change neither
+  canonical save nor P-40 digest.
   Browser wiring forwards each report cue once and in order to an injectable sink, forwards none
   while paused, never replays one after resume, and treats a suspended or failing audio context as
   silence. The psychic patch is distinct from all other patches, uses the specified bend, lasts at

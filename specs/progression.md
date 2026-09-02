@@ -37,8 +37,9 @@ A new run begins at its full upgraded map-one maximum. After that, current healt
 run resource: exiting a cleared map and entering its successor preserve exactly the absolute value
 the player had on exit (PROD-100). The transition advances `mapIndex` and therefore recalculates
 `maxHealth`, but it grants no heal, refill or proportional adjustment. Only an explicit gameplay
-healing effect may increase current health. The carried value is what the next map's simulation and
-in-progress save receive.
+healing effect may increase current health. A ramen pickup is one such effect: it adds 5 % of the
+current map's upgraded maximum and caps at that maximum (PROD-110). The carried value is what the
+next map's simulation and in-progress save receive.
 
 The profile format is versioned and rejects a malformed record as a whole. Migration preserves
 existing players: a legacy metadata record containing one Scrap integer, or the meta-Scrap field

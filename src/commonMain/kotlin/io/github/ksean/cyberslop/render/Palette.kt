@@ -80,6 +80,9 @@ object Palettes {
     /** What an enemy or boss is drawn in for the hurt flash (PROD-076); nothing else uses it. */
     const val HURT = "#ff3b30"
 
+    /** Player feedback for collecting a healing bowl of ramen (PROD-110). */
+    const val HEAL = "#39d353"
+
     fun of(theme: ThemeId): Palette = palettes.getValue(theme)
 
     /**

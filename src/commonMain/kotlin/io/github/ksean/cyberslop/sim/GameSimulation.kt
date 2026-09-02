@@ -42,21 +42,16 @@ import io.github.ksean.cyberslop.world.TILE_SIZE
 import io.github.ksean.cyberslop.world.TileMap
 
 /**
- * A weapon or a powerup lying on the ground. Contact resolves it either way (PROD-030).
- *
- * [guaranteed] marks the awards `LootFloor` is computed from — the boss and mini-boss drops and map
- * one's starter cache. They are never refused by a full build, which is what makes the floor a bound
- * on a real player rather than on one particular route.
- */
-/**
- * Something lying on the map. An item that holds both a [weapon] and a [powerup] is a paired
- * award and resolves weapon then powerup on one contact (PROD-070).
+ * Something lying on the map. An item that holds both a [weapon] and a [powerup] resolves them in
+ * that order on one contact (PROD-070); [ramen] is the separate grounded healing payload.
+ * [guaranteed] identifies the boss awards and starter cache used by `LootFloor`.
  */
 class GroundItem(
     val position: Vec2,
     val weapon: WeaponSpec?,
     val powerup: Powerup?,
     val guaranteed: Boolean = false,
+    val ramen: Boolean = false,
 ) {
     /** Where the powerup is drawn: beside the weapon when paired, else where the item is. */
     val powerupPosition: Vec2 get() = if (weapon != null && powerup != null) position + Vec2(PAIRED_OFFSET, 0.0) else position
@@ -109,6 +104,9 @@ class GameSimulation(
     // Per-map, per-phase stream (ENG-053), so loot on map 3 is not the same draw as loot on map 1.
     internal val lootRng = Rng.derive(seed, level.mapIndex, "loot")
     private val rng: Rng get() = lootRng
+
+    /** Independent of combat and equipment loot, so food cannot perturb either (PROD-110). */
+    internal val ramenRng = Rng.derive(seed, level.mapIndex, "ramen")
 
     private var gameplayViewport = fullLevelViewport()
 
@@ -174,6 +172,10 @@ class GameSimulation(
 
     /** Seconds of player hurt flash remaining; presentation-only and deliberately undigested. */
     var playerHurtSecondsLeft: Double = 0.0
+        internal set
+
+    /** Seconds of player heal flash remaining; presentation-only and deliberately undigested. */
+    var playerHealSecondsLeft: Double = 0.0
         internal set
 
     /** Null while playing; immutable cause plus fixed-tick age after terminal player damage. */
@@ -347,7 +349,11 @@ class GameSimulation(
         val minibossCentreBeforeTick = miniboss.centre
         val bossCentreBeforeTick = boss.centre
         previousPlayer = player
+        val hurtWasActive = playerHurtSecondsLeft > 0.0
         playerHurtSecondsLeft = (playerHurtSecondsLeft - TICK_SECONDS).coerceAtLeast(0.0)
+        if (!hurtWasActive) {
+            playerHealSecondsLeft = (playerHealSecondsLeft - TICK_SECONDS).coerceAtLeast(0.0)
+        }
         advanceScrapGains()
         if (input.direction != 0) facing = input.direction
 
@@ -467,7 +473,7 @@ class GameSimulation(
             add(DEATH_SEQUENCE_DIGEST_TAG)
             add(terminal.elapsedTicks)
         }
-        add(autoFire.remaining); add(lootRng.state); add(lifestealBudget)
+        add(autoFire.remaining); add(lootRng.state); add(ramenRng.state); add(lifestealBudget)
         pendingBurst.let { b ->
             add(b?.roundsLeft ?: -1)
             if (b != null) {
@@ -508,7 +514,8 @@ class GameSimulation(
         }
         add(items.size)
         items.forEach { i ->
-            add(i.position); add(i.weapon?.id?.ordinal ?: -1); add(i.powerup?.id?.ordinal ?: -1); add(i.guaranteed)
+            add(i.position); add(i.weapon?.id?.ordinal ?: -1); add(i.powerup?.id?.ordinal ?: -1)
+            add(i.guaranteed); add(i.ramen)
         }
         listOf(miniboss to minibossRewarded, boss to bossRewarded).forEach { (b, rewarded) ->
             add(b.spec.profile.primaryMelee.ordinal); add(b.spec.profile.primaryRanged.ordinal)
@@ -1822,6 +1829,14 @@ class GameSimulation(
         ) {
             autoFire.clearCooldown()
         }
+        if (ramenRng.nextInt(RAMEN_DROP_DENOMINATOR) == 0 && optionalLoot) {
+            items += GroundItem(
+                deathDropPlacement.placeGrounded(centreOfEnemy(enemy)),
+                null,
+                null,
+                ramen = true,
+            )
+        }
         if (rng.nextDouble() > DropTable.killDropChance(level.mapIndex)) return
         // Rolled whether or not it is kept: the loot stream also feeds crits and stuns, and a
         // guaranteed-only run has to be the same fight with the loot merely withheld.
@@ -1860,7 +1875,13 @@ class GameSimulation(
                 gainScrap(scrap)
                 collected += DiscoveryId.Powerup(powerup.id)
             }
-            if (item.weapon != null || item.powerup != null) emittedAudioCues += AudioCue.PickupPulse
+            if (item.ramen) {
+                run = run.healed(run.maxHealth * RAMEN_HEAL_FRACTION)
+                playerHealSecondsLeft = HEAL_FLASH_SECONDS
+            }
+            if (item.weapon != null || item.powerup != null || item.ramen) {
+                emittedAudioCues += AudioCue.PickupPulse
+            }
             autoFire.rebuild(run.loadout.weapon, run.loadout.slots)
         }
         items.removeAll(taken)
@@ -2078,6 +2099,9 @@ class GameSimulation(
 
         /** How long a hit enemy or boss is drawn red (PROD-076). */
         const val HURT_FLASH_SECONDS = 0.12
+        const val HEAL_FLASH_SECONDS = 0.12
+        const val RAMEN_HEAL_FRACTION = 0.05
+        private const val RAMEN_DROP_DENOMINATOR = 8
         const val EXIT_CLEARANCE = 6
         private const val UPGRADE_DIGEST_TAG = 0x55504752
         private const val DEATH_SEQUENCE_DIGEST_TAG = 0x44454144

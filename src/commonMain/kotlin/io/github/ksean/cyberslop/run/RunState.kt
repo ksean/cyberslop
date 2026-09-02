@@ -18,6 +18,8 @@ data class RunState(
 
     fun damaged(amount: Double): RunState = copy(health = (health - amount).coerceAtLeast(0.0))
 
+    fun healed(amount: Double): RunState = copy(health = (health + amount).coerceAtMost(maxHealth))
+
     val dead: Boolean get() = health <= 0.0
 
     /** Entering the next map preserves the health earned or lost in this run. */

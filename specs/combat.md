@@ -333,10 +333,37 @@ the same weights apply to weapons and powerups.
 | Source | Chance | Yields |
 |---|---|---|
 | Rank-and-file kill | 20 %, flat (PROD-046) | 30 % weapon / 70 % powerup |
+| Rank-and-file ramen | 12.5 %, flat and independent (PROD-110) | one grounded bowl of ramen |
 | Static drop, mean 2 per map (PROD-047) | 100 % | same split; rarity rolled twice, keeping the better |
 | Starter cache, map 1 before the midpoint | 100 % | weapon, tier ≥ T1 |
 | Mini-boss | 100 % | weapon (tier ≥ T2); plus a powerup from map 4 |
 | Main boss | 100 % | weapon (tier ≥ T3, +2 tier shifts) + powerup (tier ≥ T2) + Scrap |
+
+### Grounded ramen drops (PROD-110)
+
+Every resolved rank-and-file death consumes exactly one draw from its map's dedicated `ramen`
+stream. Exactly one of the stream's eight equiprobable outcomes creates one bowl; mini-boss and
+main-boss deaths consume no ramen draw. This roll is independent of PROD-046's weapon/powerup roll,
+so either, neither or both drops can result from the same enemy, and adding ramen does not change
+combat, cache, weapon/powerup occurrence or rarity draws.
+
+A ramen bowl uses a grounded death site rather than PROD-090's raised death-drop site. The primary
+candidate preserves the slain enemy's centre x, projects it onto the nearest safe support below,
+and puts its pickup point at the centre of the clear cell immediately above that support. The site
+must be on a player-reachable support, outside blocking, lethal and damaging-hazard cells, and
+collectible from a collision-free grounded pose. If that projection is invalid, safe reachable
+sites are ordered by horizontal distance from the death, then vertical distance, column and row;
+the first valid site wins. Placement consumes no randomness. The chosen position is fixed, has no
+falling physics and is within the existing strict `PICKUP_REACH` contact radius of an ordinary
+grounded walk-over pose. A weapon or powerup produced by the same death independently keeps its
+raised PROD-090 position.
+
+Contact removes the bowl and heals exactly `0.05 × maxHealth` as calculated for the current map
+and permanent upgrades at that tick, capped at `maxHealth`. Fractional health is retained. The
+bowl is still consumed and starts its green feedback when the player is already at full health. It
+does not enter the loadout, award Scrap or create a first-discovery card; it emits the ordinary one
+per-item `PickupPulse`. Its presence, position and payload, and the ramen stream state, are
+rule-bearing deterministic state. Its green feedback timer is presentation-only.
 
 ### Jump-required death drops (PROD-090)
 
@@ -394,6 +421,18 @@ same-weapon pickup pays exactly one weapon value and no values for the powerups 
   receive a second multiplier.
 - **P-25** Kill drop rate is 0.20 at every map index, three in ten of them weapons; static drops
   average 2.0 ± 0.15 per map over a seed cohort, each count in {1, 2, 3}.
+- **P-87** Ramen drop and collection: over each map index a seeded cohort's rank-and-file death
+  sequence consumes one `ramen` draw per death and produces exactly the stream's one-in-eight
+  successes, while mini-boss and main-boss deaths consume none. Forcing any combination of ramen
+  and PROD-046 outcomes proves neither roll changes the other and both drops coexist when both
+  succeed. A flat-ground death places the ramen's pickup point in the clear cell directly above the
+  support at the enemy's centre x; a grounded approach collects it without a jump. Airborne,
+  over-hazard, blocked and unreachable projections choose the first safe reachable fallback in the
+  declared stable order without consuming RNG, while a simultaneous weapon or powerup remains at
+  its jump-required site. At 40/100 health the bowl raises health to 45, at 98/100 it raises health
+  to 100, and at 100/100 it remains 100; all three remove exactly that bowl, start heal feedback
+  and emit one `PickupPulse`, without changing the loadout, Scrap or discoveries. Ramen items,
+  positions and RNG state change P-40's digest; heal feedback does not.
 - **P-44** Boss attack choice (enemies.md).
 - **P-45** Life steal and bounce (a projectile step is walked in pieces of at most half a tile,
   so a 24 px-per-tick shot fired 4 px short of a one-tile wall is stopped by it, or reflected off

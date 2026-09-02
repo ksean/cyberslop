@@ -163,6 +163,12 @@ and the loot-floor expectations only.
     Add PROD-109 and P-86, update the nine registry rows exactly, preserve every non-damage field
     and recalibrate affected assertions and pressure fixtures. Complete MELEE-1 in `tasks.md`
     test-first.
+22. **Add grounded ramen healing drops.** *(done)*
+    Add PROD-110, P-87 and P-88: give each rank-and-file death an independent one-in-eight ramen
+    roll, place a successful bowl on deterministic safe reachable ground, heal 5 % of current
+    maximum health on walk-over contact and briefly flash the player green. Draw the small rusty
+    bowl, wavy noodles and two right-side angled chopsticks without weapon/powerup hover or rarity
+    treatment. Complete RAMEN-1 in `tasks.md` test-first, then run `./scripts/check.sh`.
 
 ## Agents
 
