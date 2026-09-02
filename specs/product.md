@@ -235,7 +235,7 @@ build of powerups collected on contact, and permadeath with persistent unlocks.
   drop one bowl of ramen. The bowl rests on safe ground and is collectible by walking over it,
   unlike weapon and powerup death drops. Collecting it removes it, restores 5 % of the player's
   current maximum health without exceeding that maximum, and briefly flashes the player green.
-  It must read as a small worn bowl with wavy noodles above its rim and two angled chopsticks
+  It must read as a worn bowl with wavy noodles above its rim and two angled chopsticks
   emerging from the right side. Exact roll isolation, placement, collection and presentation are
   specified in [combat.md](combat.md) and [presentation.md](presentation.md).
 - **PROD-047:** Each map carries statically placed pickups averaging two per map across seeds,

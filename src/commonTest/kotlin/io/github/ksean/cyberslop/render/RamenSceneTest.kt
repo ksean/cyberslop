@@ -16,13 +16,14 @@ import kotlin.test.assertTrue
 /** PROD-110 / P-88: fixed bowl geometry and presentation-only green feedback. */
 class RamenSceneTest {
     @Test
-    fun `ramen is a small fixed grounded bowl with noodles and two angled chopsticks`() {
+    fun `ramen doubles its introduction geometry while staying fixed and grounded`() {
         val (sim, at) = simulationWithRamen()
 
         val first = ramenSignature(frame(sim, 0.0))
         val later = ramenSignature(frame(sim, 0.9))
 
         assertEquals(first, later, "ramen hovered or animated")
+        assertSignatureEquals(INTRODUCTION_SIGNATURE, normaliseToIntroductionSize(first, at))
         assertEquals(2, first.count { it.style == Scene.RAMEN_CHOPSTICK })
         assertTrue(first.count { it.style == Scene.RAMEN_NOODLE } >= 4)
         assertTrue(first.any { it.style == Scene.RAMEN_BOWL })
@@ -32,8 +33,10 @@ class RamenSceneTest {
         val right = first.maxOf { maxOf(it.x1, it.x2) + it.width / 2.0 }
         val top = first.minOf { minOf(it.y1, it.y2) - it.width / 2.0 }
         val bottom = first.maxOf { maxOf(it.y1, it.y2) + it.width / 2.0 }
-        assertTrue(right - left <= 20.0, "ramen was ${right - left}px wide")
-        assertTrue(bottom - top <= 18.0, "ramen was ${bottom - top}px tall")
+        assertEquals(37.5, right - left, absoluteTolerance = 1e-9)
+        assertEquals(32.5, bottom - top, absoluteTolerance = 1e-9)
+        assertTrue(right - left <= 40.0, "ramen was ${right - left}px wide")
+        assertTrue(bottom - top <= 36.0, "ramen was ${bottom - top}px tall")
 
         val supportY = (at.y + TILE_SIZE / 2.0) * Scene.ZOOM
         assertEquals(supportY, bottom, absoluteTolerance = 1e-9, message = "the bowl floats above its support")
@@ -111,6 +114,33 @@ class RamenSceneTest {
             }
         }
 
+    private fun normaliseToIntroductionSize(segments: List<Segment>, at: Vec2): List<Segment> {
+        val anchorX = at.x * Scene.ZOOM
+        val supportY = (at.y + TILE_SIZE / 2.0) * Scene.ZOOM
+        return segments.map { segment ->
+            Segment(
+                segment.style,
+                segment.width / RAMEN_SCALE,
+                (segment.x1 - anchorX) / RAMEN_SCALE,
+                (segment.y1 - supportY) / RAMEN_SCALE,
+                (segment.x2 - anchorX) / RAMEN_SCALE,
+                (segment.y2 - supportY) / RAMEN_SCALE,
+            )
+        }
+    }
+
+    private fun assertSignatureEquals(expected: List<Segment>, actual: List<Segment>) {
+        assertEquals(expected.size, actual.size)
+        expected.zip(actual).forEachIndexed { index, (expectedSegment, actualSegment) ->
+            assertEquals(expectedSegment.style, actualSegment.style, "segment $index style")
+            assertEquals(expectedSegment.width, actualSegment.width, 1e-9, "segment $index width")
+            assertEquals(expectedSegment.x1, actualSegment.x1, 1e-9, "segment $index x1")
+            assertEquals(expectedSegment.y1, actualSegment.y1, 1e-9, "segment $index y1")
+            assertEquals(expectedSegment.x2, actualSegment.x2, 1e-9, "segment $index x2")
+            assertEquals(expectedSegment.y2, actualSegment.y2, 1e-9, "segment $index y2")
+        }
+    }
+
     private fun figureCount(frame: DrawList, style: String): Int = frame.batches
         .filter { it.layer in FIGURE_LAYERS && it.style == style }
         .sumOf { it.size }
@@ -146,7 +176,27 @@ class RamenSceneTest {
         val SEED = 0xB0A1uL
         const val MAP_INDEX = 2
         const val RAMEN_COLUMN = 8
+        const val RAMEN_SCALE = 2.0
         val CAMERA = Camera(0.0, 0.0, 560.0, 320.0)
+        val INTRODUCTION_SIGNATURE = listOf(
+            Segment(Scene.RAMEN_OUTLINE, 2.0, -8.0, -7.0, 8.0, -7.0),
+            Segment(Scene.RAMEN_OUTLINE, 2.0, -7.5, -6.5, -4.0, -1.0),
+            Segment(Scene.RAMEN_OUTLINE, 2.0, 7.5, -6.5, 4.0, -1.0),
+            Segment(Scene.RAMEN_OUTLINE, 2.0, -4.0, -1.0, 4.0, -1.0),
+            Segment(Scene.RAMEN_BOWL, 1.5, -8.0, -7.0, 8.0, -7.0),
+            Segment(Scene.RAMEN_BOWL, 1.5, -7.5, -6.5, -4.0, -1.0),
+            Segment(Scene.RAMEN_BOWL, 1.5, 7.5, -6.5, 4.0, -1.0),
+            Segment(Scene.RAMEN_BOWL, 1.5, -4.0, -1.0, 4.0, -1.0),
+            Segment(Scene.RAMEN_NOODLE, 1.5, -5.0, -7.0, -6.5, -9.0),
+            Segment(Scene.RAMEN_NOODLE, 1.5, -6.5, -9.0, -4.5, -11.0),
+            Segment(Scene.RAMEN_NOODLE, 1.5, -4.5, -11.0, -6.0, -13.0),
+            Segment(Scene.RAMEN_NOODLE, 1.5, -1.0, -7.0, 0.5, -9.0),
+            Segment(Scene.RAMEN_NOODLE, 1.5, 0.5, -9.0, -1.5, -11.0),
+            Segment(Scene.RAMEN_NOODLE, 1.5, -1.5, -11.0, 0.0, -13.0),
+            Segment(Scene.RAMEN_CHOPSTICK, 1.5, 2.0, -6.5, 7.0, -15.5),
+            Segment(Scene.RAMEN_CHOPSTICK, 1.5, 4.0, -6.5, 9.0, -15.5),
+            Segment(Scene.RAMEN_WEAR, 1.5, 3.5, -1.8, 6.4, -5.8),
+        )
         val RAMEN_STYLES = setOf(
             Scene.RAMEN_OUTLINE,
             Scene.RAMEN_BOWL,

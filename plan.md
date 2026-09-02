@@ -169,6 +169,11 @@ and the loot-floor expectations only.
     maximum health on walk-over contact and briefly flash the player green. Draw the small rusty
     bowl, wavy noodles and two right-side angled chopsticks without weapon/powerup hover or rarity
     treatment. Complete RAMEN-1 in `tasks.md` test-first, then run `./scripts/check.sh`.
+23. **Double the ramen pickup's visual scale.** *(done)*
+    Extend PROD-110 and add P-89 so the bowl, noodles, chopsticks and their stroke widths use a 2×
+    linear presentation scale while the ground anchor and every simulation rule remain unchanged.
+    Complete RAMEN-SCALE-1 in `tasks.md` test-first, inspect the regenerated ramen sheet, then run
+    `./scripts/check.sh`.
 
 ## Agents
 

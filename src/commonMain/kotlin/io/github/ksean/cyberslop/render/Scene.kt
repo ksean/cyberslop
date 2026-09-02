@@ -903,37 +903,73 @@ object Scene {
         val x = (at.x - camera.x) * ZOOM
         if (x < -OFF_SCREEN || x > camera.viewWidth * ZOOM + OFF_SCREEN) return
         val groundY = (at.y + TILE_SIZE / 2.0 - camera.y) * ZOOM
-        val rimY = groundY - RAMEN_RIM_RISE
-        val baseY = groundY - RAMEN_OUTLINE_WIDTH / 2.0
+        val rimY = groundY - RAMEN_RIM_RISE * RAMEN_VISUAL_SCALE
+        val baseY = groundY - RAMEN_OUTLINE_WIDTH * RAMEN_VISUAL_SCALE / 2.0
+
+        fun scaled(value: Double): Double = value * RAMEN_VISUAL_SCALE
 
         fun bowl(batch: DrawBatch) {
-            batch.segment(x - 8.0, rimY, x + 8.0, rimY)
-            batch.segment(x - 7.5, rimY + 0.5, x - 4.0, baseY)
-            batch.segment(x + 7.5, rimY + 0.5, x + 4.0, baseY)
-            batch.segment(x - 4.0, baseY, x + 4.0, baseY)
+            batch.segment(x - scaled(8.0), rimY, x + scaled(8.0), rimY)
+            batch.segment(x - scaled(7.5), rimY + scaled(0.5), x - scaled(4.0), baseY)
+            batch.segment(x + scaled(7.5), rimY + scaled(0.5), x + scaled(4.0), baseY)
+            batch.segment(x - scaled(4.0), baseY, x + scaled(4.0), baseY)
         }
 
-        bowl(builder.batch(Layer.ItemHalo, RAMEN_OUTLINE, Primitive.Segment, RAMEN_OUTLINE_WIDTH))
-        bowl(builder.batch(Layer.Items, RAMEN_BOWL, Primitive.Segment, RAMEN_BODY_WIDTH))
-        builder.batch(Layer.ItemWear, RAMEN_WEAR, Primitive.Segment, RAMEN_DETAIL_WIDTH)
-            .segment(x + 3.5, baseY - 0.8, x + 6.4, rimY + 1.2)
+        bowl(builder.batch(
+            Layer.ItemHalo,
+            RAMEN_OUTLINE,
+            Primitive.Segment,
+            scaled(RAMEN_OUTLINE_WIDTH),
+        ))
+        bowl(builder.batch(
+            Layer.Items,
+            RAMEN_BOWL,
+            Primitive.Segment,
+            scaled(RAMEN_BODY_WIDTH),
+        ))
+        builder.batch(
+            Layer.ItemWear,
+            RAMEN_WEAR,
+            Primitive.Segment,
+            scaled(RAMEN_DETAIL_WIDTH),
+        ).segment(
+            x + scaled(3.5),
+            baseY - scaled(0.8),
+            x + scaled(6.4),
+            rimY + scaled(1.2),
+        )
 
-        val noodles = builder.batch(Layer.Items, RAMEN_NOODLE, Primitive.Segment, RAMEN_DETAIL_WIDTH)
-        noodles.segment(x - 5.0, rimY, x - 6.5, rimY - 2.0)
-        noodles.segment(x - 6.5, rimY - 2.0, x - 4.5, rimY - 4.0)
-        noodles.segment(x - 4.5, rimY - 4.0, x - 6.0, rimY - 6.0)
-        noodles.segment(x - 1.0, rimY, x + 0.5, rimY - 2.0)
-        noodles.segment(x + 0.5, rimY - 2.0, x - 1.5, rimY - 4.0)
-        noodles.segment(x - 1.5, rimY - 4.0, x, rimY - 6.0)
+        val noodles = builder.batch(
+            Layer.Items,
+            RAMEN_NOODLE,
+            Primitive.Segment,
+            scaled(RAMEN_DETAIL_WIDTH),
+        )
+        noodles.segment(x - scaled(5.0), rimY, x - scaled(6.5), rimY - scaled(2.0))
+        noodles.segment(x - scaled(6.5), rimY - scaled(2.0), x - scaled(4.5), rimY - scaled(4.0))
+        noodles.segment(x - scaled(4.5), rimY - scaled(4.0), x - scaled(6.0), rimY - scaled(6.0))
+        noodles.segment(x - scaled(1.0), rimY, x + scaled(0.5), rimY - scaled(2.0))
+        noodles.segment(x + scaled(0.5), rimY - scaled(2.0), x - scaled(1.5), rimY - scaled(4.0))
+        noodles.segment(x - scaled(1.5), rimY - scaled(4.0), x, rimY - scaled(6.0))
 
         val chopsticks = builder.batch(
             Layer.Items,
             RAMEN_CHOPSTICK,
             Primitive.Segment,
-            RAMEN_DETAIL_WIDTH,
+            scaled(RAMEN_DETAIL_WIDTH),
         )
-        chopsticks.segment(x + 2.0, rimY + 0.5, x + 7.0, groundY - 15.5)
-        chopsticks.segment(x + 4.0, rimY + 0.5, x + 9.0, groundY - 15.5)
+        chopsticks.segment(
+            x + scaled(2.0),
+            rimY + scaled(0.5),
+            x + scaled(7.0),
+            groundY - scaled(15.5),
+        )
+        chopsticks.segment(
+            x + scaled(4.0),
+            rimY + scaled(0.5),
+            x + scaled(9.0),
+            groundY - scaled(15.5),
+        )
     }
 
     /**
@@ -2849,6 +2885,7 @@ object Scene {
     private const val RAMEN_OUTLINE_WIDTH = 2.0
     private const val RAMEN_BODY_WIDTH = 1.5
     private const val RAMEN_DETAIL_WIDTH = 1.5
+    private const val RAMEN_VISUAL_SCALE = 2.0
 
     const val SCRAP_GAIN_GOLD = "#ffd45a"
     private const val SCRAP_GAIN_SIZE = 18.0
