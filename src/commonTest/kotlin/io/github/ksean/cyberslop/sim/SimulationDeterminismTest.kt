@@ -132,6 +132,22 @@ class SimulationDeterminismTest {
     }
 
     @Test
+    fun `terminal phase and age are digested while the visual cause is not`() {
+        val sim = TestLevels.simulation()
+        val playing = sim.digest()
+
+        sim.deathSequence = DeathSequence(PlayerDamageSource.Acid, elapsedTicks = 1)
+        val terminal = sim.digest()
+        assertNotEquals(playing, terminal)
+
+        sim.deathSequence = DeathSequence(PlayerDamageSource.Acid, elapsedTicks = 2)
+        assertNotEquals(terminal, sim.digest(), "terminal age is not read by the digest")
+
+        sim.deathSequence = DeathSequence(PlayerDamageSource.Fire, elapsedTicks = 1)
+        assertEquals(terminal, sim.digest(), "presentation-only cause entered the digest")
+    }
+
+    @Test
     fun `safe-site geometry changes positions without changing seeded loot or its rng state`() {
         data class Snapshot(
             val contents: List<Pair<Int, Int>>,

@@ -89,6 +89,37 @@ persists across blur/focus and visibility changes; regaining focus never closes 
 is active no simulation tick, discovery interval, hover, status indicator, exit sparkle, hurt
 flash, Scrap label or other simulation-time presentation timer advances.
 
+## Death sequence
+
+The first damage event that changes player health from a positive value to zero starts one
+terminal `DeathSequence` with age zero (PROD-103). Its semantic cause is captured from the damage
+source, not inferred later from nearby actors, projectiles or tiles:
+
+| Terminal source | Cause effect |
+|---|---|
+| `Acid` tile — the poison pit | poison bubbles |
+| active fire jet, burning-barrel body or flame, boss `Laser` beam, or a future source explicitly typed as fire or laser | flame |
+| `Spikes` tile, any hostile projectile (`Bolt`, `Burst` or `Scatter` included), or any enemy or boss melee attack | bleed |
+| `Void`, enemy or boss body contact, or an otherwise unclassified future source | none |
+
+Distinct damage sources resolve in the simulation's deterministic event order. The first one to
+make health zero owns the cause permanently; another contact later in that tick cannot replace it.
+Death also wins over a map-clear transition on the same tick. A first discovery collected on that
+tick remains resolved and persisted, but its card is suppressed as PROD-083 requires.
+
+Starting with the next fixed tick, gameplay input is ignored and every gameplay mutation is
+frozen: movement, automatic fire, attacks, projectiles, enemies, bosses, hazards, pickups, map
+completion, RNG streams, cooldowns and statuses do not advance. Only the terminal age and purely
+presentational animation advance. `Escape` cannot open the pause menu or skip the sequence. As
+with the ordinary loop, window blur or a hidden page suspends fixed ticks, so the interval is four
+seconds of active foreground time rather than elapsed wall time.
+
+The collapse progress is `clamp(age / 2.0 s, 0, 1)`. The sequence becomes complete at exactly
+`age = 4.0 s`: after 120 death-only ticks the player is fully prone but the canvas remains, and
+only after 240 such ticks may the browser replace it with the `You died` screen. Cause and
+terminal age are common, deterministic values; the collapse and cause effects remain
+presentation-only and cannot change health or any other rule.
+
 ## The measured envelope
 
 `physics.MovementEnvelope.measure(physics)` runs the real integrator against synthetic geometry and
@@ -151,6 +182,8 @@ Kotlin/Wasm and the JVM agree bit-for-bit on IEEE-754 `+ − × ÷ √`; they ma
   targets
   (enemies.md lists the fields). Enemy/boss leap state, selected boss profiles, scheduled multi-hit
   events, boss-projectile ownership, deterministic death-drop positions and the player's active
-  `ArcSwing` are rule-bearing and included. A live projectile's gravity and already-hit target
+  `ArcSwing` are rule-bearing and included. An active death sequence's terminal phase and elapsed
+  fixed ticks are included because they govern the end-screen transition; its cause and pose/effect
+  geometry are presentation-only. A live projectile's gravity and already-hit target
   identities, and a pending lobbed burst's snapshotted aim point, are likewise included. Floating
   Scrap labels, enemy swing/flash visuals and other presentation-only fields are excluded.

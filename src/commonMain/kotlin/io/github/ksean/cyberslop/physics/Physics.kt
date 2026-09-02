@@ -61,6 +61,9 @@ data class Physics(
 
 enum class Stance { Stand, Crouch }
 
+/** The lethal tile crossed by one movement step, retained so death presentation knows its cause. */
+enum class LethalContact { Acid, Void }
+
 /**
  * One tick of movement intent, already resolved. Coyote time and jump buffering are applied by
  * [IntentFilter] before this exists, so the movement model contains no assist logic and a recorded
@@ -92,6 +95,8 @@ data class PlayerState(
      * disagreeing with the first (ENG-052).
      */
     val touchedLethal: Boolean = false,
+    /** First lethal tile kind crossed by the swept step; null when [touchedLethal] is false. */
+    val lethalContact: LethalContact? = null,
 ) {
     fun height(physics: Physics): Double =
         if (stance == Stance.Crouch) physics.crouchingHeight else physics.standingHeight

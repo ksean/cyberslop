@@ -369,10 +369,11 @@ inventory directly.
   velocity, profile and phase, health, engagement, attack, elapsed and scheduled events, rest,
   melee and ranged attack indices, its attack-choice RNG state, reward flag),
   the player's active `ArcSwing` (snapshotted build and geometry, progress and already-hit targets),
-  the exit state and the elapsed tick — with doubles encoded by their IEEE bits and lists by length
-  then elements. Presentation-only fields (stride distance, enemy swing and flash visuals, aim
-  direction), the player/enemy/boss hurt-flash timers, status-indicator geometry and Scrap-gain
-  labels are excluded. After N ticks of a fixed tape on a fixed seed it
+  the terminal death phase and its elapsed fixed ticks, the exit state and the elapsed tick — with
+  doubles encoded by their IEEE bits and lists by length then elements. Presentation-only fields
+  (stride distance, enemy swing and flash visuals, aim direction), the captured death cause and
+  collapse/effect geometry, the player/enemy/boss hurt-flash timers, status-indicator geometry and
+  Scrap-gain labels are excluded. After N ticks of a fixed tape on a fixed seed it
   matches a committed golden value on both targets, and a mutation test per state family changes
   it.
 - Shooters and turrets are at most 35 % of any map's population; every map holds at least three

@@ -15,6 +15,7 @@ import io.github.ksean.cyberslop.sim.EnemyLeap
 import io.github.ksean.cyberslop.sim.LiveBoss
 import io.github.ksean.cyberslop.sim.LiveEnemy
 import io.github.ksean.cyberslop.sim.MuzzleFlash
+import io.github.ksean.cyberslop.sim.PlayerDeathEffect
 import io.github.ksean.cyberslop.sim.SwingVisual
 import io.github.ksean.cyberslop.world.Barrel
 import io.github.ksean.cyberslop.world.Level
@@ -124,7 +125,7 @@ object Scene {
         // Both the arc and the figure hang off one interpolated position, or the swing sits ahead
         // of the hand that threw it by a tick of travel.
         val muzzle = drawnMuzzle(sim, alpha)
-        swing(builder, palette, sim, camera, muzzle)
+        if (sim.deathSequence == null) swing(builder, palette, sim, camera, muzzle)
         player(builder, palette, sim, camera, muzzle)
         scrapGains(builder, sim, camera, alpha)
         if (debugMasks) masks(builder, sim.level, camera)
@@ -2040,7 +2041,7 @@ object Scene {
         muzzle: Vec2,
     ) {
         val state = sim.player
-        val pose = Actor.pose(motionOf(sim))
+        val pose = playerPose(sim)
         val x = (muzzle.x - camera.x) * ZOOM
         val feet = (muzzle.y + state.height(Physics.Default) / 2.0 - camera.y) * ZOOM
         val hurt = sim.playerHurtSecondsLeft > 0.0
@@ -2068,9 +2069,13 @@ object Scene {
             eyeStyle = PLAYER_EYE,
         )
 
+        sim.deathSequence?.let { terminal ->
+            playerDeathEffect(builder, terminal.effect, pose, x, feet, terminal.ageSeconds)
+        }
+
         // The cue sits at the weapon, not the hand (PROD-066): the flash at the muzzle of a weapon
         // that has one, a pulse around the dish of one that does not.
-        sim.lastShot?.let { flash ->
+        sim.lastShot?.takeIf { sim.deathSequence == null }?.let { flash ->
             val weapon = sim.run.loadout.weapon
             val muzzle = Vec2(x, feet) + muzzleOf(pose, weapon) * ZOOM
             if (weapon.anchor == Anchor.Cursor || weapon.cls == WeaponClass.Psychic) {
@@ -2078,6 +2083,113 @@ object Scene {
             } else {
                 muzzleFlash(builder, palette.glow[palette.glow.size - 1], palette.hazardGlow, muzzle, flash)
             }
+        }
+    }
+
+    /** The normal lethal-frame rig at age zero, then the pure two-second terminal collapse. */
+    fun playerPose(sim: GameSimulation): Pose {
+        val ordinary = Actor.pose(motionOf(sim))
+        val terminal = sim.deathSequence ?: return ordinary
+        return Actor.deathPose(ordinary, terminal.collapseProgress, sim.facing)
+    }
+
+    private fun playerDeathEffect(
+        builder: SceneBuilder,
+        effect: PlayerDeathEffect,
+        pose: Pose,
+        x: Double,
+        feet: Double,
+        ageSeconds: Double,
+    ) {
+        when (effect) {
+            PlayerDeathEffect.None -> Unit
+            PlayerDeathEffect.Poison -> poisonBubbles(builder, pose, x, feet, ageSeconds)
+            PlayerDeathEffect.Flame -> playerFlames(builder, pose, x, feet, ageSeconds)
+            PlayerDeathEffect.Bleed -> playerBleed(builder, pose, x, feet, ageSeconds)
+        }
+    }
+
+    private fun poisonBubbles(
+        builder: SceneBuilder,
+        pose: Pose,
+        x: Double,
+        feet: Double,
+        timeSeconds: Double,
+    ) {
+        val outer = builder.batch(Layer.ActorStatus, POISON_OUTER, Primitive.Segment, POISON_OUTER_WIDTH)
+        val core = builder.batch(Layer.ActorStatus, POISON_CORE, Primitive.Segment, POISON_CORE_WIDTH)
+        repeat(STATUS_COUNT) { index ->
+            val progress = positiveRemainder(timeSeconds / POISON_PERIOD + index.toDouble() / STATUS_COUNT, 1.0)
+            val anchor = bodyPoint(pose, (index + 1.0) / (STATUS_COUNT + 1.0), x, feet)
+            val centre = Vec2(
+                anchor.x + (index - 1) * POISON_SPACING,
+                anchor.y - POISON_RISE * progress,
+            )
+            val radius = POISON_MIN_RADIUS + POISON_GROWTH * progress
+            statusRing(outer, centre, radius)
+            statusRing(core, centre, radius * POISON_CORE_SCALE)
+        }
+    }
+
+    private fun playerFlames(
+        builder: SceneBuilder,
+        pose: Pose,
+        x: Double,
+        feet: Double,
+        timeSeconds: Double,
+    ) {
+        val outer = builder.batch(Layer.ActorStatus, BURN_OUTER, Primitive.Segment, BURN_OUTER_WIDTH)
+        val core = builder.batch(Layer.ActorStatus, BURN_CORE, Primitive.Segment, BURN_CORE_WIDTH)
+        val outerEmbers = builder.batch(Layer.ActorStatus, BURN_OUTER, Primitive.Dot)
+        val coreEmbers = builder.batch(Layer.ActorStatus, BURN_CORE, Primitive.Dot)
+        repeat(STATUS_COUNT) { index ->
+            val progress = positiveRemainder(timeSeconds / BURN_PERIOD + index.toDouble() / STATUS_COUNT, 1.0)
+            val anchor = bodyPoint(pose, (index + 1.0) / (STATUS_COUNT + 1.0), x, feet)
+            val atX = anchor.x + (index - 1) * PLAYER_STATUS_SPACING
+            val atY = anchor.y - PLAYER_STATUS_TRAVEL * progress
+            val size = BURN_SIZE * (1.0 - STATUS_SHRINK * progress)
+            outer.segment(atX - size, atY + size, atX, atY - size)
+            outer.segment(atX, atY - size, atX + size, atY + size)
+            core.segment(atX - size * 0.55, atY + size * 0.55, atX, atY - size * 0.55)
+            core.segment(atX, atY - size * 0.55, atX + size * 0.55, atY + size * 0.55)
+            outerEmbers.dot(atX + size * 0.7, atY - size * 1.45, BURN_EMBER)
+            coreEmbers.dot(atX + size * 0.7, atY - size * 1.45, BURN_EMBER * 0.45)
+        }
+    }
+
+    private fun playerBleed(
+        builder: SceneBuilder,
+        pose: Pose,
+        x: Double,
+        feet: Double,
+        timeSeconds: Double,
+    ) {
+        val drops = builder.batch(Layer.ActorStatus, BLEED, Primitive.Segment, BLEED_WIDTH)
+        val bulbs = builder.batch(Layer.ActorStatus, BLEED, Primitive.Dot)
+        repeat(STATUS_COUNT) { index ->
+            val progress = positiveRemainder(timeSeconds / BLEED_PERIOD + index.toDouble() / STATUS_COUNT, 1.0)
+            val anchor = bodyPoint(pose, (index + 1.0) / (STATUS_COUNT + 1.0), x, feet)
+            val atX = anchor.x + (index - 1) * PLAYER_STATUS_SPACING
+            val atY = anchor.y + PLAYER_STATUS_TRAVEL * progress
+            val size = BLEED_SIZE * (1.0 - STATUS_SHRINK * progress)
+            bulbs.dot(atX, atY - size * 0.35, size * 0.58)
+            drops.segment(atX - size * 0.62, atY - size * 0.25, atX, atY + size)
+            drops.segment(atX + size * 0.62, atY - size * 0.25, atX, atY + size)
+        }
+    }
+
+    private fun bodyPoint(pose: Pose, progress: Double, x: Double, feet: Double): Vec2 {
+        val point = pose.hip + (pose.neck - pose.hip) * progress
+        return Vec2(x + point.x * ZOOM, feet + point.y * ZOOM)
+    }
+
+    private fun statusRing(batch: DrawBatch, centre: Vec2, radius: Double) {
+        var previous = centre + Vec2(radius, 0.0)
+        repeat(POISON_CHORDS) { index ->
+            val next = centre +
+                TrigTable.rotate(Vec2.Right, (index + 1.0) * STATUS_CIRCLE / POISON_CHORDS) * radius
+            batch.segment(previous.x, previous.y, next.x, next.y)
+            previous = next
         }
     }
 
@@ -2441,6 +2553,8 @@ object Scene {
     const val BURN_OUTER = "#ff5a1f"
     const val BURN_CORE = "#ffd166"
     const val BLEED = "#d0143c"
+    const val POISON_OUTER = "#42d68a"
+    const val POISON_CORE = "#d5ffe9"
     private const val STATUS_COUNT = 3
     private const val STATUS_PHASE_STEPS = 17
     private const val STATUS_SPACING = 0.28
@@ -2453,6 +2567,18 @@ object Scene {
     private const val BURN_CORE_WIDTH = 2.0
     private const val BLEED_SIZE = 5.0
     private const val BLEED_WIDTH = 2.0
+    private const val POISON_PERIOD = 0.80
+    private const val STATUS_CIRCLE = 360.0
+    private const val POISON_CHORDS = 10
+    private const val POISON_MIN_RADIUS = 2.4
+    private const val POISON_GROWTH = 3.4
+    private const val POISON_CORE_SCALE = 0.58
+    private const val POISON_RISE = 22.0
+    private const val POISON_SPACING = 5.0
+    private const val POISON_OUTER_WIDTH = 3.0
+    private const val POISON_CORE_WIDTH = 1.5
+    private const val PLAYER_STATUS_SPACING = 7.0
+    private const val PLAYER_STATUS_TRAVEL = 18.0
     private const val LIMB = 0.09
     private const val TORSO = 2.0
     private const val ARM = 0.8

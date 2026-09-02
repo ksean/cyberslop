@@ -56,13 +56,16 @@ exposed as text to assistive technology. Each available purchase and `Back` are 
 predictable keyboard order. A maximum-rank row says `Max rank` and cannot be bought; an
 unaffordable row remains visible with its price but cannot be bought.
 
-Death and victory bank the run before drawing their end screen. That screen offers `Return to
-title`; using it shows the title with the new balance available to `Shop` and must not start or save
-a replacement run. `Return to title` from the in-map pause menu performs the same one-time banking
-and run-save clearing, but goes directly to the title rather than through a run-ended screen. The
-title therefore offers no `Continue game` for that voluntarily ended run. The existing `New game`
-action may remain as a shortcut on an end screen, but it does not replace the route through the
-title and shop.
+Death banks the run and clears its in-progress save exactly once when the terminal death sequence
+starts, while the canvas remains visible for PROD-103's four seconds; closing or reloading during
+that sequence therefore cannot restore the dead run or lose its Scrap. Only after the sequence
+does the death end screen appear. Victory likewise banks and clears before drawing its end screen.
+That screen offers `Return to title`; using it shows the title with the new balance available to
+`Shop` and must not start or save a replacement run. `Return to title` from the in-map pause menu
+performs the same one-time banking and run-save clearing, but goes directly to the title rather
+than through a run-ended screen. The title therefore offers no `Continue game` for that voluntarily
+ended run. The existing `New game` action may remain as a shortcut on an end screen, but it does
+not replace the route through the title and shop.
 
 All three tracks have five ranks and use the same prices for ranks 1 through 5: **100, 250, 500,
 1,000 and 2,000 Scrap**.
@@ -113,11 +116,16 @@ its own interval, or play resumes. Gameplay bindings received during the pause a
 held/latched input is cleared both when the first card opens and when the last closes, so a held
 direction or Space cannot move or jump on resume.
 
+The sole overlay-precedence exception is a first discovery collected on the same tick as terminal
+player damage: resolution and persistent discovery recording still happen, but that item's card is
+not queued. PROD-103's visible death sequence begins at once and lasts exactly four active seconds.
+
 ## Verified properties
 
 - **P-56** Profile and shop: banking `n` Scrap once raises both counters by `n`; death, victory and
   pause-menu return each bank once and clear the run save, while opening/resuming pause banks
-  nothing. Buying all five ranks of one track charges exactly `100 + 250 + 500 + 1000 + 2000`,
+  nothing. Death does so at terminal entry, before the delayed screen. Buying all five ranks of one
+  track charges exactly `100 + 250 + 500 + 1000 + 2000`,
   never lowers lifetime Scrap or the unlocked weapon count, and a repeated, unaffordable, unknown
   or rank-six purchase is unchanged. Each rank produces exactly its specified health,
   weapon-damage and non-lethal-damage multiplier; lethal hazards stay lethal. The current profile
@@ -130,7 +138,8 @@ direction or Space cannot move or jump on resume.
   nothing; a first paired award queues exactly weapon then powerup. During each three-second active
   interval simulation tick count and digest do not move, background time does not expire it, the
   card is rendered and announced, and input held or pressed during the interval is absent on the
-  first resumed tick.
+  first resumed tick. On a lethal collection tick the same discovery records persist, no card is
+  queued, and the death sequence begins without a discovery delay.
 - **P-74** Map-to-map health carry: a new run starts at its full upgraded map-one maximum; advancing
   a damaged run increments only its map index and preserves current health bit-for-bit, including
   when the next map's maximum is higher because of map scaling or Reinforced Chassis. Entering the

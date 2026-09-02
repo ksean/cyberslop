@@ -175,6 +175,27 @@ and bend the joints: hips dropped to about half the standing hip height, knees b
 hip–ankle line, torso and head leaning forward, weapon held low across the body. The figure's
 highest point stays within the physics' crouch height; nothing is scaled.
 
+### Player death (PROD-103)
+
+A terminal player pose supersedes the normal locomotion clip and action overlay, so an attack arm
+cannot keep swinging or firing after death. At death age zero the rig equals the pose drawn on the
+lethal tick. Over `COLLAPSE_SECONDS = 2.0 s`, its joint angles and body anchors interpolate toward
+a side-prone pose in the last facing direction: hips and torso lower, the torso turns horizontal,
+knees fold, and the head finishes beside the torso. The rig resolves every intermediate pose from
+its normal fixed limb lengths, and the effect is a pose only —
+it never rewrites the player's physics box or position. From two seconds until
+`DEATH_SEQUENCE_SECONDS = 4.0 s`, the final pose is held. The camera retains its lethal-frame
+follow point throughout.
+
+Exactly one cause effect is anchored to the interpolated player body for the complete four
+seconds. Poison uses several independently phased, two-tone rising bubble rings around the torso
+and head; flame uses upward forked tongues and embers; bleed uses pointed droplets falling from
+the body. Their ring, fork and droplet silhouettes distinguish them without relying on colour or
+motion. They follow the collapsing body, draw above the player on `ActorStatus`, and neither
+create a hazard nor hide the held weapon. A cause mapped to `none` in simulation.md draws no cause
+effect. Phase is derived from terminal age with no RNG or mutable renderer state, and browser
+suspension freezes the collapse and effect together.
+
 ## Weapon effects (PROD-033, PROD-066)
 
 - A player's `ArcSwing` is a **swoosh** drawn as one closed, swept fan: the outer boundary is the
@@ -474,6 +495,11 @@ accessible name, is announced through the live region and focuses `Resume` on op
 voluntary run-ending transition. The dialog remains open across window blur/focus and visibility
 changes, and no discovery card or other simulation-time presentation advances behind it.
 
+On player death the canvas and HUD remain visible without a DOM dialog during the complete
+four-second terminal sequence. Gameplay keys and `Escape` cannot dismiss it. At completion the
+canvas is hidden and the existing DOM run-ended screen titled `You died` is shown and announced;
+its `Return to title` button receives focus as before.
+
 ## Verified properties
 
 - **P-23** Batch bound: the same scene at 10 and at 600 entities issues the same number of
@@ -656,3 +682,18 @@ changes, and no discovery card or other simulation-time presentation advances be
   injectable sink, forwards none while paused, never replays one after resume, and treats a
   suspended or failing audio context as silence. Each synthesized patch obeys its duration and
   peak-gain bound and references no runtime audio asset.
+- **P-78** Player death sequence: isolated lethal fixtures for acid, fire jet, barrel fire, Laser,
+  spikes, ordinary and boss projectiles, and ordinary and boss melee attacks capture their declared
+  cause effect; void and body contact capture none. When several sources overlap, the first
+  terminal event remains the cause. The lethal frame starts at age zero in its normal resolved
+  pose; after 120 death-only ticks the same limb lengths form the final prone pose and the end
+  screen is still absent; after another 120 ticks the browser shows `You died` and focuses `Return
+  to title`. Movement, attacks, combatants, pickups, map exit, RNG and statuses are byte-identical
+  throughout those ticks, and gameplay or Escape input neither mutates nor shortens the sequence.
+  Poison, flame and bleed frames draw respectively rising rings, upward forks/embers and falling
+  pointed droplets on the interpolated body at ages before and after the collapse; two ages within
+  each effect cycle differ. A death with no mapped effect opens none of those styles. Cause effects
+  and the collapse change neither health, saved state nor P-40's rule-bearing fields, and frames
+  containing the same effect open a constant status-batch count. The run is banked and its save is
+  cleared exactly once at terminal entry, including if the page closes before the end screen; a
+  first discovery on the lethal tick remains recorded without displaying its card.

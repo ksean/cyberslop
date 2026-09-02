@@ -8,7 +8,6 @@ import io.github.ksean.cyberslop.loop.RafLoop
 import io.github.ksean.cyberslop.physics.IntentFilter
 import io.github.ksean.cyberslop.physics.MovementModel
 import io.github.ksean.cyberslop.physics.Stance
-import io.github.ksean.cyberslop.physics.TICK_SECONDS
 import io.github.ksean.cyberslop.progression.PlayerProfile
 import io.github.ksean.cyberslop.render.Camera
 import io.github.ksean.cyberslop.render.CanvasRenderer
@@ -56,11 +55,20 @@ class GameHost(
     private var deferredReport: TickReport? = null
     private var lastActivityRevision = 0
     private var manualPaused = false
+    private var runCommitted = false
     private val discovery = DiscoverySession(
         record = saves::recordDiscoveries,
         clearInput = ::clearGameplayInput,
         announce = ::announce,
     )
+    private val deathLifecycle = DeathLifecycle { scrap ->
+        commitRun(scrap).also { committed ->
+            if (committed) {
+                clearGameplayInput()
+                discovery.clear()
+            }
+        }
+    }
 
     fun start(action: TitleScreenAction) {
         if (action == TitleScreenAction.Shop) return
@@ -89,6 +97,8 @@ class GameHost(
         renderer?.resizeToDisplay()
         canvas.focus()
         manualPaused = false
+        runCommitted = false
+        deathLifecycle.reset()
         discovery.clear()
         deferredReport = null
 
@@ -137,7 +147,11 @@ class GameHost(
         )
         sounds.play(report.audioCues)
         if (report.collectedDiscoveries.isNotEmpty()) {
-            profile = discovery.collect(report.collectedDiscoveries).profile
+            profile = if (report.playerDied) {
+                discovery.recordOnly(report.collectedDiscoveries).profile
+            } else {
+                discovery.collect(report.collectedDiscoveries).profile
+            }
         }
 
         if (discovery.paused) {
@@ -151,9 +165,15 @@ class GameHost(
     private fun handleReport(report: TickReport) {
         val sim = simulation ?: return
 
-        if (report.playerDied) {
-            endRun(sim.run.scrap, ScreenEvent.PlayerDied(sim.run.scrap))
-            return
+        when (deathLifecycle.handle(report, sim.run.scrap)) {
+            DeathDisposition.Animating -> return
+            DeathDisposition.ShowEndScreen -> {
+                screen = ScreenRouter.next(screen, ScreenEvent.PlayerDied(sim.run.scrap))
+                stopRun()
+                showEndScreen(sim.run.scrap)
+                return
+            }
+            DeathDisposition.NotDying -> Unit
         }
 
         // Clearing a map means walking out of it, not the boss's last hit point. The exit opens on
@@ -174,7 +194,7 @@ class GameHost(
     }
 
     private fun toggleManualPause() {
-        if (screen !is ScreenState.Playing || simulation == null) return
+        if (screen !is ScreenState.Playing || simulation == null || simulation?.deathSequence != null) return
         if (manualPaused) resumeFromPause() else openPauseMenu()
     }
 
@@ -227,7 +247,22 @@ class GameHost(
 
     /** Returns false after the first call so repeated UI activation cannot bank a run twice. */
     private fun finishRun(scrap: Int): Boolean {
-        if (simulation == null) return false
+        if (!commitRun(scrap)) return false
+        stopRun()
+        return true
+    }
+
+    /** Makes the run non-resumable and banks it without discarding the terminal canvas. */
+    private fun commitRun(scrap: Int): Boolean {
+        if (simulation == null || runCommitted) return false
+        runCommitted = true
+        saves.clearRun()
+        profile = profile.banking(scrap)
+        saves.saveProfile(profile)
+        return true
+    }
+
+    private fun stopRun() {
         loop?.stop()
         loop = null
         simulation = null
@@ -235,10 +270,6 @@ class GameHost(
         manualPaused = false
         discovery.clear()
         input.detach()
-        saves.clearRun()
-        profile = profile.banking(scrap)
-        saves.saveProfile(profile)
-        return true
     }
 
     private fun showEndScreen(scrap: Int) {
@@ -293,7 +324,7 @@ class GameHost(
         active.draw(
             sim,
             camera,
-            sim.elapsedTicks * TICK_SECONDS,
+            sim.presentationTimeSeconds,
             alpha,
             discovery = discovery.active,
         )

@@ -25,6 +25,13 @@ build of powerups collected on contact, and permadeath with persistent unlocks.
   weapon. Scrap earned during a run must be banked when the run ends: it increases both a spendable
   balance and a lifetime total. The lifetime total expands the pool of weapons available to later
   runs; spending the balance must never shrink that pool or erase an unlock.
+- **PROD-103:** Death must leave the current map visible for a four-second death sequence before
+  showing the `You died` screen. Starting from the pose visible on the lethal tick, the player
+  collapses into a prone pose over the first two seconds and remains prone for the other two. An
+  acid/poison-pit death animates poison bubbles on the player; a fire-hazard or laser-beam death
+  animates flame; and a spike, projectile or melee-attack death animates bleeding. The complete
+  cause, timing, input and fallback rules are specified in [simulation.md](simulation.md) and
+  [presentation.md](presentation.md).
 - **PROD-032:** `Continue game` must resume an in-progress run only — never a run that has ended,
   and never a save the current build cannot read. Saves carry a format version and are refused
   rather than partially applied.
@@ -189,7 +196,9 @@ build of powerups collected on contact, and permadeath with persistent unlocks.
   centred over the game must show that item's usual picture, name and a brief, mechanically
   accurate description. The discovery must persist before the card is shown; collecting the same
   item in any later run must neither pause nor show the card. Several first discoveries from one
-  pickup are shown one at a time in weapon-then-powerup order. See
+  pickup are shown one at a time in weapon-then-powerup order. If the collection tick also kills
+  the player, the discovery still persists but the death sequence takes precedence and suppresses
+  that discovery card, so neither overlay obscures or delays the four-second terminal sequence. See
   [progression.md](progression.md).
 - **PROD-046:** One slain rank-and-file enemy in five drops something at every map index, three in
   ten of those a weapon. Mini-bosses and main bosses award loot on every death and are outside this

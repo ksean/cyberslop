@@ -27,6 +27,7 @@ import io.github.ksean.cyberslop.loot.Pickup
 import io.github.ksean.cyberslop.loot.Powerup
 import io.github.ksean.cyberslop.combat.WeaponSpec
 import io.github.ksean.cyberslop.physics.InputFrame
+import io.github.ksean.cyberslop.physics.LethalContact
 import io.github.ksean.cyberslop.physics.MovementModel
 import io.github.ksean.cyberslop.physics.Physics
 import io.github.ksean.cyberslop.physics.PlayerState
@@ -71,6 +72,8 @@ class GroundItem(
 
 data class TickReport(
     val playerDied: Boolean = false,
+    /** True only once the four-second terminal interval may be replaced by the end screen. */
+    val deathSequenceComplete: Boolean = false,
     val mapCleared: Boolean = false,
     val bossDefeated: Boolean = false,
     /** Items whose contact fully resolved this tick, in resolution order. */
@@ -172,6 +175,14 @@ class GameSimulation(
     var playerHurtSecondsLeft: Double = 0.0
         internal set
 
+    /** Null while playing; immutable cause plus fixed-tick age after terminal player damage. */
+    var deathSequence: DeathSequence? = null
+        internal set
+
+    /** World presentation keeps animating from terminal age while gameplay [elapsedTicks] is frozen. */
+    val presentationTimeSeconds: Double
+        get() = elapsedTicks * TICK_SECONDS + (deathSequence?.ageSeconds ?: 0.0)
+
     /**
      * Every point of damage the player has taken this map, before lifesteal and before death
      * clamps it: the *gross incoming damage* the pressure harnesses measure (`specs/enemies.md`).
@@ -179,12 +190,26 @@ class GameSimulation(
     var grossDamageTaken: Double = 0.0
         private set
 
-    private fun hurt(amount: Double) {
+    private fun hurt(amount: Double, source: PlayerDamageSource) {
         val reduced = amount * run.upgrades.incomingDamageMultiplier
         val before = run.health
         grossDamageTaken += reduced
         run = run.damaged(reduced)
         if (run.health < before) playerHurtSecondsLeft = HURT_FLASH_SECONDS
+        if (before > 0.0 && run.dead) beginDeath(source)
+    }
+
+    private fun kill(source: PlayerDamageSource) {
+        if (run.dead) return
+        run = run.copy(health = 0.0)
+        beginDeath(source)
+    }
+
+    private fun beginDeath(source: PlayerDamageSource) {
+        if (deathSequence != null) return
+        deathSequence = DeathSequence(source)
+        // Terminal frames must not repeatedly interpolate from the pre-lethal movement state.
+        previousPlayer = player
     }
 
     /** How long the player has been grounded and clear of committed columns; see [playerExposed]. */
@@ -307,6 +332,13 @@ class GameSimulation(
 
     fun tick(input: InputFrame, viewport: GameplayViewport): TickReport {
         emittedAudioCues.clear()
+        deathSequence?.let { terminal ->
+            deathSequence = terminal.advance()
+            return TickReport(
+                playerDied = true,
+                deathSequenceComplete = requireNotNull(deathSequence).complete,
+            )
+        }
         gameplayViewport = viewport
         previousPlayer = player
         playerHurtSecondsLeft = (playerHurtSecondsLeft - TICK_SECONDS).coerceAtLeast(0.0)
@@ -362,16 +394,22 @@ class GameSimulation(
         drainHazards()
         drainContact()
 
-        if (player.touchedLethal || burnedByJet()) run = run.copy(health = 0.0)
+        when (player.lethalContact) {
+            LethalContact.Acid -> kill(PlayerDamageSource.Acid)
+            LethalContact.Void -> kill(PlayerDamageSource.Void)
+            null -> Unit
+        }
+        if (burnedByJet()) kill(PlayerDamageSource.Fire)
 
         // The exit sits past the boss arena, behind a gate that only the boss's death opens
         // (PROD-020). Clearing the map means walking out of it.
-        if (boss.fight.exitOpen && TileMap.toTile(muzzle.x) > level.gateColumn) {
+        if (!run.dead && boss.fight.exitOpen && TileMap.toTile(muzzle.x) > level.gateColumn) {
             exitReached = true
         }
 
         return TickReport(
             playerDied = run.dead,
+            deathSequenceComplete = deathSequence?.complete == true,
             mapCleared = exitReached,
             bossDefeated = boss.fight.defeated,
             collectedDiscoveries = collectedDiscoveries,
@@ -410,6 +448,10 @@ class GameSimulation(
         add(player.x); add(player.y); add(player.vx); add(player.vy)
         add(player.onGround); add(player.stance.ordinal); add(player.touchedLethal)
         add(facing); add(elapsedTicks); add(exitReached); add(exposedSeconds)
+        deathSequence?.let { terminal ->
+            add(DEATH_SEQUENCE_DIGEST_TAG)
+            add(terminal.elapsedTicks)
+        }
         add(autoFire.remaining); add(lootRng.state); add(lifestealBudget)
         pendingBurst.let { b ->
             add(b?.roundsLeft ?: -1)
@@ -925,7 +967,9 @@ class GameSimulation(
             if (!projectile.fromPlayer && (centreOf(player) - projectile.position).lengthSquared <
                 projectile.radius * projectile.radius * 4.0
             ) {
-                if (if (projectile.bossOwned) bossDamageAllowed() else enemyDamageAllowed()) hurt(projectile.damage)
+                if (if (projectile.bossOwned) bossDamageAllowed() else enemyDamageAllowed()) {
+                    hurt(projectile.damage, PlayerDamageSource.Projectile)
+                }
                 projectile.secondsLeft = 0.0
             }
         }
@@ -1230,7 +1274,7 @@ class GameSimulation(
         if (offset.lengthSquared > swing.reachPx * swing.reachPx) return
         if (!TrigTable.withinArc(enemy.attackDirection, offset, swing.arcDegrees / 2.0)) return
         if (!enemyDamageAllowed()) return
-        hurt(Balance.contactDamage(level.mapIndex) * swing.damageShare)
+        hurt(Balance.contactDamage(level.mapIndex) * swing.damageShare, PlayerDamageSource.Melee)
     }
 
     private fun fire(enemy: LiveEnemy) {
@@ -1534,7 +1578,7 @@ class GameSimulation(
             val damage = live.tick(TICK_SECONDS, target)
             live.events.forEach(::emitBossEvent)
             live.hurtSecondsLeft = (live.hurtSecondsLeft - TICK_SECONDS).coerceAtLeast(0.0)
-            if (damage > 0.0 && bossDamageAllowed()) hurt(damage)
+            if (damage > 0.0 && bossDamageAllowed()) hurt(damage, PlayerDamageSource.Melee)
         }
 
         if (miniboss.fight.defeated && !minibossRewarded) {
@@ -1604,7 +1648,7 @@ class GameSimulation(
     private fun hitByBeam(beam: LiveBossBeam) {
         if (beam.hitPlayer || !beamTouchesPlayer(beam)) return
         beam.hitPlayer = true
-        if (bossDamageAllowed()) hurt(beam.damage)
+        if (bossDamageAllowed()) hurt(beam.damage, PlayerDamageSource.Laser)
     }
 
     private fun beamTouchesPlayer(beam: LiveBossBeam): Boolean {
@@ -1801,10 +1845,24 @@ class GameSimulation(
 
     /** Damaging hazards drain by overlap and never move the player (`specs/hazards.md`). */
     private fun drainHazards() {
-        val rate = Hazards.ratePerSecond(
+        val spikeRate = Hazards.spikeRatePerSecond(
             level, player.x, player.y, Physics.Default.width, player.height(Physics.Default),
         )
-        if (rate > 0.0) hurt(rate * Balance.contactDamage(level.mapIndex) * TICK_SECONDS)
+        if (spikeRate > 0.0) {
+            hurt(
+                spikeRate * Balance.contactDamage(level.mapIndex) * TICK_SECONDS,
+                PlayerDamageSource.Spike,
+            )
+        }
+        val fireRate = Hazards.fireRatePerSecond(
+            level, player.x, player.y, Physics.Default.width, player.height(Physics.Default),
+        )
+        if (fireRate > 0.0) {
+            hurt(
+                fireRate * Balance.contactDamage(level.mapIndex) * TICK_SECONDS,
+                PlayerDamageSource.Fire,
+            )
+        }
     }
 
     /** Every living enemy body drains by overlap like a hazard (`specs/enemies.md`, PROD-069). */
@@ -1818,7 +1876,12 @@ class GameSimulation(
         }
         val contactRate = (normalBodies + bossBodies * EnemyAttacks.BOSS_CONTACT_MULTIPLIER) *
             EnemyAttacks.CONTACT_DRAIN
-        if (contactRate > 0.0) hurt(contactRate * Balance.contactDamage(level.mapIndex) * TICK_SECONDS)
+        if (contactRate > 0.0) {
+            hurt(
+                contactRate * Balance.contactDamage(level.mapIndex) * TICK_SECONDS,
+                PlayerDamageSource.Contact,
+            )
+        }
     }
 
     private fun overlapsPlayer(enemy: LiveEnemy): Boolean {
@@ -1925,6 +1988,7 @@ class GameSimulation(
         const val HURT_FLASH_SECONDS = 0.12
         const val EXIT_CLEARANCE = 6
         private const val UPGRADE_DIGEST_TAG = 0x55504752
+        private const val DEATH_SEQUENCE_DIGEST_TAG = 0x44454144
         private const val ACTIVE_SWING_DIGEST_TAG = 0x5357494E
     }
 }

@@ -113,6 +113,72 @@ object Actor {
         )
     }
 
+    /**
+     * Lowers a resolved lethal-frame pose into a side-prone pose without changing any bone length.
+     * The endpoints and body anchors interpolate; elbows and knees are re-solved from the rig's
+     * fixed chains at every progress value rather than interpolated into shrinking limbs.
+     */
+    fun deathPose(
+        start: Pose,
+        progress: Double,
+        facing: Int,
+        physics: Physics = Physics.Default,
+    ): Pose {
+        val p = progress.coerceIn(0.0, 1.0)
+        if (p == 0.0) return start
+
+        val direction = if (facing < 0) -1.0 else 1.0
+        val ref = physics.standingHeight
+        val targetHip = Vec2(0.02 * ref * direction, -0.12 * ref)
+        val targetNeck = Vec2(0.37 * ref * direction, -0.13 * ref)
+        val targetHead = Vec2(0.49 * ref * direction, -0.12 * ref)
+        val targetLeadShoulder = targetNeck + Vec2(0.0, -0.07 * ref)
+        val targetRearShoulder = targetNeck + Vec2(0.0, 0.07 * ref)
+        val targetLeadHand = targetNeck + Vec2(0.14 * ref * direction, 0.10 * ref)
+        val targetRearHand = targetNeck + Vec2(-0.05 * ref * direction, 0.17 * ref)
+        val targetLeadFoot = Vec2(-0.16 * ref * direction, 0.0)
+        val targetRearFoot = Vec2(-0.28 * ref * direction, -0.01 * ref)
+
+        val hip = interpolate(start.hip, targetHip, p)
+        val neck = interpolate(start.neck, targetNeck, p)
+        val leadShoulder = interpolate(start.leadShoulder, targetLeadShoulder, p)
+        val rearShoulder = interpolate(start.rearShoulder, targetRearShoulder, p)
+        val leadHand = reachable(
+            leadShoulder,
+            interpolate(start.leadHand, targetLeadHand, p),
+            ARM * ref,
+        )
+        val rearHand = reachable(
+            rearShoulder,
+            interpolate(start.rearHand, targetRearHand, p),
+            ARM * ref,
+        )
+        val leadFoot = reachable(hip, interpolate(start.leadFoot, targetLeadFoot, p), LEG * ref)
+        val rearFoot = reachable(hip, interpolate(start.rearFoot, targetRearFoot, p), LEG * ref)
+        val aim = interpolate(start.weaponAim, Vec2(direction, 0.0), p).normalisedOr(Vec2(direction, 0.0))
+
+        return Pose(
+            clip = Clip.Idle,
+            action = Action.None,
+            height = start.height + (physics.standingHeight - start.height) * p,
+            hip = hip,
+            neck = neck,
+            head = interpolate(start.head, targetHead, p),
+            headRadius = start.headRadius,
+            leadShoulder = leadShoulder,
+            leadElbow = joint(leadShoulder, leadHand, ARM * ref, forward = false),
+            leadHand = leadHand,
+            rearShoulder = rearShoulder,
+            rearElbow = joint(rearShoulder, rearHand, ARM * ref, forward = false),
+            rearHand = rearHand,
+            leadKnee = joint(hip, leadFoot, LEG * ref, forward = true),
+            leadFoot = leadFoot,
+            rearKnee = joint(hip, rearFoot, LEG * ref, forward = true),
+            rearFoot = rearFoot,
+            weaponAim = aim,
+        )
+    }
+
     fun clipOf(motion: Motion): Clip = when {
         !motion.onGround -> if (motion.verticalSpeed < 0.0) Clip.JumpRise else Clip.JumpFall
         motion.crouched -> if (isMoving(motion)) Clip.CrouchWalk else Clip.Crouch
@@ -282,6 +348,9 @@ object Actor {
     }
 
     private fun mirror(point: Vec2, facing: Double): Vec2 = Vec2(point.x * facing, point.y)
+
+    private fun interpolate(from: Vec2, to: Vec2, progress: Double): Vec2 =
+        from + (to - from) * progress
 
     // Proportions, all as a fraction of the figure's standing height.
     private const val HIP = 0.46

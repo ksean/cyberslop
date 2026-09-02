@@ -7,8 +7,6 @@ requirements and decisions belong in `specs/`.
 
 ## Open
 
-No approved implementation tasks.
-
 ## Deferred
 
 Not scheduled by the current plan; kept so they are not forgotten.

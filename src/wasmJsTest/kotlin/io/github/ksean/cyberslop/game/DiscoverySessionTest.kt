@@ -59,4 +59,25 @@ class DiscoverySessionTest {
         assertEquals(emptyList(), session.collect(listOf(powerup, weapon)).entries)
         assertEquals("saved", events.last())
     }
+
+    @Test
+    fun `record only persists a lethal-tick discovery without opening a card`() {
+        var profile = PlayerProfile()
+        val events = mutableListOf<String>()
+        val session = DiscoverySession(
+            record = { collected ->
+                events += "saved"
+                DiscoveryRecorder.record(profile, collected).also { profile = it.profile }
+            },
+            clearInput = { events += "cleared" },
+            announce = { events += "announced:$it" },
+        )
+
+        val update = session.recordOnly(listOf(DiscoveryId.Weapon(WeaponId.RiotbreakerShotgun)))
+
+        assertEquals(1, update.entries.size)
+        assertEquals(listOf("saved"), events)
+        assertFalse(session.paused)
+        assertNull(session.active)
+    }
 }

@@ -1,6 +1,7 @@
 package io.github.ksean.cyberslop.physics
 
 import io.github.ksean.cyberslop.world.TILE_SIZE
+import io.github.ksean.cyberslop.world.TileKind
 import io.github.ksean.cyberslop.world.TileMap
 import kotlin.math.abs
 import kotlin.math.ceil
@@ -54,7 +55,7 @@ object MovementModel {
         // Re-derived every tick from an actual downward block. Carrying the previous value forward
         // meant a player who walked off a ledge stayed "grounded" for the whole fall.
         var onGround = false
-        var touchedLethal = false
+        var lethalContact: LethalContact? = null
 
         repeat(steps) {
             val movedX = moveHorizontally(x, y, height, vx * slice, world, physics)
@@ -70,7 +71,9 @@ object MovementModel {
 
             // Sampled per sub-step, so a tick that crosses a hazard layer at terminal velocity
             // cannot step over it unnoticed.
-            if (overlapsLethal(x, y, physics.width, height, world)) touchedLethal = true
+            if (lethalContact == null) {
+                lethalContact = firstLethalContact(x, y, physics.width, height, world)
+            }
         }
 
         // A player resting on a floor may not move far enough in a tick to be blocked again;
@@ -86,7 +89,8 @@ object MovementModel {
             vy = vy,
             onGround = onGround,
             stance = stance,
-            touchedLethal = touchedLethal,
+            touchedLethal = lethalContact != null,
+            lethalContact = lethalContact,
         )
     }
 
@@ -136,13 +140,28 @@ object MovementModel {
         return !overlapsSolid(state.x, top, physics.width, physics.standingHeight, world)
     }
 
-    private fun overlapsLethal(
+    private fun firstLethalContact(
         x: Double,
         y: Double,
         width: Double,
         height: Double,
         world: TileMap,
-    ): Boolean = anyTile(x, y, width, height) { column, row -> world.isLethal(column, row) }
+    ): LethalContact? {
+        val firstColumn = TileMap.toTile(x)
+        val lastColumn = TileMap.toTile(x + width - SKIN)
+        val firstRow = TileMap.toTile(y)
+        val lastRow = TileMap.toTile(y + height - SKIN)
+        for (column in firstColumn..lastColumn) {
+            for (row in firstRow..lastRow) {
+                when (world[column, row]) {
+                    TileKind.Acid -> return LethalContact.Acid
+                    TileKind.Void -> return LethalContact.Void
+                    else -> Unit
+                }
+            }
+        }
+        return null
+    }
 
     private fun overlapsSolid(
         x: Double,

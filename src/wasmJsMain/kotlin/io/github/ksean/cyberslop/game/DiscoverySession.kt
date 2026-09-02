@@ -28,6 +28,9 @@ internal class DiscoverySession(
         return update
     }
 
+    /** Persists a lethal-tick discovery without letting its overlay obscure the death sequence. */
+    fun recordOnly(collected: Iterable<DiscoveryId>): DiscoveryUpdate = record(collected)
+
     fun advance(deltaSeconds: Double, pageActive: Boolean): Boolean {
         // The animation-frame delta in which a simulation tick found the item predates the card.
         // Drop it at the first active render instead of charging invisible time to the interval.

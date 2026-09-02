@@ -29,11 +29,17 @@ object Hazards {
      * its tiles are under the box, and each barrel counts once for its body or its flame.
      */
     fun ratePerSecond(level: Level, x: Double, y: Double, width: Double, height: Double): Double {
-        var rate = 0.0
-        if (spikeTiles(level, x, y, width, height).isNotEmpty()) rate += SPIKE_RATE
-        rate += BARREL_RATE * barrels(level, x, y, width, height).size
-        return rate
+        return spikeRatePerSecond(level, x, y, width, height) +
+            fireRatePerSecond(level, x, y, width, height)
     }
+
+    /** Spike-only part of [ratePerSecond], kept separate so terminal damage retains its source. */
+    fun spikeRatePerSecond(level: Level, x: Double, y: Double, width: Double, height: Double): Double =
+        if (spikeTiles(level, x, y, width, height).isNotEmpty()) SPIKE_RATE else 0.0
+
+    /** Burning-barrel part of [ratePerSecond], including both drum and flame overlap. */
+    fun fireRatePerSecond(level: Level, x: Double, y: Double, width: Double, height: Double): Double =
+        BARREL_RATE * barrels(level, x, y, width, height).size
 
     /** Every hazard cell the box overlaps, for the confirming replay. */
     fun overlapped(level: Level, x: Double, y: Double, width: Double, height: Double): List<Cell> =
