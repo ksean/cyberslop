@@ -364,17 +364,24 @@ follows the target without turning the stock, blade teeth, magazine or sight ups
   `Energy` and `Glass`, or an icon of nothing but `Line` metal, is given a corroded part. The icon's geometry, and so its
   identity (P-27, P-28), is unchanged by weathering; the sheet is the judge of how aged it looks.
   A streak lies on its own material, so it is judged against that material on the sheet and not
-  against the backgrounds (P-30 ranges over the five material colours and the two rings).
-- **Kind (PROD-050)** — a drop is ringed: a stroked circle of sixteen chords at `KIND_RING =
-  1.35 ×` the icon's scale, one `Hair`-of-scale wide over its `Hair` halo, in the kind's colour —
-  weapon `#ff2f2f`, powerup `#3d8bff` — fixed across themes; the tier pips sit under the ring. The ring is drawn by the pickup, not by the icon, which is
-  what keeps it off the hand and out of the HUD: `IconPainter` knows nothing of it. Kind is also
-  said twice: a powerup's icon sits in a module casing, a weapon's never does, because two
-  palettes carry an accent within RGB distance 13 of a ring colour.
+  against the backgrounds (P-30 ranges over the five material colours and six rings).
+- **Kind and weapon tier (PROD-050)** — a drop is ringed: a stroked circle of sixteen chords at
+  `KIND_RING = 1.35 ×` the icon's scale, one `Hair`-of-scale wide over its `Hair` halo. A powerup's
+  ring remains fixed blue `#3d8bff`. A weapon ring is fixed by tier across every theme: T1 white
+  `#f4f4f4`, T2 green `#39d353`, T3 gold `#ffd45a`, T4 purple `#b45cff`, T5 red `#ff2f2f`.
+  The tier pips under a weapon ring use the same tier colour; powerup pips remain blue.
+  T1–T3 and powerup rings have no coloured bloom. Before the near-black ring halo is drawn, T4
+  draws the same sixteen-chord purple circle on `ItemHalo` at
+  `Scene.strokeWidth(0.25 × scale)`; T5 draws its red circle there at
+  `Scene.strokeWidth(0.34 × scale)`. The ordinary near-black halo covers the bloom's centre, so
+  only a restrained coloured edge remains, with the T5 edge wider than T4. The ring and bloom are
+  drawn by the pickup, not by the icon, which keeps them off the hand and out of the HUD:
+  `IconPainter` knows nothing of either. Kind is also said by casing, and rarity by the existing
+  tier pips, so neither meaning relies on colour.
 - **Halo** — `#05060a`, under every line and the ring, fixed across themes. Every icon is drawn
   twice, halo under material, because a coloured line alone is within 2.0 luma of a tile colour on
   one palette and the halo alone within 0.1 of a sky on another; the pair separates by ≥ 40 for
-  every material and both ring colours on all ten palettes (PROD-051). The `Wood` colour is the
+  every material and all six ring colours on all ten palettes (PROD-051). The `Wood` colour is the
   darkest allowed: at luma 100 against the halo's 6 the pair still clears the rule on every
   background between them.
 - **Hover (PROD-079)** — a drop is drawn at `y − HOVER_PX × sin(2π · t / HOVER_PERIOD + φ)` with
@@ -395,11 +402,11 @@ follows the target without turning the stock, blade teeth, magazine or sight ups
   is whatever the caller says, the casing is `Steel`.
 
 Icons vary in geometry, not style, so the item layers open a bounded number of batches with all
-forty-four on screen: five materials plus two streak colours plus two ring colours, each over the
+forty-four on screen: five materials plus two streak colours plus six ring colours, each over the
 distinct ladder widths the five tier scales snap a weight onto — at most **four** per weight (a
 `Slab` body is 3.5, 4.5, 6, 6, 8 across the tiers) — is the vocabulary, and `PickupIconTest`
-derives the bound from the ladder and counts against it rather than believing arithmetic in
-prose (P-31 states it). Whether an icon is *recognisable*, or looks
+derives the bound from the ladder, including the two fixed tier-bloom widths on `ItemHalo`, and
+counts against it rather than believing arithmetic in prose (P-31 states it). Whether an icon is *recognisable*, or looks
 aged, is a human judgement made against the icon sheet, not a test.
 
 ## Scrap-gain feedback (PROD-086)
@@ -517,8 +524,10 @@ changes, and no discovery card or other simulation-time presentation advances be
 - **P-28** One icon, four presentations: ground, hand, HUD and discovery card draw the same op list
   and materials, differing only in scale and orientation; orientation preserves every distance and
   either preserves or horizontally reflects handedness.
-- **P-29** Kind survives colour removal: casing on every powerup, on no weapon; id → kind → ring
-  colour is total; the two ring colours differ in hue and luminance.
+- **P-29** Kind and tier survive colour removal: casing on every powerup, on no weapon; item id →
+  kind and weapon tier → ring colour are total; the powerup blue differs from every weapon ring
+  colour and the five weapon ring colours are pairwise distinct. Tier size and pips remain the
+  non-colour rarity cue.
 - **P-30** Legible on every map: for each palette and each of its nine background colours, and
   for each material colour and each ring colour, the halo or the line differs in luminance by
   ≥ 40; no items-layer style appears on the hazard or effects layer in the same frame.
@@ -537,11 +546,16 @@ changes, and no discovery card or other simulation-time presentation advances be
   streak on the wear layer, one per weathered stroke of each icon, and none on the material
   layer; the ground, hand and HUD presentations emit the same material per op (P-28 extended to
   colour).
-- **P-51** Kind ring: a weapon drop's frame holds a stroked circle of sixteen chords of radius
-  `KIND_RING × scale` about the icon's drawn origin in `#ff2f2f`, a powerup drop's in `#3d8bff`,
-  each over a sixteen-chord halo of the same radius on the halo layer; the
-  player's held weapon draws no segment in either ring colour; the HUD draws no segment in either
-  ring colour; the icon's own ops never contain a ring colour.
+- **P-51** Kind and tier ring: each weapon drop holds one sixteen-chord stroked circle of radius
+  `KIND_RING × scale` about the icon's drawn origin in its exact tier colour — T1 `#f4f4f4`, T2
+  `#39d353`, T3 `#ffd45a`, T4 `#b45cff`, T5 `#ff2f2f` — and a powerup drop's is `#3d8bff`.
+  Every ring sits over a sixteen-chord near-black halo of the same radius. T1–T3 and powerup frames
+  contain no coloured bloom; T4 contains one purple sixteen-chord bloom at the same radius with
+  width `Scene.strokeWidth(0.25 × scale)`, and T5 one red bloom with width
+  `Scene.strokeWidth(0.34 × scale)`, both below the near-black halo, with the T5 width strictly
+  greater at their registered scales. Pips use the owning ring colour. The player's held weapon,
+  HUD icon and discovery-card icon draw no segment in any ring or bloom colour; an icon's own ops
+  never contain one.
 - **P-52** Hover: the drawn origin of a drop at time `t` is its world position less
   `HOVER_PX × sin(2π t / HOVER_PERIOD + φ)`; at `t + HOVER_PERIOD` it is the same; over a period
   its extremes differ by `2 × HOVER_PX`; the ring and pips move with it; both halves of a paired

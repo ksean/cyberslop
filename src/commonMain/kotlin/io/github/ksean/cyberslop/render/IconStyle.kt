@@ -3,23 +3,39 @@ package io.github.ksean.cyberslop.render
 /**
  * The fixed colours a drop is drawn in (PROD-050, PROD-051, PROD-078).
  *
- * Red and blue do not move with the sub-theme: a red-ringed thing is a weapon on all ten maps, or
- * the rule teaches a player nothing. The ring is the *drop's*, not the icon's: the icon inside it is
- * drawn in its materials ([Material]), the same on the ground, in the hand and in the HUD, and only
- * the ground adds the ring (`Scene.pickup`).
+ * Tier and kind colours do not move with the sub-theme: a white ring means a T1 weapon on all ten
+ * maps, or the rule teaches a player nothing. The ring is the *drop's*, not the icon's: the icon
+ * inside it is drawn in its materials ([Material]), the same on the ground, in the hand and in the
+ * HUD, and only the ground adds the ring (`Scene.pickup`).
  *
  * Why the halo is not optional is measured in `specs/presentation.md` — a coloured line alone is
  * worth **2.0** of luminance separation against `ArcologyVault.tileBody`, and a near-black halo alone
  * **0.1** against `ReactorCore.sky`. Drawn as a pair so that at least one line always separates.
  */
 object IconStyles {
-    const val WEAPON_RING = "#ff2f2f"
+    const val T1_WEAPON_RING = "#f4f4f4"
+    const val T2_WEAPON_RING = "#39d353"
+    const val T3_WEAPON_RING = "#ffd45a"
+    const val T4_WEAPON_RING = "#b45cff"
+    const val T5_WEAPON_RING = "#ff2f2f"
+
     const val POWERUP_RING = "#3d8bff"
 
     /** Under every line, wider, so a material is never read against the terrain directly. */
     const val HALO = "#05060a"
 
-    fun ringOf(weapon: Boolean): String = if (weapon) WEAPON_RING else POWERUP_RING
+    fun ringOf(look: PickupLook): String =
+        if (look.weapon) weaponRing(look.tierOrdinal) else POWERUP_RING
+
+    fun weaponRing(tierOrdinal: Int): String = WEAPON_RINGS[tierOrdinal]
+
+    /** A coloured edge outside the ordinary dark ring halo, only for T4 and T5 weapons. */
+    fun bloomWidthOf(look: PickupLook, scale: Double): Double? = when {
+        !look.weapon -> null
+        look.tierOrdinal == T4_ORDINAL -> Scene.strokeWidth(T4_BLOOM_FRACTION * scale)
+        look.tierOrdinal == T5_ORDINAL -> Scene.strokeWidth(T5_BLOOM_FRACTION * scale)
+        else -> null
+    }
 
     /** The ring's radius as a multiple of the icon's scale (its half-extent in pixels). */
     const val KIND_RING = 1.35
@@ -71,4 +87,16 @@ object IconStyles {
     /** Where along a stroke its weathering streak starts and ends, as fractions of its length. */
     const val STREAK_FROM = 0.55
     const val STREAK_TO = 0.95
+
+    private val WEAPON_RINGS = listOf(
+        T1_WEAPON_RING,
+        T2_WEAPON_RING,
+        T3_WEAPON_RING,
+        T4_WEAPON_RING,
+        T5_WEAPON_RING,
+    )
+    private const val T4_ORDINAL = 3
+    private const val T5_ORDINAL = 4
+    private const val T4_BLOOM_FRACTION = 0.25
+    private const val T5_BLOOM_FRACTION = 0.34
 }

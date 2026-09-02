@@ -85,10 +85,8 @@ class IconRegistryTest {
                 "$name is made of only ${icon.materials}, so nothing on it reads as a different part",
             )
         }
-        assertTrue(
-            Material.entries.none { it.colour == IconStyles.WEAPON_RING || it.colour == IconStyles.POWERUP_RING },
-            "a material is the colour of a kind ring",
-        )
+        val rings = (0 until 5).map(IconStyles::weaponRing) + IconStyles.POWERUP_RING
+        assertTrue(Material.entries.none { it.colour in rings }, "a material is the colour of a kind ring")
     }
 
     /**
@@ -110,39 +108,19 @@ class IconRegistryTest {
     }
 
     @Test
-    fun `the two ring colours differ in hue and in luminance`() {
-        val weapon = IconStyles.WEAPON_RING
-        val powerup = IconStyles.POWERUP_RING
+    fun `weapon tier rings are pairwise distinct and none is powerup blue`() {
+        val weapons = (0 until 5).map(IconStyles::weaponRing)
 
-        assertTrue(
-            rgbDistance(weapon, powerup) >= MIN_HUE_DISTANCE,
-            "the two outlines are $weapon and $powerup, too close to tell apart",
-        )
-        val gap = Palette.luminanceOf(powerup) - Palette.luminanceOf(weapon)
-        assertTrue(
-            (if (gap < 0) -gap else gap) >= MIN_LUMINANCE_GAP,
-            "the outlines have the same luminance, so greyscale loses the kind entirely",
-        )
+        assertEquals(weapons.size, weapons.toSet().size, "two weapon tiers share a ring colour")
+        assertTrue(IconStyles.POWERUP_RING !in weapons, "a weapon tier uses the powerup ring colour")
     }
 
     private fun allIcons(): List<Pair<String, Icon>> =
         WeaponId.entries.map { it.name to WeaponIcons.of(it) } +
             PowerupId.entries.map { it.name to PowerupIcons.of(it) }
 
-    private fun rgbDistance(first: String, second: String): Double {
-        fun channel(hex: String, at: Int) = hex.substring(at, at + 2).toInt(16).toDouble()
-        var sum = 0.0
-        listOf(1, 3, 5).forEach { at ->
-            val delta = channel(first, at) - channel(second, at)
-            sum += delta * delta
-        }
-        return kotlin.math.sqrt(sum)
-    }
-
     private companion object {
         const val MIN_STROKES = 3
         const val MIN_SPAN = 1.2
-        const val MIN_HUE_DISTANCE = 120.0
-        const val MIN_LUMINANCE_GAP = 20.0
     }
 }

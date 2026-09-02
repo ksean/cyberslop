@@ -121,8 +121,10 @@ class WorldFrameSheetTest {
 
         assertTrue(out.length() > 0, "no frame was written")
         assertTrue(
-            frame.batches.any { it.layer == Layer.Items && it.style == IconStyles.WEAPON_RING },
-            "the frame drew no weapon drop, so the sheet shows nothing worth looking at",
+            (0 until 5).all { tier ->
+                frame.batches.any { it.layer == Layer.Items && it.style == IconStyles.weaponRing(tier) }
+            },
+            "the frame does not show every weapon-tier ring",
         )
     }
 
@@ -219,9 +221,10 @@ class WorldFrameSheetTest {
 
         val DROPS = listOf(
             WeaponId.BrokenBottle,
-            WeaponId.RiotbreakerShotgun,
-            WeaponId.KillSwitchKatana,
+            WeaponId.CorpoRiotBaton,
+            WeaponId.StaticLash,
             WeaponId.SableCorpRailgun,
+            WeaponId.VoiceOfTheDeadNet,
         )
         val BUILD = listOf(
             PowerupId.OverclockCoil,

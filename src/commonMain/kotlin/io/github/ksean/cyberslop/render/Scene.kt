@@ -878,8 +878,8 @@ object Scene {
         if (x < -OFF_SCREEN || x > camera.viewWidth * ZOOM + OFF_SCREEN) return
 
         val scale = PICKUP_PX * look.scale
-        IconPainter.paint(builder, icon, x, y, scale, Layer.ItemHalo, Layer.Items, Layer.ItemWear)
         kindRing(builder, look, x, y, scale)
+        IconPainter.paint(builder, icon, x, y, scale, Layer.ItemHalo, Layer.Items, Layer.ItemWear)
         tierPips(builder, look, x, y + scale * IconStyles.KIND_RING + PIP_DROP)
     }
 
@@ -901,8 +901,12 @@ object Scene {
     private fun kindRing(builder: SceneBuilder, look: PickupLook, x: Double, y: Double, scale: Double) {
         val radius = IconStyles.KIND_RING * scale
         val at = Vec2(x, y)
+        val colour = IconStyles.ringOf(look)
+        IconStyles.bloomWidthOf(look, scale)?.let { width ->
+            ring(builder, colour, at, radius, Layer.ItemHalo, width, KIND_RING_SEGMENTS)
+        }
         ring(builder, IconStyles.HALO, at, radius, Layer.ItemHalo, IconStyles.haloWidthOf(StrokeWeight.Hair, scale), KIND_RING_SEGMENTS)
-        ring(builder, IconStyles.ringOf(look.weapon), at, radius, Layer.Items, IconStyles.widthOf(StrokeWeight.Hair, scale), KIND_RING_SEGMENTS)
+        ring(builder, colour, at, radius, Layer.Items, IconStyles.widthOf(StrokeWeight.Hair, scale), KIND_RING_SEGMENTS)
     }
 
     /**
@@ -916,7 +920,7 @@ object Scene {
         val halo = builder.batch(Layer.ItemHalo, IconStyles.HALO, Primitive.Dot)
         val pips = builder.batch(
             Layer.Items,
-            IconStyles.ringOf(look.weapon),
+            IconStyles.ringOf(look),
             Primitive.Dot,
         )
         val first = centreX - (count - 1) * PIP_PITCH / 2.0

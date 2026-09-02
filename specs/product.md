@@ -259,10 +259,12 @@ build of powerups collected on contact, and permadeath with persistent unlocks.
 - **PROD-049:** Every weapon and powerup has its own icon, recognisable as the object it names; no
   two items share an icon; the same icon is drawn on the ground, in the player's hand and in the
   HUD.
-- **PROD-050:** A drop on the ground is ringed in a fixed colour by kind — a weapon in red, a
-  powerup in blue — and the ring is drawn only around a drop: never around the weapon in the
-  player's hand. Kind is also readable with colour removed: a powerup's icon sits inside a module
-  casing, a weapon's does not.
+- **PROD-050:** A drop on the ground is ringed by kind and rarity. A powerup has a fixed blue ring;
+  a weapon has a tier-coded ring — T1 white, T2 green, T3 gold, T4 purple and T5 red. The T4 ring
+  has a restrained coloured glow and the T5 ring has a visibly stronger glow; T1–T3 and powerups
+  have no coloured ring glow. The ring and any glow are drawn only around a drop: never around the
+  weapon in the player's hand or in the HUD. Kind and rarity remain readable with colour removed:
+  a powerup's icon sits inside a module casing while a weapon's does not, and tier pips remain.
 - **PROD-078:** Inside the ring, an item is drawn in the colours of what it is made of, in the
   game's worn dystopian register: wood is brown, metal is dull silver-grey, glass is dim, an
   energy or psychic part glows; every metal and wooden stroke wide enough to carry one bears a
@@ -299,7 +301,7 @@ build of powerups collected on contact, and permadeath with persistent unlocks.
   strikes and a rush, and its ranged hardware must distinguish a single/burst barrel, a spread
   muzzle and a laser emitter. Mini-boss/main-boss scale and crown differences remain visible on
   every profile.
-- **PROD-051:** An icon stays legible on every sub-theme: for every material colour and both ring
+- **PROD-051:** An icon stays legible on every sub-theme: for every material colour and all six ring
   colours, the drawn halo-and-line pair separates in Rec. 709 luminance from that palette's sky,
   backdrop and tile colours by at least 40 of 255, and no colour used for an item is used in the
   same frame for a hazard or a projectile.

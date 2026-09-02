@@ -194,7 +194,7 @@ class HeldWeaponTest {
 
     /**
      * P-51: the ring is the drop's, not the weapon's (PROD-050). The frame that draws the held
-     * weapon draws no segment in either ring colour on the actor's layers — and none anywhere
+     * weapon draws no segment in any ring colour on the actor's layers — and none anywhere
      * once the level's own drops are cleared.
      */
     @Test
@@ -202,9 +202,10 @@ class HeldWeaponTest {
         val level = LevelGenerator.generate(SEED, MAP).level
         val run = RunState.begin(SEED).let { it.copy(loadout = it.loadout.copy(weapon = Weapons.of(WeaponId.SableCorpRailgun))) }
         val sim = GameSimulation(level, run, SEED).also { it.items.clear() }
+        val ringColours = (0 until 5).map(IconStyles::weaponRing) + IconStyles.POWERUP_RING
 
         val ringed = frameOf(sim).batches.filter {
-            it.style == IconStyles.WEAPON_RING || it.style == IconStyles.POWERUP_RING
+            it.style in ringColours
         }
 
         assertTrue(ringed.isEmpty(), "a ring colour was drawn with no drop on screen: ${ringed.map { it.layer }}")

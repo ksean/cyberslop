@@ -123,6 +123,12 @@ and the loot-floor expectations only.
     the common tick, then synthesize short Web Audio patches in a browser adapter. Complete BGS-1
     through BGS-4 in `tasks.md` test-first, inspect the ten-theme world sheet and run
     `./scripts/check.sh`.
+14. **Tier-coded weapon-drop rings.** *(done)*
+    Restate PROD-050, PROD-051, P-29 and P-51 so weapon drops use white, green, gold, purple and red
+    rings from T1 through T5 while powerups remain blue. Give only T4 and T5 rings fixed,
+    progressively wider blooms, preserve the non-colour casing and pip cues, keep rings off held,
+    HUD and discovery icons, and retain the constant item-batch bound. Complete RING-1 and RING-2
+    in `tasks.md` test-first, inspect the all-tier icon sheet, then run `./scripts/check.sh`.
 
 ## Agents
 

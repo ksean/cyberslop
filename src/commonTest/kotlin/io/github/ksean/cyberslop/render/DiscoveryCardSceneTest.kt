@@ -49,6 +49,11 @@ class DiscoveryCardSceneTest {
             .filter { it.layer == Layer.HudOverlay }
             .sumOf { it.size }
         assertEquals(entry.icon.ops.size, outlineMarks, "the picture added a ground ring or rarity pips")
+        val ringColours = (0 until 5).map(IconStyles::weaponRing) + IconStyles.POWERUP_RING
+        assertTrue(
+            frame.batches.none { it.layer in setOf(Layer.Hud, Layer.HudOverlay, Layer.HudWear) && it.style in ringColours },
+            "the discovery card added a ground ring or bloom",
+        )
         assertTrue(Layer.Hud.ordinal < Layer.HudOverlay.ordinal)
         assertTrue(Layer.HudOverlay.ordinal < Layer.HudWear.ordinal)
     }

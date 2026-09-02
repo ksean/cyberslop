@@ -25,17 +25,30 @@ import kotlin.test.assertTrue
  */
 class PickupIconTest {
     @Test
-    fun `a weapon is ringed red and a powerup blue, whatever the theme`() {
+    fun `weapon rings and pips follow tier while powerups remain blue`() {
         val sim = simulation()
-        sim.items.add(GroundItem(dropAt(sim, 0.0), Weapons.of(WeaponId.SableCorpRailgun), null))
-        sim.items.add(GroundItem(dropAt(sim, 40.0), null, Powerups.of(PowerupId.ChillProtocol)))
+        TIER_RINGS.forEachIndexed { tier, (id, colour) ->
+            sim.items.clear()
+            sim.items.add(GroundItem(dropAt(sim, 0.0), Weapons.of(id), null))
+            val frame = compose(sim)
 
-        val styles = itemStyles(compose(sim))
+            assertEquals(RING_CHORDS, ringOf(frame, colour).size, "$id drew no tier-$tier ring in $colour")
+            val pips = frame.batches
+                .filter { it.layer == Layer.Items && it.style == colour && it.primitive == Primitive.Dot }
+                .sumOf { it.size }
+            assertEquals(tier + 1, pips, "$id's pips do not share its tier-ring colour")
+        }
 
-        assertTrue(IconStyles.WEAPON_RING in styles, "no weapon ring in the drop layer; found $styles")
-        assertTrue(IconStyles.POWERUP_RING in styles, "no powerup ring; found $styles")
-        // Fixed rather than themed: the rings and materials must be nothing any palette hands out,
-        // or a player could not learn "red means weapon" on one map and rely on it on the next.
+        sim.items.clear()
+        sim.items.add(GroundItem(dropAt(sim, 0.0), null, Powerups.of(PowerupId.ChillProtocol)))
+        val powerupFrame = compose(sim)
+        assertEquals(RING_CHORDS, ringOf(powerupFrame, IconStyles.POWERUP_RING).size)
+        assertTrue(
+            TIER_RINGS.none { (_, colour) -> colour in itemStyles(powerupFrame) },
+            "a powerup used a weapon-tier colour",
+        )
+
+        // Fixed rather than themed: a tier colour must mean the same thing on every map.
         val fixed = ringColours() + materialColours()
         ThemeId.entries.forEach { theme ->
             val palette = Palettes.of(theme).colours
@@ -46,6 +59,60 @@ class PickupIconTest {
         }
     }
 
+    @Test
+    fun `only T4 and T5 weapon rings bloom and T5 is stronger`() {
+        val sim = simulation()
+        val bloomWidths = TIER_RINGS.mapIndexed { tier, (id, colour) ->
+            sim.items.clear()
+            val weapon = Weapons.of(id)
+            sim.items.add(GroundItem(dropAt(sim, 0.0), weapon, null))
+            val blooms = compose(sim).batches.filter {
+                it.layer == Layer.ItemHalo && it.style == colour && it.primitive == Primitive.Segment
+            }
+
+            if (tier < 3) {
+                assertTrue(blooms.isEmpty(), "$id has a coloured bloom below T4")
+                null
+            } else {
+                val expectedFraction = if (tier == 3) 0.25 else 0.34
+                val expectedWidth = Scene.strokeWidth(expectedFraction * Scene.PICKUP_PX * PickupLook.of(weapon).scale)
+                assertEquals(1, blooms.size, "$id should open one bloom batch")
+                assertEquals(RING_CHORDS, blooms.single().size, "$id's bloom is not the ring's sixteen chords")
+                assertEquals(expectedWidth, blooms.single().width, "$id has the wrong bloom width")
+                blooms.single().width
+            }
+        }
+
+        assertTrue(bloomWidths[4]!! > bloomWidths[3]!!, "T5 does not glow more strongly than T4")
+    }
+
+    @Test
+    fun `a paired drop keeps the weapon tier ring and the powerup blue independent`() {
+        val sim = simulation().also { it.items.clear() }
+        sim.items.add(
+            GroundItem(
+                dropAt(sim, 0.0),
+                Weapons.of(WeaponId.SableCorpRailgun),
+                Powerups.of(PowerupId.ForkBomb),
+            ),
+        )
+        val frame = compose(sim)
+
+        assertEquals(RING_CHORDS, ringOf(frame, IconStyles.T4_WEAPON_RING).size)
+        assertEquals(RING_CHORDS, ringOf(frame, IconStyles.POWERUP_RING).size)
+        assertTrue(ringOf(frame, IconStyles.T5_WEAPON_RING).isEmpty(), "the T4 half was promoted to a red ring")
+        val bloom = frame.batches.single {
+            it.layer == Layer.ItemHalo && it.style == IconStyles.T4_WEAPON_RING && it.primitive == Primitive.Segment
+        }
+        assertEquals(RING_CHORDS, bloom.size)
+        assertTrue(
+            frame.batches.none {
+                it.layer == Layer.ItemHalo && it.style == IconStyles.POWERUP_RING && it.primitive == Primitive.Segment
+            },
+            "the powerup half inherited the weapon bloom",
+        )
+    }
+
     /**
      * P-51: the ring is a stroked circle of `KIND_RING × scale` about the icon's drawn origin, in
      * the kind's colour, on the item layer over a halo. Measured from the segments themselves so
@@ -54,8 +121,8 @@ class PickupIconTest {
     @Test
     fun `a drop's ring is a circle of the kind's colour at the icon's scale`() {
         listOf(
-            Triple(WeaponId.BrokenBottle, IconStyles.WEAPON_RING, PickupLook.of(Weapons.of(WeaponId.BrokenBottle))),
-            Triple(WeaponId.VoiceOfTheDeadNet, IconStyles.WEAPON_RING, PickupLook.of(Weapons.of(WeaponId.VoiceOfTheDeadNet))),
+            Triple(WeaponId.BrokenBottle, weaponRing(WeaponId.BrokenBottle), PickupLook.of(Weapons.of(WeaponId.BrokenBottle))),
+            Triple(WeaponId.VoiceOfTheDeadNet, weaponRing(WeaponId.VoiceOfTheDeadNet), PickupLook.of(Weapons.of(WeaponId.VoiceOfTheDeadNet))),
         ).forEach { (id, colour, look) ->
             val sim = simulation().also { it.items.clear() }
             sim.items.add(GroundItem(dropAt(sim, 0.0), Weapons.of(id), null))
@@ -71,7 +138,7 @@ class PickupIconTest {
         val sim = simulation().also { it.items.clear() }
         sim.items.add(GroundItem(dropAt(sim, 0.0), null, Powerups.of(PowerupId.ForkBomb)))
         assertTrue(ringOf(compose(sim), IconStyles.POWERUP_RING).isNotEmpty(), "a powerup drew no blue ring")
-        assertTrue(ringOf(compose(sim), IconStyles.WEAPON_RING).isEmpty(), "a powerup drew a red ring")
+        assertTrue(TIER_RINGS.none { ringOf(compose(sim), it.second).isNotEmpty() }, "a powerup drew a weapon-tier ring")
     }
 
     /** Review round 1: "over a halo" must be asserted of the ring's own halo, on the halo layer. */
@@ -80,7 +147,8 @@ class PickupIconTest {
         val sim = simulation().also { it.items.clear() }
         sim.items.add(GroundItem(dropAt(sim, 0.0), Weapons.of(WeaponId.ChromeFang), null))
         val frame = compose(sim)
-        val centre = ringCentreOf(frame, IconStyles.WEAPON_RING)
+        val colour = weaponRing(WeaponId.ChromeFang)
+        val centre = ringCentreOf(frame, colour)
         val radius = IconStyles.KIND_RING * Scene.PICKUP_PX * PickupLook.of(Weapons.of(WeaponId.ChromeFang)).scale
 
         val haloPoints = frame.batches
@@ -88,7 +156,7 @@ class PickupIconTest {
             .flatMap { batch -> (0 until batch.size).map { n -> Vec2(batch[n * 4], batch[n * 4 + 1]) } }
             .count { abs((it - centre).length - radius) < RING_TOLERANCE }
         assertEquals(RING_CHORDS, haloPoints, "the ring's halo is not a $RING_CHORDS-chord circle under it")
-        assertEquals(RING_CHORDS, ringOf(frame, IconStyles.WEAPON_RING).size, "the ring itself is not $RING_CHORDS chords")
+        assertEquals(RING_CHORDS, ringOf(frame, colour).size, "the ring itself is not $RING_CHORDS chords")
         assertTrue(Layer.ItemHalo.ordinal < Layer.Items.ordinal)
     }
 
@@ -100,11 +168,11 @@ class PickupIconTest {
         sim.items.add(item)
         val before = item.position to item.powerupPosition
 
-        val red = (0 until SAMPLES).map { ringCentreOf(compose(sim, Scene.HOVER_PERIOD * it / SAMPLES), IconStyles.WEAPON_RING).y }
+        val weapon = (0 until SAMPLES).map { ringCentreOf(compose(sim, Scene.HOVER_PERIOD * it / SAMPLES), weaponRing(WeaponId.ChromeFang)).y }
         val blue = (0 until SAMPLES).map { ringCentreOf(compose(sim, Scene.HOVER_PERIOD * it / SAMPLES), IconStyles.POWERUP_RING).y }
-        assertTrue(abs(red.max() - red.min() - 2 * Scene.HOVER_PX) < HOVER_TOLERANCE, "the weapon half swung ${red.max() - red.min()}")
+        assertTrue(abs(weapon.max() - weapon.min() - 2 * Scene.HOVER_PX) < HOVER_TOLERANCE, "the weapon half swung ${weapon.max() - weapon.min()}")
         assertTrue(abs(blue.max() - blue.min() - 2 * Scene.HOVER_PX) < HOVER_TOLERANCE, "the powerup half swung ${blue.max() - blue.min()}")
-        val redPeak = red.indexOf(red.min())
+        val redPeak = weapon.indexOf(weapon.min())
         val bluePeak = blue.indexOf(blue.min())
         assertTrue(redPeak != bluePeak, "the two halves peak together at sample $redPeak; the phase is not by position")
         assertEquals(before, item.position to item.powerupPosition, "drawing moved the paired item")
@@ -118,9 +186,10 @@ class PickupIconTest {
         val t = 0.7
         val tick = io.github.ksean.cyberslop.physics.TICK_SECONDS
 
-        val atTick = ringCentreOf(compose(sim, t, alpha = 1.0), IconStyles.WEAPON_RING).y
-        val midway = ringCentreOf(compose(sim, t, alpha = 0.5), IconStyles.WEAPON_RING).y
-        val earlier = ringCentreOf(compose(sim, t - 0.5 * tick, alpha = 1.0), IconStyles.WEAPON_RING).y
+        val colour = weaponRing(WeaponId.ChromeFang)
+        val atTick = ringCentreOf(compose(sim, t, alpha = 1.0), colour).y
+        val midway = ringCentreOf(compose(sim, t, alpha = 0.5), colour).y
+        val earlier = ringCentreOf(compose(sim, t - 0.5 * tick, alpha = 1.0), colour).y
 
         assertTrue(abs(midway - earlier) < 1e-9, "a frame halfway to the tick ($midway) is not drawn at the halfway time ($earlier)")
         assertTrue(abs(midway - atTick) > 1e-6, "the frame time made no difference")
@@ -177,7 +246,8 @@ class PickupIconTest {
             val t = Scene.HOVER_PERIOD * step / SAMPLES
             t to compose(sim, t)
         }
-        val centres = samples.map { (_, frame) -> ringCentreOf(frame, IconStyles.WEAPON_RING).y }
+        val colour = weaponRing(WeaponId.ChromeFang)
+        val centres = samples.map { (_, frame) -> ringCentreOf(frame, colour).y }
         val swing = centres.max() - centres.min()
         assertTrue(abs(swing - 2 * Scene.HOVER_PX) < HOVER_TOLERANCE, "the drop swung $swing px, not ${2 * Scene.HOVER_PX}")
         assertTrue(centres.toSet().size > 2, "the drop sat still: $centres")
@@ -186,16 +256,16 @@ class PickupIconTest {
             "the raised drop hovered about ${centres.average()}, not its resting y ${raised.y * Scene.ZOOM}",
         )
 
-        val rest = ringCentreOf(compose(sim, 0.0), IconStyles.WEAPON_RING)
-        val later = ringCentreOf(compose(sim, Scene.HOVER_PERIOD), IconStyles.WEAPON_RING)
+        val rest = ringCentreOf(compose(sim, 0.0), colour)
+        val later = ringCentreOf(compose(sim, Scene.HOVER_PERIOD), colour)
         assertTrue(abs(rest.y - later.y) < HOVER_TOLERANCE, "a period later the drop was at ${later.y}, not ${rest.y}")
         assertEquals(rest.x, later.x, "the hover moved the drop sideways")
 
         // The halo and the pips travel with the ring, measured at the sample where the drop sat
         // highest — the phase depends on where the drop is, so no fixed time is its peak.
         val peak = samples[centres.indexOf(centres.min())].first
-        val ringShift = ringCentreOf(compose(sim, peak), IconStyles.WEAPON_RING).y - rest.y
-        val pipShift = pipYOf(compose(sim, peak)) - pipYOf(compose(sim, 0.0))
+        val ringShift = ringCentreOf(compose(sim, peak), colour).y - rest.y
+        val pipShift = pipYOf(compose(sim, peak), colour) - pipYOf(compose(sim, 0.0), colour)
         val haloShift = haloCentreOf(compose(sim, peak)) - haloCentreOf(compose(sim, 0.0))
         assertTrue(abs(ringShift) > 0.5, "at its peak the drop had not moved from its rest: $ringShift")
         assertTrue(abs(pipShift - ringShift) < HOVER_TOLERANCE, "the pips shifted $pipShift against the ring's $ringShift")
@@ -393,7 +463,7 @@ class PickupIconTest {
         val frame = compose(sim)
 
         // The icon's own extent is its halo pass, which is one stroke per stroke of the icon;
-        // the ring is measured elsewhere and the pips are the only red dots on the layer.
+        // the ring is measured elsewhere and the pips are the only tier-coloured dots on the layer.
         val halo = frame.batches.filter {
             it.layer == Layer.ItemHalo && it.style == IconStyles.HALO && it.primitive == Primitive.Segment &&
                 it.width < RING_HALO_WIDTH_CEILING
@@ -408,12 +478,15 @@ class PickupIconTest {
             }
         }
         val pips = frame.batches
-            .filter { it.layer == Layer.Items && it.style == IconStyles.WEAPON_RING && it.primitive == Primitive.Dot }
+            .filter { it.layer == Layer.Items && it.style == weaponRing(id) && it.primitive == Primitive.Dot }
             .sumOf { it.size }
         return Drawn(high - low, pips)
     }
 
-    private fun ringColours() = listOf(IconStyles.WEAPON_RING, IconStyles.POWERUP_RING)
+    private fun ringColours() = TIER_RINGS.map { it.second } + IconStyles.POWERUP_RING
+
+    private fun weaponRing(id: WeaponId): String =
+        IconStyles.weaponRing(Weapons.of(id).tier.ordinal)
 
     private fun materialColours() = Material.entries.flatMap { listOfNotNull(it.colour, it.weathering) }.distinct()
 
@@ -442,9 +515,9 @@ class PickupIconTest {
         return Vec2(points.sumOf { it.x } / points.size, points.sumOf { it.y } / points.size)
     }
 
-    private fun pipYOf(frame: DrawList): Double {
+    private fun pipYOf(frame: DrawList, colour: String): Double {
         val pips = frame.batches.filter {
-            it.layer == Layer.Items && it.style == IconStyles.WEAPON_RING && it.primitive == Primitive.Dot
+            it.layer == Layer.Items && it.style == colour && it.primitive == Primitive.Dot
         }
         assertTrue(pips.isNotEmpty(), "no pips in the frame")
         return pips.first()[1]
@@ -502,6 +575,13 @@ class PickupIconTest {
     }
 
     private companion object {
+        val TIER_RINGS = listOf(
+            WeaponId.BrokenBottle to "#f4f4f4",
+            WeaponId.CorpoRiotBaton to "#39d353",
+            WeaponId.StaticLash to "#ffd45a",
+            WeaponId.SableCorpRailgun to "#b45cff",
+            WeaponId.VoiceOfTheDeadNet to "#ff2f2f",
+        )
         const val SEED = 20260827uL
         const val VIEW_WIDTH = 260.0
         const val VIEW_HEIGHT = 150.0
@@ -518,8 +598,9 @@ class PickupIconTest {
          * icons): every style the item layers may open, times the distinct ladder widths a weight
          * collapses onto across the five tiers — derived below, at most four (`Slab` is 3.5, 4.5,
          * 6, 6, 8). Halo: three weights of segment, one dot, and
-         * the ring's halo. Items: five materials and two streak colours over three weights of
-         * segment, five material dots, two ring colours over one width, two pip dot styles.
+         * the ring's halo plus the fixed T4/T5 bloom batches. Items: five materials and two streak
+         * colours over three weights of segment, five material dots, five tier-specific weapon
+         * ring widths plus the powerup's ladder widths, and six pip dot styles.
          */
         private val TIER_SCALES = (0 until 5).map {
             Scene.PICKUP_PX * (PickupLook.MIN_SCALE + (PickupLook.MAX_SCALE - PickupLook.MIN_SCALE) * it / 4.0)
@@ -533,10 +614,12 @@ class PickupIconTest {
         private val RING_WIDTHS = TIER_SCALES.map { IconStyles.widthOf(StrokeWeight.Hair, it) }.toSet().size
         private const val MATERIALS = 5
         private const val STREAK_COLOURS = 2
-        private const val RING_COLOURS = 2
+        private const val WEAPON_TIERS = 5
+        private const val RING_COLOURS = WEAPON_TIERS + 1
+        private const val BLOOM_BATCHES = 2
         val MAX_ITEM_BATCHES: Int =
-            (HALO_WIDTHS + 1 + RING_HALO_WIDTHS) +
-                (MATERIALS * BODY_WIDTHS + MATERIALS + RING_COLOURS * RING_WIDTHS + RING_COLOURS) +
+            (HALO_WIDTHS + 1 + RING_HALO_WIDTHS + BLOOM_BATCHES) +
+                (MATERIALS * BODY_WIDTHS + MATERIALS + WEAPON_TIERS + RING_WIDTHS + RING_COLOURS) +
                 (STREAK_COLOURS * STREAK_WIDTHS)
         const val RING_TOLERANCE = 0.5
         const val MIN_RING_SEGMENTS = 12

@@ -66,7 +66,10 @@ class HudIconTest {
             .toSet()
 
         assertTrue(Material.Steel.colour in styles, "no steel in the display: $styles")
-        assertTrue(IconStyles.WEAPON_RING !in styles, "the display ringed the weapon")
+        assertTrue(
+            (0 until 5).none { IconStyles.weaponRing(it) in styles },
+            "the display ringed or bloomed the weapon",
+        )
         assertTrue(IconStyles.POWERUP_RING !in styles, "the display ringed a powerup")
     }
 
