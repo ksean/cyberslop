@@ -31,7 +31,7 @@ class RamenDropTest {
             }
 
             assertEquals(expected.state, sim.ramenRng.state, "map $mapIndex consumed the wrong draws")
-            assertEquals(successes, sim.items.count { it.ramen }, "map $mapIndex did not keep each success")
+            assertEquals(successes, sim.items.count { it.payload is GroundItem.Ramen }, "map $mapIndex did not keep each success")
         }
     }
 
@@ -47,14 +47,14 @@ class RamenDropTest {
         }
 
         fun ordinaryLoot(sim: GameSimulation) = sim.items
-            .filterNot { it.ramen }
+            .mapNotNull { it.payload as? GroundItem.Equipment }
             .map { it.weapon?.id to it.powerup?.id }
         assertEquals(ordinary.lootRng.state, shifted.lootRng.state)
         assertEquals(ordinaryLoot(ordinary), ordinaryLoot(shifted))
         assertTrue(
             sequenceOf(ordinary, shifted).any { sim ->
-                sim.items.filter { it.ramen }.any { ramen ->
-                    sim.items.filterNot { it.ramen }.any { it.position.x == ramen.position.x }
+                sim.items.filter { it.payload is GroundItem.Ramen }.any { ramen ->
+                    sim.items.filter { it.payload is GroundItem.Equipment }.any { it.position.x == ramen.position.x }
                 }
             },
             "the fixture produced no death with both independent drops",
@@ -107,17 +107,17 @@ class RamenDropTest {
             )
             sim.autoFire.remaining = 100.0
             val loadout = sim.run.loadout
-            val centre = playerCentre(sim)
+            val centre = sim.player.centre(Physics.Default)
             val grounded = Vec2(
                 centre.x,
                 TileMap.toWorld(TestLevels.FLOOR_ROW + 1) - TILE_SIZE / 2.0,
             )
-            sim.items += GroundItem(grounded, null, null, ramen = true)
+            sim.items += GroundItem.ramen(grounded)
 
             val report = sim.tick(InputFrame())
 
             assertEquals(base.maxHealth * afterFraction, sim.run.health, absoluteTolerance = 1e-9)
-            assertTrue(sim.items.none { it.ramen })
+            assertTrue(sim.items.none { it.payload is GroundItem.Ramen })
             assertEquals(loadout, sim.run.loadout)
             assertEquals(0, sim.run.scrap)
             assertEquals(emptyList(), report.collectedDiscoveries)
@@ -135,12 +135,12 @@ class RamenDropTest {
         assertEquals(digest, baseline.digest())
 
         val item = simulation().also {
-            it.items += GroundItem(Vec2.Zero, null, null, ramen = true)
+            it.items += GroundItem.ramen(Vec2.Zero)
         }
         assertNotEquals(digest, item.digest())
 
         val moved = simulation().also {
-            it.items += GroundItem(Vec2.Right, null, null, ramen = true)
+            it.items += GroundItem.ramen(Vec2.Right)
         }
         assertNotEquals(item.digest(), moved.digest())
 
@@ -165,11 +165,6 @@ class RamenDropTest {
         sim.tick(InputFrame())
         assertFalse(enemy.alive, "fixture enemy survived")
     }
-
-    private fun playerCentre(sim: GameSimulation) = Vec2(
-        sim.player.x + Physics.Default.width / 2.0,
-        sim.player.y + sim.player.height(Physics.Default) / 2.0,
-    )
 
     private companion object {
         val SEED = 0xA11CEuL

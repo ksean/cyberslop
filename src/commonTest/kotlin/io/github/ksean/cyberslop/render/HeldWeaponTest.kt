@@ -171,11 +171,11 @@ class HeldWeaponTest {
             sim.items.clear()
             sim.enemies.clear()
             val direction = aim.normalisedOr(Vec2.Right)
-            val playerCentre = Vec2(
-                sim.player.x + io.github.ksean.cyberslop.physics.Physics.Default.width / 2.0,
-                sim.player.y + sim.player.height(io.github.ksean.cyberslop.physics.Physics.Default) / 2.0,
+            val playerCentre = sim.player.centre(io.github.ksean.cyberslop.physics.Physics.Default)
+            val targetCorner = playerCentre + direction * TARGET_AHEAD - Vec2(
+                io.github.ksean.cyberslop.sim.LiveEnemy.BODY_HALF,
+                io.github.ksean.cyberslop.sim.LiveEnemy.BODY_HALF,
             )
-            val targetCorner = playerCentre + direction * TARGET_AHEAD - Vec2(ENEMY_HALF, ENEMY_HALF)
             sim.enemies += io.github.ksean.cyberslop.sim.LiveEnemy(
                 archetype = io.github.ksean.cyberslop.entity.EnemyArchetype.Swarm,
                 position = targetCorner,
@@ -276,7 +276,6 @@ class HeldWeaponTest {
          */
         const val TARGET_AHEAD = 90.0
         const val TARGET_OFFSET = 90.0
-        const val ENEMY_HALF = 7.0
         const val LEVEL = 0
         const val UP = 1
         const val DOWN = 2

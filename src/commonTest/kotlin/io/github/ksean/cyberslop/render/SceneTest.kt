@@ -21,7 +21,34 @@ import io.github.ksean.cyberslop.sim.TestLevels
 import io.github.ksean.cyberslop.world.Barrel
 import kotlin.test.Test
 import kotlin.test.assertEquals
+import kotlin.test.assertNotNull
+import kotlin.test.assertNull
 import kotlin.test.assertTrue
+
+private const val SEED = 0xC0FFEEuL
+private const val VIEW_WIDTH = 560.0
+private const val VIEW_HEIGHT = 320.0
+private const val FEW = 10
+private const val MANY = 600
+private const val MAPS = 10
+private const val SPREAD = 24
+private const val SPACING = 20.0
+private const val CLOSE = 40.0
+private const val ONE_PIXEL = 1.0
+private const val TINY = 1e-9
+
+/** Back to front, in the order an actor is built. */
+private val ROLE_STACK = listOf(
+    Layer.ActorBehind,
+    Layer.Actors,
+    Layer.ActorHead,
+    Layer.ActorFront,
+    Layer.ActorTrim,
+    Layer.ActorGlow,
+)
+
+/** Measured upper bound for drawing batches in the deliberately crowded fixture. */
+private const val MAX_BATCHES = 120
 
 /**
  * ENG-061 over the real frame, not over the builder in isolation.
@@ -34,7 +61,7 @@ import kotlin.test.assertTrue
  * is the expensive part that table measured. It does not bound rasterization, and the full-frame
  * measurement is still owed.
  */
-class SceneTest {
+class SceneBatchingTest : SceneFixture() {
     @Test
     fun `six hundred entities cost no more drawing state than ten`() {
         val builder = SceneBuilder()
@@ -45,7 +72,7 @@ class SceneTest {
         // The same mix of archetypes at both sizes. ENG-061 bounds the cost by the number of
         // *kinds* of thing on screen, not by the count — a frame that contains a kind the previous
         // one did not legitimately opens that kind's batch, and the bound itself is asserted below.
-        trimTo(sim, 0)
+        clearEnemies(sim)
         growTo(sim, FEW)
         val sparse = Scene.compose(sim, camera, backdrop, hudOf(sim), 0.0, builder).batches.size
 
@@ -168,7 +195,7 @@ class SceneTest {
 
     private fun frameWith(entities: Int): DrawList {
         val sim = simulation()
-        trimTo(sim, 0)
+        clearEnemies(sim)
         growTo(sim, entities)
         return Scene.compose(sim, camera(), backdrop(sim), hudOf(sim), 0.0, SceneBuilder())
     }
@@ -211,7 +238,7 @@ class SceneTest {
     @Test
     fun `every archetype on a map still shares its batches`() {
         val sim = simulation()
-        trimTo(sim, 0)
+        clearEnemies(sim)
         // One of each, so nothing about the mix can open a batch per enemy.
         EnemyArchetype.entries.forEach { archetype -> sim.enemies.add(enemy(sim, archetype)) }
         val withOne = Scene.compose(sim, camera(), backdrop(sim), hudOf(sim), 0.0, SceneBuilder())
@@ -370,7 +397,9 @@ class SceneTest {
             }
         }.max()
     }
+}
 
+class SceneActorTest : SceneFixture() {
     /**
      * The animation's action window must be the simulation's, not a second constant beside it.
      * Written independently they drifted at once: the arm's sweep ran 0.18 s against a swing the
@@ -406,7 +435,7 @@ class SceneTest {
     @Test
     fun `an armed enemy turns to face what it is shooting at`() {
         val sim = simulation()
-        trimTo(sim, 0)
+        clearEnemies(sim)
         val behind = sim.player.x - CLOSE
         sim.enemies.add(facingAway(sim, EnemyArchetype.Shooter, behind))
         sim.enemies.add(facingAway(sim, EnemyArchetype.Turret, behind))
@@ -426,7 +455,7 @@ class SceneTest {
     @Test
     fun `a shooter firing upward aims its weapon upward`() {
         val sim = simulation()
-        trimTo(sim, 0)
+        clearEnemies(sim)
         // Beside the player and well below it, so tracking has a real vertical component.
         val below = LiveEnemy(
             EnemyArchetype.Shooter,
@@ -458,7 +487,7 @@ class SceneTest {
     @Test
     fun `a head never paints over its own eye`() {
         val sim = simulation()
-        trimTo(sim, 0)
+        clearEnemies(sim)
         // The Flyer first: it opens a glow batch before any biped's head batch exists.
         sim.enemies.add(facingAway(sim, EnemyArchetype.Flyer, sim.player.x + CLOSE))
         sim.enemies.add(facingAway(sim, EnemyArchetype.Brute, sim.player.x + CLOSE * 2.0))
@@ -498,7 +527,7 @@ class SceneTest {
     @Test
     fun `an unarmed enemy keeps walking its patrol`() {
         val sim = simulation()
-        trimTo(sim, 0)
+        clearEnemies(sim)
         sim.enemies.add(facingAway(sim, EnemyArchetype.Brute, sim.player.x - CLOSE))
 
         val motionless = Scene.compose(sim, camera(), backdrop(sim), hudOf(sim), 0.0, SceneBuilder())
@@ -518,18 +547,16 @@ class SceneTest {
     @Test
     fun `an armed enemy out of range keeps its patrol facing`() {
         val sim = simulation()
-        trimTo(sim, 0)
+        clearEnemies(sim)
         val faraway = sim.player.x + GameSimulation.SHOOTER_RANGE * 4.0
         sim.enemies.add(facingAway(sim, EnemyArchetype.Turret, faraway))
 
         val frame = Scene.compose(sim, camera(), backdrop(sim), hudOf(sim), 0.0, SceneBuilder())
-        val barrel = frame.batches.firstOrNull {
+        val barrel = assertNotNull(frame.batches.firstOrNull {
             it.style == Palettes.ENEMY_PLATE && it.primitive == Primitive.Segment
-        }
-
-        assertTrue(barrel != null, "the distant turret was not drawn")
+        }, "the distant turret was not drawn")
         assertTrue(
-            barrel!![2] < barrel[0],
+            barrel[2] < barrel[0],
             "a turret out of firing range is still tracking the player",
         )
     }
@@ -556,7 +583,7 @@ class SceneTest {
     @Test
     fun `the player's weapon follows what the game is aiming at`() {
         val sim = simulation()
-        trimTo(sim, 0)
+        clearEnemies(sim)
         // Directly above and slightly behind: no facing-relative default can produce this.
         val target = Vec2(sim.player.x - CLOSE, sim.player.y - CLOSE * 3.0)
         sim.enemies.add(
@@ -634,7 +661,7 @@ class SceneTest {
     @Test
     fun `an enemy in a swing draws a swoosh whose outer radius is its reach`() {
         val sim = simulation()
-        trimTo(sim, 0)
+        clearEnemies(sim)
         val brute = enemy(sim, EnemyArchetype.Brute)
         val reach = 24.0
         brute.lastSwing = SwingVisual(
@@ -663,18 +690,21 @@ class SceneTest {
     @Test
     fun `an enemy shot draws a flash at the posed barrel`() {
         val sim = simulation()
-        trimTo(sim, 0)
+        clearEnemies(sim)
         val shooter = enemy(sim, EnemyArchetype.Shooter)
         shooter.lastShot = MuzzleFlash(direction = Vec2.Right, secondsLeft = 0.1, totalSeconds = 0.1)
         sim.enemies.add(shooter)
 
         val frame = Scene.compose(sim, camera(), backdrop(sim), hudOf(sim), 0.0, SceneBuilder())
-        val flash = frame.batches.firstOrNull { it.layer == Layer.Effects && it.primitive == Primitive.Dot }
-        assertTrue(flash != null && flash.size >= 1, "no muzzle flash was drawn for a firing enemy")
+        val flash = assertNotNull(
+            frame.batches.firstOrNull { it.layer == Layer.Effects && it.primitive == Primitive.Dot },
+            "no muzzle flash was drawn for a firing enemy",
+        )
+        assertTrue(flash.size >= 1, "the muzzle-flash batch was empty")
 
         val pose = Actor.pose(Scene.enemyMotion(sim, shooter))
-        val barrel = enemyFeet(sim, shooter) + Scene.barrelTip(pose) * Scene.ZOOM
-        assertEquals(barrel.x, flash!![0], 1e-6, "the flash is not at the barrel")
+        val barrel = enemyFeet(shooter) + Scene.barrelTip(pose) * Scene.ZOOM
+        assertEquals(barrel.x, flash[0], 1e-6, "the flash is not at the barrel")
         assertEquals(barrel.y, flash[1], 1e-6, "the flash is not at the barrel")
     }
 
@@ -748,10 +778,10 @@ class SceneTest {
         while (sim.lastSwing == null) sim.tick(InputFrame())
         val swing = sim.lastSwing!!
         assertTrue(swing.reachPx > Weapons.of(WeaponId.RustlineMachete).rangePx, "fixture: optics did not extend the reach")
-        trimTo(sim, 0)
+        clearEnemies(sim)
 
         val frame = Scene.compose(sim, camera(), backdrop(sim), hudOf(sim), 0.0, SceneBuilder())
-        val origin = playerCentre(sim) * Scene.ZOOM
+        val origin = sim.player.centre(Physics.Default) * Scene.ZOOM
         var outer = 0.0
         frame.batches.filter { it.layer == Layer.Effects && it.primitive == Primitive.Segment }.forEach { batch ->
             for (n in 0 until batch.size) {
@@ -768,11 +798,11 @@ class SceneTest {
         val pistol = Weapons.all.first { it.cls == WeaponClass.Ranged && it.projectileSpeed > 0.0 && it.anchor == Anchor.Self }
         val sim = simulation(pistol.id)
         while (sim.lastShot == null) sim.tick(InputFrame())
-        trimTo(sim, 0)
+        clearEnemies(sim)
 
         val frame = Scene.compose(sim, camera(), backdrop(sim), hudOf(sim), 0.0, SceneBuilder())
         val pose = Actor.pose(Scene.motionOf(sim))
-        val feet = Vec2(playerCentre(sim).x, sim.player.y + sim.player.height(Physics.Default)) * Scene.ZOOM
+        val feet = Vec2(sim.player.centre(Physics.Default).x, sim.player.y + sim.player.height(Physics.Default)) * Scene.ZOOM
         val muzzle = feet + Scene.muzzleOf(pose, pistol) * Scene.ZOOM
         // The core shares the accent batch with the projectile it launched, so every dot is a candidate.
         val dots = frame.batches.filter { it.layer == Layer.Effects && it.primitive == Primitive.Dot }.flatMap { batch ->
@@ -781,42 +811,42 @@ class SceneTest {
         assertTrue(dots.any { (it - muzzle).length < 1e-6 }, "no flash at the muzzle $muzzle; dots at $dots")
     }
 
-    /** PROD-066: a weapon with no barrel shows an activation pulse — a ring around the weapon. */
     @Test
-    fun `the Kessler draws an activation pulse rather than a flash`() = assertPulses(WeaponId.KesslerOrbitalUplink)
+    fun `barrel-less weapons draw activation pulses rather than flashes`() {
+        listOf(WeaponId.KesslerOrbitalUplink, WeaponId.NeuralSpike).forEach { id ->
+            val sim = simulation(id)
+            while (sim.lastShot == null) sim.tick(InputFrame())
+            clearEnemies(sim)
 
-    /** Gate-2 finding: a psychic orb has no barrel either, whatever it is anchored to. */
-    @Test
-    fun `a psychic weapon draws an activation pulse rather than a flash`() = assertPulses(WeaponId.NeuralSpike)
-
-    private fun assertPulses(id: WeaponId) {
-        val sim = simulation(id)
-        while (sim.lastShot == null) sim.tick(InputFrame())
-        trimTo(sim, 0)
-
-        val frame = Scene.compose(sim, camera(), backdrop(sim), hudOf(sim), 0.0, SceneBuilder())
-        val cues = frame.batches.filter { it.layer == Layer.Effects && it.primitive == Primitive.Segment }
-        assertTrue(cues.isNotEmpty(), "no activation cue was drawn")
-        val pose = Actor.pose(Scene.motionOf(sim))
-        val feet = Vec2(playerCentre(sim).x, sim.player.y + sim.player.height(Physics.Default)) * Scene.ZOOM
-        val weapon = feet + Scene.muzzleOf(pose, Weapons.of(id)) * Scene.ZOOM
-        val radii = mutableListOf<Double>()
-        cues.forEach { batch ->
-            for (n in 0 until batch.size) {
-                val i = n * Primitive.Segment.stride
-                radii.add((Vec2(batch[i], batch[i + 1]) - weapon).length)
-                radii.add((Vec2(batch[i + 2], batch[i + 3]) - weapon).length)
+            val frame = Scene.compose(sim, camera(), backdrop(sim), hudOf(sim), 0.0, SceneBuilder())
+            val cues = frame.batches.filter { it.layer == Layer.Effects && it.primitive == Primitive.Segment }
+            assertTrue(cues.isNotEmpty(), "$id: no activation cue was drawn")
+            val pose = Actor.pose(Scene.motionOf(sim))
+            val feet = Vec2(
+                sim.player.centre(Physics.Default).x,
+                sim.player.y + sim.player.height(Physics.Default),
+            ) * Scene.ZOOM
+            val weapon = feet + Scene.muzzleOf(pose, Weapons.of(id)) * Scene.ZOOM
+            val radii = mutableListOf<Double>()
+            cues.forEach { batch ->
+                for (n in 0 until batch.size) {
+                    val i = n * Primitive.Segment.stride
+                    radii.add((Vec2(batch[i], batch[i + 1]) - weapon).length)
+                    radii.add((Vec2(batch[i + 2], batch[i + 3]) - weapon).length)
+                }
             }
+            // Tracers and hit indicators share the layer (PROD-071), so the pulse is the one radius
+            // that a whole polygon of endpoints sits on.
+            val onRing = radii.filter { it > 1.0 }
+                .groupBy { kotlin.math.round(it * 1e6) / 1e6 }
+                .values
+                .maxOfOrNull { it.size } ?: 0
+            assertTrue(onRing >= 8, "$id: the cue is not a ring around the weapon: radii $radii")
         }
-        // Tracers and hit indicators share the layer (PROD-071), so the pulse is the one radius
-        // that a whole polygon of endpoints sits on.
-        val onRing = radii.filter { it > 1.0 }.groupBy { kotlin.math.round(it * 1e6) / 1e6 }.values.maxOfOrNull { it.size } ?: 0
-        assertTrue(onRing >= 8, "the cue is not a ring around the weapon: radii $radii")
     }
+}
 
-    private fun playerCentre(sim: GameSimulation) =
-        Vec2(sim.player.x + Physics.Default.width / 2.0, sim.player.y + sim.player.height(Physics.Default) / 2.0)
-
+class SceneWorldTest : SceneFixture() {
     /** `specs/hazards.md`: spikes and barrels are drawn on the hazard layer, in the hazard colours. */
     @Test
     fun `spikes and barrels draw on the hazard layer`() {
@@ -830,7 +860,7 @@ class SceneTest {
         fun hazardPrimitives(s: GameSimulation) = Scene.compose(s, camera(), backdrop(s), hudOf(s), 0.0, SceneBuilder())
             .batches.filter { it.layer == Layer.Hazard }.sumOf { it.size }
 
-        assertTrue(hazardPrimitives(plain) == 0, "fixture: the bare level already draws hazards")
+        assertEquals(0, hazardPrimitives(plain), "fixture: the bare level already draws hazards")
         assertTrue(hazardPrimitives(sim) > 0, "spikes and a barrel drew nothing on the hazard layer")
     }
 
@@ -881,12 +911,14 @@ class SceneTest {
         assertTrue(firstLocal != nextLocal, "neighbouring glass tiles are identical translations")
         assertEquals(2, glassBatches(frame(column..column + 8, 0.0)).size)
     }
+}
 
+class SceneActorEquipmentTest : SceneFixture() {
     /** Round-3 finding: a shot resolves on the aim taken at wind-up start, so that is what the telegraph shows. */
     @Test
     fun `a shooter's telegraph holds the aim it took, not where the player is now`() {
         val sim = simulation()
-        trimTo(sim, 0)
+        clearEnemies(sim)
         val shooter = enemy(sim, EnemyArchetype.Shooter)
         shooter.position = Vec2(sim.player.x + CLOSE * 2.0, sim.player.y)
         sim.enemies.add(shooter)
@@ -907,7 +939,7 @@ class SceneTest {
     fun `a flyer and a turret winding up look different from ones that are not`() {
         listOf(EnemyArchetype.Flyer, EnemyArchetype.Turret).forEach { archetype ->
             val sim = simulation()
-            trimTo(sim, 0)
+            clearEnemies(sim)
             val enemy = enemy(sim, archetype)
             sim.enemies.add(enemy)
             fun primitives() = Scene.compose(sim, camera(), backdrop(sim), hudOf(sim), 0.0, SceneBuilder())
@@ -934,13 +966,6 @@ class SceneTest {
         assertEquals(Clip.JumpFall, Actor.clipOf(Scene.enemyMotion(sim, enemy)))
     }
 
-    /** Where an enemy's posed lead hand lands on screen, with the camera at the origin. */
-    private fun enemyHand(sim: GameSimulation, enemy: LiveEnemy): Vec2 =
-        enemyFeet(sim, enemy) + Actor.pose(Scene.enemyMotion(sim, enemy)).leadHand * Scene.ZOOM
-
-    private fun enemyFeet(sim: GameSimulation, enemy: LiveEnemy): Vec2 =
-        Vec2(enemy.position.x + 7.0, enemy.position.y + 16.0) * Scene.ZOOM
-
     /**
      * PROD-041 and `specs/presentation.md`: the weapon attaches to the lead hand.
      *
@@ -951,7 +976,7 @@ class SceneTest {
     @Test
     fun `the player is drawn holding the weapon it is carrying`() {
         val sim = simulation()
-        trimTo(sim, 0)
+        clearEnemies(sim)
 
         val frame = Scene.compose(sim, camera(), backdrop(sim), hudOf(sim), 0.0, SceneBuilder())
         val held = frame.batches.filter {
@@ -989,7 +1014,9 @@ class SceneTest {
         assertEquals(sim.run.mapIndex, model.mapIndex)
         assertTrue(model.healthFraction in 0.0..1.0)
     }
+}
 
+class SceneCombatEffectTest : SceneFixture() {
     // ---- PROD-071 / P-43: every shot shows where it went ---------------------------------------
 
     /** The shot layers and the effects layer: where every attack's marks are drawn. */
@@ -1023,8 +1050,7 @@ class SceneTest {
         val pistol = Weapons.of(WeaponId.ScraplineZipPistol)
         val sim = simulation(pistol.id)
         while (sim.projectiles.none { it.fromPlayer }) sim.tick(InputFrame())
-        trimTo(sim, 0)
-        val palette = Palettes.of(sim.level.theme)
+        clearEnemies(sim)
         val shot = sim.projectiles.first { it.fromPlayer }
         val head = shot.position * Scene.ZOOM
         val tail = (shot.position - shot.velocity * Scene.TRACER_SECONDS) * Scene.ZOOM
@@ -1032,9 +1058,11 @@ class SceneTest {
         val frame = frameOf(sim)
 
         val style = ShotLooks.RANGED.body
-        val body = dotsOf(frame, style).firstOrNull { (at, _) -> (at - head).length < 1e-6 }
-        assertTrue(body != null, "no body at $head")
-        assertEquals(shot.radius * Scene.ZOOM, body!!.second, 1e-9, "the body is not drawn at the hit radius")
+        val body = assertNotNull(
+            dotsOf(frame, style).firstOrNull { (at, _) -> (at - head).length < 1e-6 },
+            "no body at $head",
+        )
+        assertEquals(shot.radius * Scene.ZOOM, body.second, 1e-9, "the body is not drawn at the hit radius")
         assertTrue(hasSegment(segmentsOf(frame, ShotLooks.RANGED.core), head, tail), "no tracer from $head to $tail: ${segmentsOf(frame, style)}")
     }
 
@@ -1042,14 +1070,14 @@ class SceneTest {
     fun `Ashfall flash and tracer follow the upward ballistic tangent`() {
         val weapon = Weapons.of(WeaponId.AshfallGrenadeLobber)
         val sim = simulation(weapon.id)
-        trimTo(sim, 0)
+        clearEnemies(sim)
         while (sim.projectiles.none { it.fromPlayer }) sim.tick(InputFrame())
         val shot = sim.projectiles.first { it.fromPlayer }
         val flash = sim.lastShot!!
         assertTrue(flash.direction.y < 0.0, "flash did not point upward: ${flash.direction}")
 
         val pose = Actor.pose(Scene.motionOf(sim))
-        val feet = Vec2(playerCentre(sim).x, sim.player.y + sim.player.height(Physics.Default)) * Scene.ZOOM
+        val feet = Vec2(sim.player.centre(Physics.Default).x, sim.player.y + sim.player.height(Physics.Default)) * Scene.ZOOM
         val muzzle = feet + Scene.muzzleOf(pose, weapon) * Scene.ZOOM
         val frame = frameOf(sim)
         val flashSegments = segmentsOf(frame).filter { (from, _) -> (from - muzzle).length < 1e-6 }
@@ -1070,43 +1098,55 @@ class SceneTest {
         assertShotMarks(frameOf(sim), shot.position, shot.velocity, shot.radius, ShotLooks.RANGED)
     }
 
-    /** P-53 (PROD-080): a ranged build's shot is four marks in the ranged look. */
+    /** P-53 (PROD-080): every projectile kind uses its own fixed marks and two-tone tracer. */
     @Test
-    fun `a ranged shot draws glow, body, core and a two-tone tracer in the ranged look`() {
-        val sim = simulation(WeaponId.ScraplineZipPistol)
-        while (sim.projectiles.none { it.fromPlayer }) sim.tick(InputFrame())
-        trimTo(sim, 0)
-        val shot = sim.projectiles.first { it.fromPlayer }
+    fun `projectile kinds use their ranged psychic and enemy looks`() {
+        data class Case(
+            val label: String,
+            val sim: GameSimulation,
+            val look: ShotLook,
+            val position: Vec2,
+            val velocity: Vec2,
+            val radius: Double,
+            val forbiddenBody: String? = null,
+        )
 
-        assertShotMarks(frameOf(sim), shot.position, shot.velocity, shot.radius, ShotLooks.RANGED)
-    }
+        fun fired(label: String, id: WeaponId, look: ShotLook, forbiddenBody: String? = null): Case {
+            val sim = simulation(id)
+            while (sim.projectiles.none { it.fromPlayer }) sim.tick(InputFrame())
+            clearEnemies(sim)
+            val shot = sim.projectiles.first { it.fromPlayer }
+            return Case(label, sim, look, shot.position, shot.velocity, shot.radius, forbiddenBody)
+        }
 
-    @Test
-    fun `a psychic shot takes the psychic look`() {
-        val sim = simulation(WeaponId.NeuralSpike)
-        while (sim.projectiles.none { it.fromPlayer }) sim.tick(InputFrame())
-        trimTo(sim, 0)
-        val shot = sim.projectiles.first { it.fromPlayer }
-        assertEquals(io.github.ksean.cyberslop.combat.WeaponClass.Psychic, shot.weapon?.spec?.cls, "fixture: not a psychic shot")
+        val enemySim = simulation().also { clearEnemies(it) }
+        val palette = Palettes.of(enemySim.level.theme)
+        val enemyPosition = enemySim.player.centre(Physics.Default) + Vec2(40.0, 0.0)
+        val enemyVelocity = Vec2(-340.0, 0.0)
+        val enemyLook = ShotLooks.enemy(palette)
+        enemySim.projectiles.add(
+            io.github.ksean.cyberslop.sim.LiveProjectile(
+                enemyPosition, enemyVelocity, 1.0, 0, 1.0,
+                passesTerrain = false,
+                fromPlayer = false,
+            ),
+        )
 
-        val frame = frameOf(sim)
-        assertShotMarks(frame, shot.position, shot.velocity, shot.radius, ShotLooks.PSYCHIC)
-        assertTrue(dotsOf(frame, ShotLooks.RANGED.body).isEmpty(), "a psychic shot drew a ranged body")
-    }
+        assertEquals(palette.hazard, enemyLook.body, "enemy: body is not the theme hazard")
+        assertEquals(ShotLooks.ENEMY_CORE, enemyLook.core, "enemy: core is not white")
+        val cases = listOf(
+            fired("ranged", WeaponId.ScraplineZipPistol, ShotLooks.RANGED),
+            fired("psychic", WeaponId.NeuralSpike, ShotLooks.PSYCHIC, ShotLooks.RANGED.body),
+            Case("enemy", enemySim, enemyLook, enemyPosition, enemyVelocity, 6.0),
+        )
 
-    @Test
-    fun `an enemy shot takes the hazard look with a white core`() {
-        val sim = simulation()
-        trimTo(sim, 0)
-        val palette = Palettes.of(sim.level.theme)
-        val position = playerCentre(sim) + Vec2(40.0, 0.0)
-        val velocity = Vec2(-340.0, 0.0)
-        sim.projectiles.add(io.github.ksean.cyberslop.sim.LiveProjectile(position, velocity, 1.0, 0, 1.0, passesTerrain = false, fromPlayer = false))
-
-        val look = ShotLooks.enemy(palette)
-        assertEquals(palette.hazard, look.body)
-        assertEquals(ShotLooks.ENEMY_CORE, look.core)
-        assertShotMarks(frameOf(sim), position, velocity, 6.0, look)
+        cases.forEach { case ->
+            val frame = frameOf(case.sim)
+            assertShotMarks(frame, case.position, case.velocity, case.radius, case.look, case.label)
+            case.forbiddenBody?.let { forbidden ->
+                assertTrue(dotsOf(frame, forbidden).isEmpty(), "${case.label}: drew forbidden body $forbidden")
+            }
+        }
     }
 
     /** P-53: the marks are a fixed vocabulary of batches, however many shots are flying. */
@@ -1114,8 +1154,8 @@ class SceneTest {
     fun `fifty shots of every look open no more effect batches than one of each`() {
         fun frameWith(count: Int): DrawList {
             val sim = simulation(WeaponId.ScraplineZipPistol)
-            trimTo(sim, 0)
-            val at = playerCentre(sim)
+            clearEnemies(sim)
+            val at = sim.player.centre(Physics.Default)
             val ranged = io.github.ksean.cyberslop.combat.DamagePipeline.resolve(Weapons.of(WeaponId.ScraplineZipPistol), sim.run.loadout.slots)
             val psychic = io.github.ksean.cyberslop.combat.DamagePipeline.resolve(Weapons.of(WeaponId.NeuralSpike), sim.run.loadout.slots)
             repeat(count) { n ->
@@ -1131,18 +1171,25 @@ class SceneTest {
         assertEquals(one, fifty, "fifty shots of each look opened $fifty effect batches against $one")
     }
 
-    private fun assertShotMarks(frame: DrawList, position: Vec2, velocity: Vec2, radius: Double, look: ShotLook) {
+    private fun assertShotMarks(
+        frame: DrawList,
+        position: Vec2,
+        velocity: Vec2,
+        radius: Double,
+        look: ShotLook,
+        label: String = "shot",
+    ) {
         val head = position * Scene.ZOOM
         val tail = (position - velocity * Scene.TRACER_SECONDS) * Scene.ZOOM
         fun radiusOf(style: String) = dotsOf(frame, style).firstOrNull { (at, _) -> (at - head).length < 1e-6 }?.second
-        assertEquals(radius * Scene.ZOOM * Scene.SHOT_GLOW, radiusOf(look.glow) ?: -1.0, 1e-9, "no glow at $head in ${look.glow}")
-        assertEquals(radius * Scene.ZOOM, radiusOf(look.body) ?: -1.0, 1e-9, "no body at $head in ${look.body}")
-        assertEquals(radius * Scene.ZOOM * Scene.SHOT_CORE, radiusOf(look.core) ?: -1.0, 1e-9, "no core at $head in ${look.core}")
-        assertTrue(hasSegment(segmentsOf(frame, look.glow), head, tail), "no bloom tracer in ${look.glow}")
-        assertTrue(hasSegment(segmentsOf(frame, look.core), head, tail), "no core tracer in ${look.core}")
+        assertEquals(radius * Scene.ZOOM * Scene.SHOT_GLOW, radiusOf(look.glow) ?: -1.0, 1e-9, "$label: no glow at $head in ${look.glow}")
+        assertEquals(radius * Scene.ZOOM, radiusOf(look.body) ?: -1.0, 1e-9, "$label: no body at $head in ${look.body}")
+        assertEquals(radius * Scene.ZOOM * Scene.SHOT_CORE, radiusOf(look.core) ?: -1.0, 1e-9, "$label: no core at $head in ${look.core}")
+        assertTrue(hasSegment(segmentsOf(frame, look.glow), head, tail), "$label: no bloom tracer in ${look.glow}")
+        assertTrue(hasSegment(segmentsOf(frame, look.core), head, tail), "$label: no core tracer in ${look.core}")
         val bloom = frame.batches.filter { it.layer.isEffect() && it.primitive == Primitive.Segment && it.style == look.glow }.maxOf { it.width }
         val core = frame.batches.filter { it.layer.isEffect() && it.primitive == Primitive.Segment && it.style == look.core }.maxOf { it.width }
-        assertTrue(bloom > core, "the bloom ($bloom) is not wider than the core ($core)")
+        assertTrue(bloom > core, "$label: the bloom ($bloom) is not wider than the core ($core)")
         assertShotLayers(frame, look)
     }
 
@@ -1170,10 +1217,10 @@ class SceneTest {
     @Test
     fun `a psychic shot spent on the tick it was fired leaves a violet impact`() {
         val sim = simulation(WeaponId.NeuralSpike)
-        trimTo(sim, 0)
+        clearEnemies(sim)
         val target = enemy(sim, EnemyArchetype.Brute)
         // On the muzzle, which for a psychic weapon is the player's centre: spent the tick it leaves.
-        target.position = playerCentre(sim) + Vec2(2.0, -7.0)
+        target.position = sim.player.centre(Physics.Default) + Vec2(2.0, -LiveEnemy.BODY_HALF)
         target.health = 1e9
         sim.enemies.add(target)
         while (sim.lastShot == null) sim.tick(InputFrame())
@@ -1196,9 +1243,9 @@ class SceneTest {
     fun `impacts of different ages keep glow under body under core`() {
         // Two point-blank slugs, four ticks apart, so the older impact has thinned when the fresher one lands.
         val sim = simulation(WeaponId.ScraplineZipPistol)
-        trimTo(sim, 0)
+        clearEnemies(sim)
         val target = enemy(sim, EnemyArchetype.Brute)
-        target.position = playerCentre(sim) + Vec2(8.0, -7.0)
+        target.position = sim.player.centre(Physics.Default) + Vec2(8.0, -LiveEnemy.BODY_HALF)
         target.health = 1e9
         sim.enemies.add(target)
         while (sim.impacts.isEmpty()) sim.tick(InputFrame())
@@ -1207,20 +1254,20 @@ class SceneTest {
         sim.autoFire.remaining = 0.0
         while (sim.impacts.size < 2) sim.tick(InputFrame())
         val ages = sim.impacts.map { it.strength }.toSet()
-        assertTrue(ages.size == 2, "fixture: the two impacts have the same age $ages")
+        assertEquals(2, ages.size, "fixture: the two impacts have the same age $ages")
 
         val frame = frameOf(sim)
         val bloomWidths = frame.batches.filter { it.layer.isEffect() && it.style == ShotLooks.RANGED.glow && it.primitive == Primitive.Segment }.map { it.width }.toSet()
-        assertTrue(bloomWidths.size == 2, "fixture: the two impacts share a bloom width $bloomWidths")
+        assertEquals(2, bloomWidths.size, "fixture: the two impacts share a bloom width $bloomWidths")
         assertShotLayers(frame, ShotLooks.RANGED)
     }
 
     @Test
     fun `an enemy projectile draws its body and tracer in the hazard colour`() {
         val sim = simulation()
-        trimTo(sim, 0)
+        clearEnemies(sim)
         val palette = Palettes.of(sim.level.theme)
-        val position = playerCentre(sim) + Vec2(40.0, 0.0)
+        val position = sim.player.centre(Physics.Default) + Vec2(40.0, 0.0)
         val velocity = Vec2(-340.0, 0.0)
         sim.projectiles.add(io.github.ksean.cyberslop.sim.LiveProjectile(position, velocity, 1.0, 0, 1.0, passesTerrain = false, fromPlayer = false))
 
@@ -1268,13 +1315,13 @@ class SceneTest {
 
     @Test
     fun `a chain that strikes nothing leaves no indicator`() {
-        val sim = io.github.ksean.cyberslop.sim.GameSimulation(
+        val sim = GameSimulation(
             TestLevels.flat(),
             RunState.begin(TestLevels.SEED).copy(loadout = RunState.begin(TestLevels.SEED).loadout.copy(weapon = Weapons.of(WeaponId.GhostwireTether))),
             TestLevels.SEED,
         )
         repeat(120) { sim.tick(InputFrame()) }
-        assertTrue(sim.lastHit == null, "an empty chain recorded ${sim.lastHit}")
+        assertNull(sim.lastHit, "an empty chain recorded ${sim.lastHit}")
     }
 
     @Test
@@ -1294,21 +1341,20 @@ class SceneTest {
     fun `a hit indicator is gone after the flash window`() {
         val sim = simulation(WeaponId.MigraineLoop)
         while (sim.lastHit == null) sim.tick(InputFrame())
-        trimTo(sim, 0)
+        clearEnemies(sim)
         sim.autoFire.remaining = 100.0
         repeat((GameSimulation.FLASH_VISIBLE_SECONDS / io.github.ksean.cyberslop.physics.TICK_SECONDS).toInt() + 1) { sim.tick(InputFrame()) }
-        assertTrue(sim.lastHit == null, "the indicator outlived its window")
+        assertNull(sim.lastHit, "the indicator outlived its window")
     }
 
     /** Round-1 finding: a shot that spawns, travels and hits inside one tick was never drawn. */
     @Test
     fun `a projectile spent on the tick it was fired still leaves its line of flight`() {
         val sim = simulation(WeaponId.ScraplineZipPistol)
-        trimTo(sim, 0)
-        val palette = Palettes.of(sim.level.theme)
+        clearEnemies(sim)
         // Standing in the muzzle: the slug hits before the frame it would have been drawn in.
         val target = enemy(sim, EnemyArchetype.Brute)
-        target.position = playerCentre(sim) + Vec2(8.0, -7.0)
+        target.position = sim.player.centre(Physics.Default) + Vec2(8.0, -LiveEnemy.BODY_HALF)
         target.health = 1e9
         sim.enemies.add(target)
         while (sim.lastShot == null) sim.tick(InputFrame())
@@ -1368,8 +1414,7 @@ class SceneTest {
             val sim = simulation(id)
             while (sim.lastHit == null) sim.tick(InputFrame())
             val ring = sim.lastHit!!.shape as io.github.ksean.cyberslop.sim.HitShape.Ring
-            val pattern = Weapons.of(id).pattern
-            val declared = when (pattern) {
+            val declared = when (val pattern = Weapons.of(id).pattern) {
                 is io.github.ksean.cyberslop.combat.FirePattern.Pull -> pattern.radius
                 is io.github.ksean.cyberslop.combat.FirePattern.Orbit -> pattern.radius
                 else -> error("$id is not a pull or orbit")
@@ -1385,7 +1430,7 @@ class SceneTest {
     fun `a hit indicator fades over its window`() {
         val sim = simulation(WeaponId.MigraineLoop)
         while (sim.lastHit == null) sim.tick(InputFrame())
-        trimTo(sim, 0)
+        clearEnemies(sim)
         sim.autoFire.remaining = 100.0
         val ring = sim.lastHit!!.shape as io.github.ksean.cyberslop.sim.HitShape.Ring
         val centre = ring.centre * Scene.ZOOM
@@ -1397,8 +1442,17 @@ class SceneTest {
         val faded = ringWidth()
         assertTrue(faded < fresh, "the ring did not fade: $fresh then $faded")
     }
+}
 
-    private fun simulation(weapon: WeaponId = WeaponId.BrokenBottle, slots: PowerupSlots? = null): GameSimulation {
+abstract class SceneFixture {
+    /** Where an enemy's posed lead hand lands on screen, with the camera at the origin. */
+    protected fun enemyHand(sim: GameSimulation, enemy: LiveEnemy): Vec2 =
+        enemyFeet(enemy) + Actor.pose(Scene.enemyMotion(sim, enemy)).leadHand * Scene.ZOOM
+
+    protected fun enemyFeet(enemy: LiveEnemy): Vec2 =
+        Vec2(enemy.centre.x, enemy.position.y + LiveEnemy.FEET_OFFSET) * Scene.ZOOM
+
+    protected fun simulation(weapon: WeaponId = WeaponId.BrokenBottle, slots: PowerupSlots? = null): GameSimulation {
         val level = LevelGenerator.generate(SEED, 1).level
         var run = RunState.begin(SEED)
         if (weapon != WeaponId.BrokenBottle) {
@@ -1419,19 +1473,17 @@ class SceneTest {
         }
     }
 
-    private fun camera() = Camera(0.0, 0.0, VIEW_WIDTH, VIEW_HEIGHT)
+    protected fun camera() = Camera(0.0, 0.0, VIEW_WIDTH, VIEW_HEIGHT)
 
-    private fun backdrop(sim: GameSimulation) =
+    protected fun backdrop(sim: GameSimulation) =
         Backdrops.of(SEED, sim.level)
 
-    private fun hudOf(sim: GameSimulation) =
+    protected fun hudOf(sim: GameSimulation) =
         HudModel.of(sim.run, sim.level.theme, MAPS, sim.boss.spec.name, sim.boss.healthFraction)
 
-    private fun trimTo(sim: GameSimulation, count: Int) {
-        while (sim.enemies.size > count) sim.enemies.removeAt(sim.enemies.size - 1)
-    }
+    protected fun clearEnemies(sim: GameSimulation) = sim.enemies.clear()
 
-    private fun growTo(sim: GameSimulation, count: Int) {
+    protected fun growTo(sim: GameSimulation, count: Int) {
         val archetypes = EnemyArchetype.entries
         while (sim.enemies.size < count) {
             sim.enemies.add(enemy(sim, archetypes[sim.enemies.size % archetypes.size]))
@@ -1439,7 +1491,7 @@ class SceneTest {
     }
 
     /** Placed inside the view, so it is actually drawn rather than culled. */
-    private fun enemy(sim: GameSimulation, archetype: EnemyArchetype): LiveEnemy {
+    protected fun enemy(sim: GameSimulation, archetype: EnemyArchetype): LiveEnemy {
         val index = sim.enemies.size
         val x = sim.player.x + (index % SPREAD) * SPACING
         return LiveEnemy(
@@ -1451,47 +1503,4 @@ class SceneTest {
         )
     }
 
-    private companion object {
-        val SEED = 0xC0FFEEuL
-        const val VIEW_WIDTH = 560.0
-        const val VIEW_HEIGHT = 320.0
-        const val FEW = 10
-        const val MANY = 600
-        const val MAPS = 10
-        const val SPREAD = 24
-        const val SPACING = 20.0
-        const val CLOSE = 40.0
-        const val ONE_PIXEL = 1.0
-        const val TINY = 1e-9
-
-        /**
-         * Back to front, as an actor is built: rear limbs, then the body they hang off, then the
-         * head, then what is held in front of it, then armour bolted on, then the lit eye.
-         */
-        val ROLE_STACK = listOf(
-            Layer.ActorBehind,
-            Layer.Actors,
-            Layer.ActorHead,
-            Layer.ActorFront,
-            Layer.ActorTrim,
-            Layer.ActorGlow,
-        )
-
-        /**
-         * Bounded by `layers x styles x widths`: fourteen layers over roughly a dozen and a half
-         * distinct colours, of which only a fraction ever co-occur. Generous, and still a constant
-         * that no number of entities can move.
-         *
-         * Raised from 72 when item icons arrived (`specs/presentation.md`, Item icons). **Measured** on a deliberately
-         * worst-case frame — 600 enemies, all forty-four icons on the ground at once, a full
-         * five-slot build in the display and an Ascended weapon in hand — at **90**: 23 of them on
-         * the two item layers, where a rectangle used to cost 3. The ceiling is what it is because
-         * the design opens a batch per ladder width per colour, and five rarity scales put eight
-         * ladder widths in play; what matters is that a frame with one drop and a frame with a
-         * hundred open the same ones. Raised again to 120 for the hurt flash (PROD-076): a frame
-         * holding hurt and unhurt figures of every form opens up to fifteen red batches beside
-         * their own, **measured** at 105 on the same worst-case frame.
-         */
-        const val MAX_BATCHES = 120
-    }
 }

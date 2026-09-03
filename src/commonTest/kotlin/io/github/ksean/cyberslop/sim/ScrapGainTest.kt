@@ -2,7 +2,6 @@ package io.github.ksean.cyberslop.sim
 
 import io.github.ksean.cyberslop.combat.WeaponId
 import io.github.ksean.cyberslop.combat.Weapons
-import io.github.ksean.cyberslop.core.Vec2
 import io.github.ksean.cyberslop.entity.EnemyArchetype
 import io.github.ksean.cyberslop.loot.Loadout
 import io.github.ksean.cyberslop.loot.PowerupId
@@ -35,14 +34,14 @@ class ScrapGainTest {
         val before = sim.run.scrap
         sim.boss.fight.engage()
         sim.boss.fight.damage(sim.boss.spec.maxHealth)
-        sim.items += GroundItem(playerCentre(sim), Weapons.of(WeaponId.RustlineMachete), null)
+        sim.items += GroundItem.equipment(sim.player.centre(Physics.Default), weapon = Weapons.of(WeaponId.RustlineMachete))
 
         sim.tick(InputFrame())
 
         assertEquals(listOf(sim.run.scrap - before), sim.scrapGains.map { it.amount })
 
         val beforeLaterAward = sim.run.scrap
-        sim.items += GroundItem(playerCentre(sim), Weapons.of(WeaponId.VultureRailCarbine), null)
+        sim.items += GroundItem.equipment(sim.player.centre(Physics.Default), weapon = Weapons.of(WeaponId.VultureRailCarbine))
         sim.tick(InputFrame())
 
         assertEquals(2, sim.scrapGains.size)
@@ -60,7 +59,7 @@ class ScrapGainTest {
         repeat(20) { sim.tick(InputFrame(right = true)) }
 
         assertEquals(origin, sim.scrapGains.single().origin)
-        assertTrue(sim.player.x + Physics.Default.width / 2.0 > origin.x)
+        assertTrue(sim.player.centre(Physics.Default).x > origin.x)
 
         repeat(60) { sim.tick(InputFrame()) }
         assertTrue(sim.scrapGains.isEmpty(), "the label outlived ${GameSimulation.SCRAP_GAIN_SECONDS} s")
@@ -86,10 +85,9 @@ class ScrapGainTest {
             RunState.begin(TestLevels.SEED).copy(loadout = maxed),
             TestLevels.SEED,
         )
-        scrapped.items += GroundItem(
-            playerCentre(scrapped),
-            null,
-            Powerups.of(PowerupId.HollowpointFirmware),
+        scrapped.items += GroundItem.equipment(
+            position = scrapped.player.centre(Physics.Default),
+            powerup = Powerups.of(PowerupId.HollowpointFirmware),
         )
 
         val before = scrapped.run.scrap
@@ -102,10 +100,9 @@ class ScrapGainTest {
     @Test
     fun `a pickup that awards no Scrap creates no label`() {
         val sim = TestLevels.simulation()
-        sim.items += GroundItem(
-            playerCentre(sim),
-            null,
-            Powerups.of(PowerupId.HollowpointFirmware),
+        sim.items += GroundItem.equipment(
+            position = sim.player.centre(Physics.Default),
+            powerup = Powerups.of(PowerupId.HollowpointFirmware),
         )
 
         sim.tick(InputFrame())
@@ -114,6 +111,4 @@ class ScrapGainTest {
         assertTrue(sim.scrapGains.isEmpty())
     }
 
-    private fun playerCentre(sim: GameSimulation) =
-        Vec2(sim.player.x + Physics.Default.width / 2.0, sim.player.y + sim.player.height(Physics.Default) / 2.0)
 }

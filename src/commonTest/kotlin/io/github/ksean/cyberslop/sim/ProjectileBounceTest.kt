@@ -109,11 +109,11 @@ class ProjectileBounceTest {
         var ticks = 0
         while (enemyShot == null && ticks < 600) { sim.tick(InputFrame()); enemyShot = sim.projectiles.firstOrNull { !it.fromPlayer }; ticks++ }
         assertTrue(enemyShot != null, "fixture: the turret never fired")
-        assertEquals(0, enemyShot!!.bouncesLeft)
+        assertEquals(0, enemyShot.bouncesLeft)
     }
 
     /** A projectile's rule-bearing values as they were at one tick; the live object keeps changing. */
-    private data class Snapshot(val velocity: io.github.ksean.cyberslop.core.Vec2, val damage: Double, val pierceLeft: Int, val secondsLeft: Double, val bouncesLeft: Int)
+    private data class Snapshot(val velocity: Vec2, val damage: Double, val pierceLeft: Int, val secondsLeft: Double, val bouncesLeft: Int)
 
     private fun LiveProjectile.snapshot() = Snapshot(velocity, damage, pierceLeft, secondsLeft, bouncesLeft)
 
@@ -152,7 +152,7 @@ class ProjectileBounceTest {
     private fun simulation(weapon: WeaponId, stacks: Int, level: Level): GameSimulation {
         var slots = PowerupSlots.empty()
         repeat(stacks) { slots = slots.collect(PowerupId.RicochetRom).first }
-        val run = RunState.begin(TestLevels.SEED).let { it.copy(loadout = Loadout(Weapons.of(weapon), slots)) }
+        val run = RunState.begin(TestLevels.SEED).copy(loadout = Loadout(Weapons.of(weapon), slots))
         val sim = GameSimulation(level, run, TestLevels.SEED)
         if (level.tiles[4, TestLevels.FLOOR_ROW + 3] == TileKind.Empty) {
             TestLevels.enemyAt(sim, EnemyArchetype.Turret, column = 4, row = TestLevels.FLOOR_ROW + 3)

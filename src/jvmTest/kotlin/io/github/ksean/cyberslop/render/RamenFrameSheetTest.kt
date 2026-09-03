@@ -40,14 +40,11 @@ class RamenFrameSheetTest {
         return GameSimulation(level, run, SEED, optionalLoot = false).also { sim ->
             sim.enemies.clear()
             sim.items.clear()
-            sim.items += GroundItem(
+            sim.items += GroundItem.ramen(
                 Vec2(
                     TileMap.toWorld(TestLevels.SPAWN_COLUMN + 1) + TILE_SIZE / 2.0,
                     TileMap.toWorld(TestLevels.FLOOR_ROW) + TILE_SIZE / 2.0,
                 ),
-                null,
-                null,
-                ramen = true,
             )
         }
     }

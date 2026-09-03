@@ -15,7 +15,7 @@ class CombatBodyRenderEnvelopeTest {
         for (mapIndex in listOf(1, 10)) for (archetype in EnemyArchetype.entries) {
             val sim = simulation(mapIndex)
             val enemy = TestLevels.enemyAt(sim, archetype, column = 20)
-            val centre = screen(enemy.position + Vec2(GameSimulation.ENEMY_HALF, GameSimulation.ENEMY_HALF))
+            val centre = screen(enemy.centre)
 
             assertBodyInside(frameOf(sim), centre, CombatBodies.ENEMY_RADIUS * Scene.ZOOM, "$mapIndex $archetype")
         }

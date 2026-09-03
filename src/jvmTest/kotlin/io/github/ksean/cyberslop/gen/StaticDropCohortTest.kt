@@ -4,6 +4,7 @@ import io.github.ksean.cyberslop.core.Rng
 import io.github.ksean.cyberslop.loot.DropTable
 import io.github.ksean.cyberslop.run.RunState
 import io.github.ksean.cyberslop.sim.GameSimulation
+import io.github.ksean.cyberslop.sim.requireEquipment
 import io.github.ksean.cyberslop.verify.Foothold
 import io.github.ksean.cyberslop.verify.WitnessReplay
 import kotlin.test.Test
@@ -23,7 +24,7 @@ class StaticDropCohortTest {
 
         for (seed in 1uL..COHORT) {
             for (mapIndex in 1..10) {
-                val generated = LevelGenerator.generate(seed * SPREAD, mapIndex)
+                val generated = GeneratedLevels.generated(seed * SPREAD, mapIndex)
                 val level = generated.level
                 val footholds = WitnessReplay.replay(level, generated.witness).footholds
 
@@ -78,7 +79,7 @@ class StaticDropCohortTest {
     fun `no map in the cohort needs to place two pickups within a stride`() {
         for (seed in 1uL..COHORT) {
             for (mapIndex in 1..10) {
-                val pickups = LevelGenerator.generate(seed * SPREAD, mapIndex).level.pickups
+                val pickups = GeneratedLevels.level(seed * SPREAD, mapIndex).pickups
                 pickups.forEachIndexed { index, one ->
                     pickups.drop(index + 1).forEach { other ->
                         val gap = kotlin.math.abs(one.column - other.column)
@@ -106,12 +107,12 @@ class StaticDropCohortTest {
 
         for (seed in 1uL..COHORT) {
             for (mapIndex in listOf(3, 7, 10)) {
-                val level = LevelGenerator.generate(seed * SPREAD, mapIndex).level
+                val level = GeneratedLevels.level(seed * SPREAD, mapIndex)
                 val sim = GameSimulation(
                     level, RunState.begin(seed).copy(mapIndex = mapIndex), seed * SPREAD,
                 )
                 level.pickups.forEach { site ->
-                    val item = sim.items.first { it.position == site.centre }
+                    val item = sim.items.first { it.position == site.centre }.requireEquipment()
                     total++
                     val weapon = item.weapon
                     if (weapon != null) {

@@ -126,7 +126,7 @@ object TestLevels {
             sim.tick(InputFrame()) // resolve its reward transition before discarding that fixture loot
         }
         sim.enemies.clear()
-        sim.items.removeAll { it.guaranteed }
+        sim.items.removeAll { it.isGuaranteedEquipment }
         sim.boss.placeAt(
             Vec2(
                 TileMap.toWorld(sim.boss.arena.centreTile),
@@ -158,7 +158,7 @@ object TestLevels {
 
     /** A charge is faster than a crouched player, so use its telegraph to build clearance. */
     private fun retreatFromBoss(sim: GameSimulation): InputFrame {
-        val playerCentreX = sim.player.x + Physics.Default.width / 2.0
+        val playerCentreX = sim.player.centre(Physics.Default).x
         val direction = if (playerCentreX < sim.boss.position.x) -1 else 1
         return InputFrame(left = direction < 0, right = direction > 0)
     }
@@ -171,7 +171,7 @@ object TestLevels {
 
     /** The boss-pressure approach: enter melee range without conflating attacks with body contact. */
     fun closeOnBossWithoutContact(sim: GameSimulation): InputFrame {
-        val playerCentreX = sim.player.x + Physics.Default.width / 2.0
+        val playerCentreX = sim.player.centre(Physics.Default).x
         val offset = sim.boss.position.x - playerCentreX
         if (abs(offset) < Vec2.EPSILON) return InputFrame()
         val toward = if (offset > 0.0) 1 else -1

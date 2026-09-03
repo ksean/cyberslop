@@ -62,7 +62,7 @@ class PlayerHurtFlashTest {
     fun `boss contact starts the player flash`() {
         val sim = TestLevels.simulation()
         sim.boss.fight.engage()
-        sim.boss.placeAt(Vec2(sim.player.x + 6.0, sim.player.y + sim.player.height(Physics.Default)))
+        sim.boss.placeAt(Vec2(sim.player.centre(Physics.Default).x, sim.player.y + sim.player.height(Physics.Default)))
 
         sim.tick(InputFrame())
 

@@ -6,7 +6,6 @@ import io.github.ksean.cyberslop.combat.Weapons
 import io.github.ksean.cyberslop.core.Vec2
 import io.github.ksean.cyberslop.entity.Balance
 import io.github.ksean.cyberslop.entity.EnemyArchetype
-import io.github.ksean.cyberslop.entity.EnemyAttacks
 import io.github.ksean.cyberslop.loot.Loadout
 import io.github.ksean.cyberslop.loot.PowerupSlots
 import io.github.ksean.cyberslop.physics.InputFrame
@@ -140,7 +139,7 @@ class PermanentUpgradeEffectTest {
     private fun enemyProjectileDamage(ranks: UpgradeRanks): Double {
         val sim = simulation(TestLevels.flat(), ranks)
         sim.enemies.clear()
-        val centre = Vec2(sim.player.x + 6.0, sim.player.y + 13.0)
+        val centre = sim.player.centre(io.github.ksean.cyberslop.physics.Physics.Default)
         sim.projectiles += LiveProjectile(
             centre - Vec2(4.0, 0.0),
             Vec2(4.0 / TICK_SECONDS, 0.0),
@@ -214,7 +213,10 @@ class PermanentUpgradeEffectTest {
         sim.enemies.clear()
         sim.boss.fight.engage()
         sim.boss.placeAt(
-            Vec2(sim.player.x + 6.0, sim.player.y + sim.player.height(io.github.ksean.cyberslop.physics.Physics.Default)),
+            Vec2(
+                sim.player.centre(io.github.ksean.cyberslop.physics.Physics.Default).x,
+                sim.player.y + sim.player.height(io.github.ksean.cyberslop.physics.Physics.Default),
+            ),
         )
         val before = sim.run.health
         sim.tick(InputFrame())

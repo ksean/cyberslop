@@ -33,14 +33,14 @@ class DifficultyScoreTest {
     fun `the metric does not depend on the map index it is scoring`() {
         // If the score read the index it would be monotone by construction and prove nothing. The
         // same tiles must score the same whatever map they claim to be.
-        val generated = LevelGenerator.generate(0xC0FFEEuL, mapIndex = 4)
+        val generated = GeneratedLevels.generated(0xC0FFEEuL, mapIndex = 4)
 
         assertTrue(DifficultyScore.of(generated.level) == DifficultyScore.of(generated.level))
     }
 
     private fun meanScore(mapIndex: Int): Double =
         (0 until COHORT)
-            .map { LevelGenerator.generate(BASE + it.toULong() * STRIDE, mapIndex).level }
+            .map { GeneratedLevels.level(BASE + it.toULong() * STRIDE, mapIndex) }
             .map { DifficultyScore.of(it) }
             .average()
 

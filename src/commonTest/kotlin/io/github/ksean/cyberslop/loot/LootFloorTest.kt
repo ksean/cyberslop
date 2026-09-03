@@ -5,6 +5,8 @@ import io.github.ksean.cyberslop.combat.Weapons
 import io.github.ksean.cyberslop.gen.LevelGenerator
 import io.github.ksean.cyberslop.run.RunState
 import io.github.ksean.cyberslop.sim.GameSimulation
+import io.github.ksean.cyberslop.sim.isGuaranteedEquipment
+import io.github.ksean.cyberslop.sim.requireEquipment
 import io.github.ksean.cyberslop.entity.Balance
 import io.github.ksean.cyberslop.combat.DamagePipeline
 import kotlin.test.Test
@@ -51,7 +53,10 @@ class LootFloorTest {
     fun `the starter cache never holds the starting weapon`() {
         val seed = 17uL
         val sim = GameSimulation(LevelGenerator.generate(seed, 1).level, RunState.begin(seed), seed)
-        val cache = sim.items.first { it.guaranteed && it.weapon != null }.weapon!!
+        val cache = sim.items
+            .first { it.isGuaranteedEquipment && it.requireEquipment().weapon != null }
+            .requireEquipment()
+            .weapon ?: error("fixture: starter cache holds no weapon")
         assertTrue(cache.id != Weapons.startingWeapon.id, "seed $seed: the starter cache holds the ${cache.name}")
     }
 
@@ -234,6 +239,4 @@ class LootFloorTest {
     private fun guaranteedRoute(map: Int): List<PowerupId> =
         LootFloor.slotsAt(map).held.keys.toList()
 
-    private fun one(powerup: Powerup): PowerupSlots =
-        PowerupSlots.empty().collect(powerup.id).first
 }

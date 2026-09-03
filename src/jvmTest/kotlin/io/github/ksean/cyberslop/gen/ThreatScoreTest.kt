@@ -36,7 +36,8 @@ class ThreatScoreTest {
     @Test
     fun `the cohort mean of the threat score rises strictly from each map to the next`() {
         val means = (1..10).map { mapIndex ->
-            (1uL..COHORT).sumOf { seed -> ThreatScore.of(LevelGenerator.generate(seed * SPREAD, mapIndex).level) } / COHORT.toDouble()
+            (1uL..COHORT).sumOf { seed -> ThreatScore.of(GeneratedLevels.level(seed * SPREAD, mapIndex)) } /
+                COHORT.toDouble()
         }
         means.zipWithNext().forEachIndexed { index, (earlier, later) ->
             assertTrue(later > earlier, "map ${index + 2} scores $later against map ${index + 1}'s $earlier: $means")

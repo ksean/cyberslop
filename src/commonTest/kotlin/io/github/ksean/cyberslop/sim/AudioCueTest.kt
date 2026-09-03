@@ -3,12 +3,12 @@ package io.github.ksean.cyberslop.sim
 import io.github.ksean.cyberslop.combat.WeaponId
 import io.github.ksean.cyberslop.combat.WeaponSpec
 import io.github.ksean.cyberslop.combat.Weapons
-import io.github.ksean.cyberslop.core.Vec2
 import io.github.ksean.cyberslop.entity.EnemyArchetype
 import io.github.ksean.cyberslop.loot.Loadout
 import io.github.ksean.cyberslop.loot.PowerupId
 import io.github.ksean.cyberslop.loot.Powerups
 import io.github.ksean.cyberslop.physics.InputFrame
+import io.github.ksean.cyberslop.physics.Physics
 import io.github.ksean.cyberslop.run.RunState
 import kotlin.test.Test
 import kotlin.test.assertEquals
@@ -103,23 +103,23 @@ class AudioCueTest {
             return sim.tick(InputFrame()).audioCues
         }
 
-        val at = playerCentre(TestLevels.simulation())
+        val at = TestLevels.simulation().player.centre(Physics.Default)
         assertEquals(
             listOf(AudioCue.PickupPulse),
-            collect(GroundItem(at, Weapons.of(WeaponId.BrokenBottle), null)),
+            collect(GroundItem.equipment(at, weapon = Weapons.of(WeaponId.BrokenBottle))),
             "a matching weapon converted to Scrap without a pulse",
         )
         assertEquals(
             listOf(AudioCue.PickupPulse),
-            collect(GroundItem(at, null, Powerups.of(PowerupId.HollowpointFirmware))),
+            collect(GroundItem.equipment(at, powerup = Powerups.of(PowerupId.HollowpointFirmware))),
         )
         assertEquals(
             listOf(AudioCue.PickupPulse),
             collect(
-                GroundItem(
-                    at,
-                    Weapons.of(WeaponId.VultureRailCarbine),
-                    Powerups.of(PowerupId.SpikeDriver),
+                GroundItem.equipment(
+                    position = at,
+                    weapon = Weapons.of(WeaponId.VultureRailCarbine),
+                    powerup = Powerups.of(PowerupId.SpikeDriver),
                     guaranteed = true,
                 ),
             ),
@@ -128,8 +128,8 @@ class AudioCueTest {
         assertEquals(
             listOf(AudioCue.PickupPulse, AudioCue.PickupPulse),
             collect(
-                GroundItem(at, Weapons.of(WeaponId.BrokenBottle), null),
-                GroundItem(at, null, Powerups.of(PowerupId.HollowpointFirmware)),
+                GroundItem.equipment(at, weapon = Weapons.of(WeaponId.BrokenBottle)),
+                GroundItem.equipment(at, powerup = Powerups.of(PowerupId.HollowpointFirmware)),
             ),
         )
     }
@@ -158,5 +158,4 @@ class AudioCueTest {
         }
     }
 
-    private fun playerCentre(sim: GameSimulation) = Vec2(sim.player.x + 6.0, sim.player.y + 13.0)
 }

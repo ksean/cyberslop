@@ -7,6 +7,7 @@ import io.github.ksean.cyberslop.loot.Loadout
 import io.github.ksean.cyberslop.loot.PowerupId
 import io.github.ksean.cyberslop.loot.Powerups
 import io.github.ksean.cyberslop.physics.InputFrame
+import io.github.ksean.cyberslop.physics.Physics
 import io.github.ksean.cyberslop.progression.DiscoveryId
 import io.github.ksean.cyberslop.progression.DiscoveryRecorder
 import io.github.ksean.cyberslop.progression.PlayerProfile
@@ -17,7 +18,7 @@ import kotlin.test.assertTrue
 
 /** Weapon pickup in the simulation: replacement, same-weapon Scrap and paired awards (PROD-070, P-42). */
 class WeaponPickupTest {
-    private fun atPlayer(sim: GameSimulation) = Vec2(sim.player.x + 6.0, sim.player.y + 13.0)
+    private fun atPlayer(sim: GameSimulation) = sim.player.centre(Physics.Default)
 
     /** A simulation whose player already holds a three-slot build on the bottle. */
     private fun withBuild(): GameSimulation {
@@ -33,7 +34,7 @@ class WeaponPickupTest {
     fun `a kill-drop weapon wipes a three-slot build and pays its Scrap`() {
         val sim = withBuild()
         val scrapBefore = sim.run.scrap
-        sim.items.add(GroundItem(atPlayer(sim), Weapons.of(WeaponId.RustlineMachete), null))
+        sim.items.add(GroundItem.equipment(atPlayer(sim), weapon = Weapons.of(WeaponId.RustlineMachete)))
 
         val report = sim.tick(InputFrame())
 
@@ -58,7 +59,7 @@ class WeaponPickupTest {
             TestLevels.SEED,
         )
         val scrapBefore = sim.run.scrap
-        val pickup = GroundItem(atPlayer(sim), Weapons.of(WeaponId.SableCorpRailgun), null)
+        val pickup = GroundItem.equipment(atPlayer(sim), weapon = Weapons.of(WeaponId.SableCorpRailgun))
         sim.items += pickup
 
         val report = sim.tick(InputFrame())
@@ -83,10 +84,10 @@ class WeaponPickupTest {
             RunState.begin(TestLevels.SEED).copy(loadout = loadout),
             TestLevels.SEED,
         )
-        sim.items += GroundItem(
-            atPlayer(sim),
-            Weapons.of(WeaponId.SableCorpRailgun),
-            Powerups.of(PowerupId.HollowpointFirmware),
+        sim.items += GroundItem.equipment(
+            position = atPlayer(sim),
+            weapon = Weapons.of(WeaponId.SableCorpRailgun),
+            powerup = Powerups.of(PowerupId.HollowpointFirmware),
             guaranteed = true,
         )
 
@@ -109,7 +110,12 @@ class WeaponPickupTest {
     fun `a paired award leaves the player with its weapon and its powerup on it`() {
         val sim = withBuild()
         sim.items.add(
-            GroundItem(atPlayer(sim), Weapons.of(WeaponId.VultureRailCarbine), Powerups.of(PowerupId.SpikeDriver), guaranteed = true),
+            GroundItem.equipment(
+                atPlayer(sim),
+                weapon = Weapons.of(WeaponId.VultureRailCarbine),
+                powerup = Powerups.of(PowerupId.SpikeDriver),
+                guaranteed = true,
+            ),
         )
 
         val report = sim.tick(InputFrame())
@@ -131,7 +137,12 @@ class WeaponPickupTest {
         val sim = withBuild()
         // The weapon icon a tile to the left, out of reach; the powerup icon under the player.
         val at = atPlayer(sim) - Vec2(GroundItem.PAIRED_OFFSET, 0.0)
-        val item = GroundItem(at, Weapons.of(WeaponId.VultureRailCarbine), Powerups.of(PowerupId.SpikeDriver), guaranteed = true)
+        val item = GroundItem.equipment(
+            at,
+            weapon = Weapons.of(WeaponId.VultureRailCarbine),
+            powerup = Powerups.of(PowerupId.SpikeDriver),
+            guaranteed = true,
+        )
         sim.items.add(item)
         assertTrue((item.position - atPlayer(sim)).length >= 16.0, "fixture: the weapon icon is within reach")
 
@@ -145,7 +156,7 @@ class WeaponPickupTest {
     fun `a repeated pickup in a fresh run is reported but is not a new profile discovery`() {
         fun collect(): List<DiscoveryId> {
             val sim = withBuild()
-            sim.items.add(GroundItem(atPlayer(sim), Weapons.of(WeaponId.RustlineMachete), null))
+            sim.items.add(GroundItem.equipment(atPlayer(sim), weapon = Weapons.of(WeaponId.RustlineMachete)))
             return sim.tick(InputFrame()).collectedDiscoveries
         }
 
@@ -164,7 +175,7 @@ class WeaponPickupTest {
         }
 
         val applied = simulationWith(Loadout.starting())
-        applied.items.add(GroundItem(atPlayer(applied), null, Powerups.of(PowerupId.HollowpointFirmware)))
+        applied.items.add(GroundItem.equipment(atPlayer(applied), powerup = Powerups.of(PowerupId.HollowpointFirmware)))
         assertEquals(
             listOf(DiscoveryId.Powerup(PowerupId.HollowpointFirmware)),
             applied.tick(InputFrame()).collectedDiscoveries,
@@ -175,7 +186,7 @@ class WeaponPickupTest {
         repeat(3) { maxed = maxed.collect(PowerupId.HollowpointFirmware, 1).first }
         val scrapped = simulationWith(maxed)
         val scrapBefore = scrapped.run.scrap
-        scrapped.items.add(GroundItem(atPlayer(scrapped), null, Powerups.of(PowerupId.HollowpointFirmware)))
+        scrapped.items.add(GroundItem.equipment(atPlayer(scrapped), powerup = Powerups.of(PowerupId.HollowpointFirmware)))
         assertEquals(
             listOf(DiscoveryId.Powerup(PowerupId.HollowpointFirmware)),
             scrapped.tick(InputFrame()).collectedDiscoveries,
@@ -186,7 +197,7 @@ class WeaponPickupTest {
         Powerups.all.take(5).forEach { full = full.collect(it.id, 1).first }
         val displacedId = Powerups.all[5].id
         val displaced = simulationWith(full)
-        displaced.items.add(GroundItem(atPlayer(displaced), null, Powerups.of(displacedId), guaranteed = true))
+        displaced.items.add(GroundItem.equipment(atPlayer(displaced), powerup = Powerups.of(displacedId), guaranteed = true))
         assertEquals(
             listOf(DiscoveryId.Powerup(displacedId)),
             displaced.tick(InputFrame()).collectedDiscoveries,

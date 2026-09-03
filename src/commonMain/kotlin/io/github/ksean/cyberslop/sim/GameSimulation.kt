@@ -41,31 +41,6 @@ import io.github.ksean.cyberslop.world.Level
 import io.github.ksean.cyberslop.world.TILE_SIZE
 import io.github.ksean.cyberslop.world.TileMap
 
-/**
- * Something lying on the map. An item that holds both a [weapon] and a [powerup] resolves them in
- * that order on one contact (PROD-070); [ramen] is the separate grounded healing payload.
- * [guaranteed] identifies the boss awards and starter cache used by `LootFloor`.
- */
-class GroundItem(
-    val position: Vec2,
-    val weapon: WeaponSpec?,
-    val powerup: Powerup?,
-    val guaranteed: Boolean = false,
-    val ramen: Boolean = false,
-) {
-    /** Where the powerup is drawn: beside the weapon when paired, else where the item is. */
-    val powerupPosition: Vec2 get() = if (weapon != null && powerup != null) position + Vec2(PAIRED_OFFSET, 0.0) else position
-
-    /** Contact is made at whichever icon the player is standing on (PROD-030). */
-    fun inReachOf(centre: Vec2, reach: Double): Boolean =
-        (position - centre).lengthSquared < reach * reach || (powerupPosition - centre).lengthSquared < reach * reach
-
-    companion object {
-        /** A paired award's powerup icon sits one tile to the right of its weapon. */
-        const val PAIRED_OFFSET = 16.0
-    }
-}
-
 data class TickReport(
     val playerDied: Boolean = false,
     /** True only once the four-second terminal interval may be replaced by the end screen. */
@@ -99,7 +74,7 @@ class GameSimulation(
      */
     private val optionalLoot: Boolean = true,
     /** Injectable for deterministic reconstruction tests; live games derive it from [seed]. */
-    private val bossRoster: BossRoster = BossRoster.forRun(seed),
+    bossRoster: BossRoster = BossRoster.forRun(seed),
 ) {
     // Per-map, per-phase stream (ENG-053), so loot on map 3 is not the same draw as loot on map 1.
     internal val lootRng = Rng.derive(seed, level.mapIndex, "loot")
@@ -295,19 +270,17 @@ class GameSimulation(
             val at = site.centre
             items.add(
                 if (cacheRng.nextDouble() < DropTable.weaponShare()) {
-                    GroundItem(
-                        at,
-                        DropTable.rollWeapon(
+                    GroundItem.equipment(
+                        position = at,
+                        weapon = DropTable.rollWeapon(
                             cacheRng, level.mapIndex, shifts = CACHE_TIER_SHIFTS,
                             unlocked = unlockedWeapons,
                         ),
-                        null,
                     )
                 } else {
-                    GroundItem(
-                        at,
-                        null,
-                        DropTable.rollPowerup(
+                    GroundItem.equipment(
+                        position = at,
+                        powerup = DropTable.rollPowerup(
                             cacheRng, level.mapIndex, runPool, shifts = CACHE_TIER_SHIFTS,
                         ),
                     )
@@ -318,15 +291,14 @@ class GameSimulation(
         // The starter cache. Map one must never meet its mini-boss with the broken bottle.
         if (level.mapIndex == 1) {
             items.add(
-                GroundItem(
-                    Vec2(TileMap.toWorld(level.spawnColumn + STARTER_CACHE_TILES),
+                GroundItem.equipment(
+                    position = Vec2(TileMap.toWorld(level.spawnColumn + STARTER_CACHE_TILES),
                         TileMap.toWorld(level.spawnRow) - TILE_SIZE),
                     // Never the bottle itself: the cache exists to replace it (`specs/enemies.md`).
-                    DropTable.rollWeapon(
+                    weapon = DropTable.rollWeapon(
                         starterRng, 1, floor = io.github.ksean.cyberslop.combat.Tier.Street,
                         unlocked = unlockedWeapons, excluding = io.github.ksean.cyberslop.combat.Weapons.startingWeapon.id,
                     ),
-                    null,
                     guaranteed = true,
                 ),
             )
@@ -345,7 +317,7 @@ class GameSimulation(
             )
         }
         gameplayViewport = viewport
-        val enemyCentresBeforeTick = enemies.map(::centreOfEnemy)
+        val enemyCentresBeforeTick = enemies.map(LiveEnemy::centre)
         val minibossCentreBeforeTick = miniboss.centre
         val bossCentreBeforeTick = boss.centre
         previousPlayer = player
@@ -360,7 +332,7 @@ class GameSimulation(
         player = MovementModel.step(player, input, level.tiles)
         elapsedTicks++
 
-        val muzzle = centreOf(player)
+        val muzzle = player.centre(Physics.Default)
         val selectedTarget = selectedAimTarget(muzzle)
         val aim = selectedTarget?.position
             ?: Targeting.aimPoint(muzzle, emptyList(), facing)
@@ -422,8 +394,8 @@ class GameSimulation(
         }
 
         enemies.forEachIndexed { index, enemy ->
-            val before = enemyCentresBeforeTick.getOrNull(index) ?: centreOfEnemy(enemy)
-            enemy.aimingVelocity = (centreOfEnemy(enemy) - before) * (1.0 / TICK_SECONDS)
+            val before = enemyCentresBeforeTick.getOrNull(index) ?: enemy.centre
+            enemy.aimingVelocity = (enemy.centre - before) * (1.0 / TICK_SECONDS)
         }
         miniboss.aimingVelocity = (miniboss.centre - minibossCentreBeforeTick) * (1.0 / TICK_SECONDS)
         boss.aimingVelocity = (boss.centre - bossCentreBeforeTick) * (1.0 / TICK_SECONDS)
@@ -514,8 +486,18 @@ class GameSimulation(
         }
         add(items.size)
         items.forEach { i ->
-            add(i.position); add(i.weapon?.id?.ordinal ?: -1); add(i.powerup?.id?.ordinal ?: -1)
-            add(i.guaranteed); add(i.ramen)
+            add(i.position)
+            when (val payload = i.payload) {
+                is GroundItem.Equipment -> {
+                    add(payload.weapon?.id?.ordinal ?: -1)
+                    add(payload.powerup?.id?.ordinal ?: -1)
+                    add(payload.guaranteed)
+                    add(false)
+                }
+                GroundItem.Ramen -> {
+                    add(-1); add(-1); add(false); add(true)
+                }
+            }
         }
         listOf(miniboss to minibossRewarded, boss to bossRewarded).forEach { (b, rewarded) ->
             add(b.spec.profile.primaryMelee.ordinal); add(b.spec.profile.primaryRanged.ordinal)
@@ -574,7 +556,7 @@ class GameSimulation(
     /** Nearest live target by current position, carrying its last completed actual movement. */
     private fun selectedAimTarget(muzzle: Vec2): AimTarget? {
         val candidates = buildList {
-            enemies.filter { it.alive }.forEach { add(AimTarget(centreOfEnemy(it), it.aimingVelocity)) }
+            enemies.filter { it.alive }.forEach { add(AimTarget(it.centre, it.aimingVelocity)) }
             if (miniboss.fight.vulnerable && !miniboss.fight.defeated) {
                 add(AimTarget(miniboss.centre, miniboss.aimingVelocity))
             }
@@ -690,7 +672,7 @@ class GameSimulation(
         enemies.forEachIndexed { index, enemy ->
             if (!enemy.alive) return@forEachIndexed
             val id = CombatTargetId(CombatTargetKind.Enemy, index)
-            if (id in hitTargets || !swing.sector.intersects(CombatBodies.enemy(centreOfEnemy(enemy)))) {
+            if (id in hitTargets || !swing.sector.intersects(CombatBodies.enemy(enemy.centre))) {
                 return@forEachIndexed
             }
             hitTargets += id
@@ -733,7 +715,8 @@ class GameSimulation(
         val struck = mutableSetOf<Any>()
         val points = mutableListOf(origin)
 
-        for (jump in 0 until jumps) {
+        var jumpsLeft = jumps
+        while (jumpsLeft-- > 0) {
             val candidates = (enemies.filter { it.alive && it !in struck }.map { Target.Enemy(it) } +
                 listOf(miniboss, boss).filter { it.fight.vulnerable && !it.fight.defeated && it !in struck }
                     .map { Target.Boss(it) })
@@ -763,9 +746,9 @@ class GameSimulation(
     ): Vec2 {
         val weapon = shot.weapon
         val interval = weapon.spec.burstIntervalSeconds
-        val projectilePattern = weapon.spec.pattern as? FirePattern.Projectile
-        val lobbed = projectilePattern?.gravity?.let { gravity -> gravity > 0.0 } == true
-        val ballisticLaunch = if (lobbed) {
+        val lobbedPattern = (weapon.spec.pattern as? FirePattern.Projectile)
+            ?.takeIf { pattern -> pattern.gravity > 0.0 }
+        val ballisticLaunch = lobbedPattern?.let { pattern ->
             val speed = if (weapon.spec.projectileSpeed > 0.0) {
                 weapon.spec.projectileSpeed * weapon.reachScale
             } else {
@@ -775,13 +758,11 @@ class GameSimulation(
                 origin = origin,
                 target = aimPoint,
                 nominalSpeed = speed,
-                gravity = requireNotNull(projectilePattern).gravity,
-                lifetimeSeconds = projectilePattern.lifetimeSeconds,
+                gravity = pattern.gravity,
+                lifetimeSeconds = pattern.lifetimeSeconds,
                 tickSeconds = TICK_SECONDS,
                 targetVelocity = targetVelocity,
             )
-        } else {
-            null
         }
         val snapshottedAim = ballisticLaunch?.intercept ?: aimPoint
         if (interval > 0.0) {
@@ -790,7 +771,7 @@ class GameSimulation(
                 interval,
                 shot.direction,
                 weapon,
-                aimPoint = snapshottedAim.takeIf { lobbed },
+                aimPoint = snapshottedAim.takeIf { lobbedPattern != null },
             )
             return spawnRound(
                 weapon, origin, shot.direction, snapshottedAim,
@@ -891,7 +872,7 @@ class GameSimulation(
     private sealed interface Target {
         val position: Vec2
         class Enemy(val enemy: LiveEnemy) : Target {
-            override val position: Vec2 get() = Vec2(enemy.position.x + 7.0, enemy.position.y + 7.0)
+            override val position: Vec2 get() = enemy.centre
         }
         class Boss(val boss: LiveBoss) : Target {
             override val position: Vec2 get() = boss.centre
@@ -901,7 +882,7 @@ class GameSimulation(
     private inline fun forEachTargetNear(centre: Vec2, radius: Double, action: (Target) -> Unit) {
         val squared = radius * radius
         enemies.forEach { enemy ->
-            if (enemy.alive && (centreOfEnemy(enemy) - centre).lengthSquared <= squared) {
+            if (enemy.alive && (enemy.centre - centre).lengthSquared <= squared) {
                 action(Target.Enemy(enemy))
             }
         }
@@ -921,7 +902,7 @@ class GameSimulation(
         scale: Double = 1.0,
     ): Boolean {
         if (!canDamage(target, weapon)) return false
-        val distance = (target.position - centreOf(player)).length
+        val distance = (target.position - player.centre(Physics.Default)).length
         val crit = rng.nextDouble() < weapon.critChance
         val amount = weapon.damagePerProjectile *
             scale *
@@ -1012,8 +993,7 @@ class GameSimulation(
             enemy.stun(STUN_SECONDS)
         }
         if (!splash && weapon.knockbackScale > 1.0) {
-            enemy.position = enemy.position +
-                direction * (weapon.spec.knockback * weapon.knockbackScale * TICK_SECONDS)
+            enemy.position += direction * (weapon.spec.knockback * weapon.knockbackScale * TICK_SECONDS)
         }
 
         val dealt = minOf(total, enemy.health)
@@ -1037,7 +1017,7 @@ class GameSimulation(
             projectile.secondsLeft -= TICK_SECONDS
             if (!move(projectile)) return@forEach
 
-            if (!projectile.fromPlayer && (centreOf(player) - projectile.position).lengthSquared <
+            if (!projectile.fromPlayer && (player.centre(Physics.Default) - projectile.position).lengthSquared <
                 projectile.radius * projectile.radius * 4.0
             ) {
                 if (if (projectile.bossOwned) bossDamageAllowed() else enemyDamageAllowed()) {
@@ -1048,7 +1028,7 @@ class GameSimulation(
         }
         projectiles.forEach {
             if (it.spent) {
-                val psychic = it.weapon?.spec?.cls == io.github.ksean.cyberslop.combat.WeaponClass.Psychic
+                val psychic = it.weapon?.spec?.cls == WeaponClass.Psychic
                 spent.add(HitIndicator(HitShape.Impact(it.position, it.velocity, it.fromPlayer, psychic), FLASH_VISIBLE_SECONDS, FLASH_VISIBLE_SECONDS))
             }
         }
@@ -1149,7 +1129,7 @@ class GameSimulation(
         val weapon = projectile.weapon ?: autoFire.weapon
         contacts.forEach { contact ->
             projectile.position = from + (to - from) * contact.fraction
-            projectile.hitTargets = projectile.hitTargets + contact.id
+            projectile.hitTargets += contact.id
             when (val target = contact.target) {
                 is Target.Enemy -> damageEnemy(target.enemy, projectile.damage, weapon, projectile.velocity)
                 is Target.Boss -> damageBoss(target.boss, projectile.damage, weapon)
@@ -1204,7 +1184,7 @@ class GameSimulation(
         val travel = to - from
 
         fun axisEntry(start: Double, delta: Double, minimum: Double, maximum: Double): Double = when {
-            start >= minimum && start < maximum -> 0.0
+            start in minimum..<maximum -> 0.0
             delta > 0.0 -> (minimum - start) / delta
             delta < 0.0 -> (maximum - start) / delta
             else -> Double.POSITIVE_INFINITY
@@ -1238,8 +1218,8 @@ class GameSimulation(
 
     private fun steer(projectile: LiveProjectile) {
         val nearest = enemies.filter { it.alive }
-            .minByOrNull { (centreOfEnemy(it) - projectile.position).lengthSquared } ?: return
-        val offset = centreOfEnemy(nearest) - projectile.position
+            .minByOrNull { (it.centre - projectile.position).lengthSquared } ?: return
+        val offset = nearest.centre - projectile.position
         if (offset.lengthSquared > projectile.homingRadius * projectile.homingRadius) return
         val speed = projectile.velocity.length
         val desired = offset.normalisedOr(projectile.velocity)
@@ -1263,7 +1243,7 @@ class GameSimulation(
      * cross those spans in flight. Arena ownership remains a separate boundary for rank enemies.
      */
     private fun advanceEnemies() {
-        val playerCentre = centreOf(player)
+        val playerCentre = player.centre(Physics.Default)
         enemies.filter { it.alive }.forEach { enemy ->
             advanceEnemy(enemy, playerCentre)
         }
@@ -1299,7 +1279,7 @@ class GameSimulation(
     private fun attackTimerDelta(enemy: LiveEnemy, playerCentre: Vec2): Double {
         if (enemy.archetype.shoots) return TICK_SECONDS
         val swing = EnemyAttacks.swing(enemy.archetype)
-        val offset = playerCentre - centreOfEnemy(enemy)
+        val offset = playerCentre - enemy.centre
         val rate = if (offset.lengthSquared <= swing.reachPx * swing.reachPx) {
             EnemyAttacks.MELEE_ATTACK_RATE_IN_REACH
         } else {
@@ -1322,11 +1302,11 @@ class GameSimulation(
      * player can read the wind-up and move out of it.
      */
     private fun beginAttack(enemy: LiveEnemy, playerCentre: Vec2) {
-        val offset = playerCentre - centreOfEnemy(enemy)
+        val offset = playerCentre - enemy.centre
         if (enemy.archetype.shoots) {
             val shot = EnemyAttacks.SHOT
             if (offset.lengthSquared > shot.rangePx * shot.rangePx) return
-            if (!hasLineOfSight(centreOfEnemy(enemy), playerCentre)) return
+            if (!hasLineOfSight(enemy.centre, playerCentre)) return
             enemy.attackTarget = playerCentre
             enemy.attackDirection = offset.normalisedOr(Vec2.Right)
             enemy.windUpTotal = shot.windUpSeconds
@@ -1353,14 +1333,14 @@ class GameSimulation(
         val swing = EnemyAttacks.swing(enemy.archetype)
         enemy.cooldownLeft = swing.cooldownSeconds
         enemy.lastSwing = SwingVisual(
-            origin = centreOfEnemy(enemy),
+            origin = enemy.centre,
             direction = enemy.attackDirection,
             arcDegrees = swing.arcDegrees,
             reachPx = swing.reachPx,
             secondsLeft = SWING_VISIBLE_SECONDS,
             totalSeconds = SWING_VISIBLE_SECONDS,
         )
-        val offset = playerCentre - centreOfEnemy(enemy)
+        val offset = playerCentre - enemy.centre
         if (offset.lengthSquared > swing.reachPx * swing.reachPx) return
         if (!TrigTable.withinArc(enemy.attackDirection, offset, swing.arcDegrees / 2.0)) return
         if (!enemyDamageAllowed()) return
@@ -1371,7 +1351,7 @@ class GameSimulation(
         val shot = EnemyAttacks.SHOT
         enemy.cooldownLeft = shot.cooldownSeconds
         if (projectiles.size >= MAX_PROJECTILES) return
-        val origin = centreOfEnemy(enemy)
+        val origin = enemy.centre
         val direction = (enemy.attackTarget - origin).normalisedOr(enemy.attackDirection)
         enemy.lastShot = MuzzleFlash(direction, FLASH_VISIBLE_SECONDS, FLASH_VISIBLE_SECONDS)
         projectiles.add(
@@ -1426,7 +1406,7 @@ class GameSimulation(
 
     /** Euclidean and strict at the radius, with hysteresis so an enemy at the edge does not flicker. */
     private fun updateAwareness(enemy: LiveEnemy, playerCentre: Vec2) {
-        val distanceSquared = (playerCentre - centreOfEnemy(enemy)).lengthSquared
+        val distanceSquared = (playerCentre - enemy.centre).lengthSquared
         // Strictly inside, the same predicate auto-aim uses, so the two boundaries agree at equality.
         enemy.engaged = when {
             // Engaged until the distance *exceeds* the radius: equality keeps it.
@@ -1443,7 +1423,7 @@ class GameSimulation(
     }
 
     private fun act(enemy: LiveEnemy, playerCentre: Vec2, speed: Double) {
-        val offset = playerCentre - centreOfEnemy(enemy)
+        val offset = playerCentre - enemy.centre
         val toward = if (offset.x < 0.0) -1 else 1
         enemy.facing = toward
         when {
@@ -1472,7 +1452,7 @@ class GameSimulation(
         val pieces = (EnemyLeap.LOOK_AHEAD_PX / (TILE_SIZE / 2.0)).toInt()
         repeat(pieces) { index ->
             val x = enemy.position.x + direction * (index + 1) * (TILE_SIZE / 2.0)
-            if (!canStand(enemy, Vec2(x, enemy.position.y))) return true
+            if (!canStand(Vec2(x, enemy.position.y))) return true
         }
         return false
     }
@@ -1483,9 +1463,9 @@ class GameSimulation(
             tiles = level.tiles,
             level = level,
             topLeft = enemy.position,
-            width = ENEMY_SIZE,
-            height = ENEMY_SIZE,
-            feetOffset = ENEMY_FEET,
+            width = LiveEnemy.BODY_SIZE,
+            height = LiveEnemy.BODY_SIZE,
+            feetOffset = LiveEnemy.FEET_OFFSET,
             direction = direction,
             timeSeconds = elapsedTicks * TICK_SECONDS,
             landingAllowed = { columns -> landingAllowed(enemy, columns) },
@@ -1505,22 +1485,18 @@ class GameSimulation(
         if (dx == 0.0) return true
         val next = enemy.position + Vec2(dx, 0.0)
         // Down to the last fraction of a pixel, unlike the ledge test's whole-pixel footprint.
-        if (entersArena(enemy, TileMap.toTile(if (dx > 0) next.x + ENEMY_SIZE - EDGE else next.x))) return false
-        if (!canStand(enemy, next)) return false
+        if (entersArena(enemy, TileMap.toTile(if (dx > 0) next.x + LiveEnemy.BODY_SIZE - EDGE else next.x))) return false
+        if (!canStand(next)) return false
         enemy.position = next
         enemy.stridePx += kotlin.math.abs(dx)
         return true
     }
 
-    private fun canStand(enemy: LiveEnemy, at: Vec2): Boolean {
-        if (bodyBlocked(at, ENEMY_SIZE, ENEMY_SIZE)) return false
-        val feetRow = TileMap.toTile(at.y + ENEMY_FEET)
-        val left = TileMap.toTile(at.x)
-        val right = TileMap.toTile(at.x + ENEMY_SIZE - EDGE)
-        if (!level.tiles.blocksMovement(left, feetRow) || !level.tiles.blocksMovement(right, feetRow)) return false
-        if (level.tiles.isLethal(left, feetRow) || level.tiles.isLethal(right, feetRow)) return false
-        if (Hazards.overlapped(level, at.x, at.y, ENEMY_SIZE, ENEMY_SIZE).isNotEmpty()) return false
-        return !jetOverlap(at, ENEMY_SIZE, ENEMY_SIZE)
+    private fun canStand(at: Vec2): Boolean {
+        if (bodyBlocked(at, LiveEnemy.BODY_SIZE, LiveEnemy.BODY_SIZE)) return false
+        if (safeFloorRow(at) == null) return false
+        return Hazards.overlapped(level, at.x, at.y, LiveEnemy.BODY_SIZE, LiveEnemy.BODY_SIZE).isEmpty() &&
+            !jetOverlap(at, LiveEnemy.BODY_SIZE, LiveEnemy.BODY_SIZE)
     }
 
     /**
@@ -1530,12 +1506,12 @@ class GameSimulation(
      */
     private fun entersArena(enemy: LiveEnemy, leadingColumn: Int): Boolean {
         if (!level.isArenaGround(leadingColumn, Populator.ARENA_APPROACH_TILES)) return false
-        val here = TileMap.toTile(enemy.position.x)..TileMap.toTile(enemy.position.x + ENEMY_SIZE - 1.0)
+        val here = TileMap.toTile(enemy.position.x)..TileMap.toTile(enemy.position.x + LiveEnemy.BODY_SIZE - 1.0)
         return here.none { level.isArenaGround(it, Populator.ARENA_APPROACH_TILES) }
     }
 
     private fun landingAllowed(enemy: LiveEnemy, columns: IntRange): Boolean {
-        val here = TileMap.toTile(enemy.position.x)..TileMap.toTile(enemy.position.x + ENEMY_SIZE - EDGE)
+        val here = TileMap.toTile(enemy.position.x)..TileMap.toTile(enemy.position.x + LiveEnemy.BODY_SIZE - EDGE)
         val alreadyInside = here.any { level.isArenaGround(it, Populator.ARENA_APPROACH_TILES) }
         return alreadyInside || columns.none { level.isArenaGround(it, Populator.ARENA_APPROACH_TILES) }
     }
@@ -1547,19 +1523,19 @@ class GameSimulation(
         // over the gap it is forbidden to enter.
         val nextX = enemy.position.x + step.x
         val leading = TileMap.toTile(nextX)
-        val trailing = TileMap.toTile(nextX + 2 * ENEMY_HALF - EDGE)
+        val trailing = TileMap.toTile(nextX + LiveEnemy.BODY_SIZE - EDGE)
         val blocked = entersArena(enemy, if (step.x > 0) trailing else leading)
         val horizontal = if (blocked) 0.0 else step.x
-        enemy.position = enemy.position + Vec2(horizontal, step.y)
+        enemy.position += Vec2(horizontal, step.y)
         enemy.stridePx += kotlin.math.abs(horizontal)
     }
 
     /** Gravity for walkers. Landing on a lethal tile kills; landing on solid ground stops the fall. */
     private fun fall(enemy: LiveEnemy) {
         val physics = Physics.Default
-        val feetRow = TileMap.toTile(enemy.position.y + ENEMY_FEET)
+        val feetRow = TileMap.toTile(enemy.position.y + LiveEnemy.FEET_OFFSET)
         val left = TileMap.toTile(enemy.position.x)
-        val right = TileMap.toTile(enemy.position.x + ENEMY_SIZE - 1.0)
+        val right = TileMap.toTile(enemy.position.x + LiveEnemy.BODY_SIZE - 1.0)
         val supported = enemy.vy == 0.0 &&
             (level.tiles.blocksMovement(left, feetRow) || level.tiles.blocksMovement(right, feetRow))
         if (supported) return
@@ -1570,14 +1546,14 @@ class GameSimulation(
             val slice = minOf(travel, TILE_SIZE / 2.0)
             travel -= slice
             val nextY = enemy.position.y + slice
-            val row = TileMap.toTile(nextY + ENEMY_FEET)
+            val row = TileMap.toTile(nextY + LiveEnemy.FEET_OFFSET)
             if (level.tiles.isLethal(left, row) || level.tiles.isLethal(right, row)) {
                 enemy.health = 0.0
                 enemy.position = Vec2(enemy.position.x, nextY)
                 return
             }
             if (level.tiles.blocksMovement(left, row) || level.tiles.blocksMovement(right, row)) {
-                enemy.position = Vec2(enemy.position.x, TileMap.toWorld(row) - ENEMY_FEET)
+                enemy.position = Vec2(enemy.position.x, TileMap.toWorld(row) - LiveEnemy.FEET_OFFSET)
                 enemy.vy = 0.0
                 return
             }
@@ -1602,7 +1578,7 @@ class GameSimulation(
                 enemy.position = next
                 return
             }
-            if (bodyBlocked(next, ENEMY_SIZE, ENEMY_SIZE)) {
+            if (bodyBlocked(next, LiveEnemy.BODY_SIZE, LiveEnemy.BODY_SIZE)) {
                 if (enemy.vy > 0.0 && land(enemy, next)) return
                 enemy.vy = 0.0
                 enemy.leap = null
@@ -1614,16 +1590,22 @@ class GameSimulation(
     }
 
     private fun land(enemy: LiveEnemy, at: Vec2): Boolean {
-        val row = TileMap.toTile(at.y + ENEMY_FEET)
-        val left = TileMap.toTile(at.x)
-        val right = TileMap.toTile(at.x + ENEMY_SIZE - EDGE)
-        if (!level.tiles.blocksMovement(left, row) || !level.tiles.blocksMovement(right, row)) return false
-        if (level.tiles.isLethal(left, row) || level.tiles.isLethal(right, row)) return false
-        enemy.position = Vec2(at.x, TileMap.toWorld(row) - ENEMY_FEET)
+        val row = safeFloorRow(at) ?: return false
+        enemy.position = Vec2(at.x, TileMap.toWorld(row) - LiveEnemy.FEET_OFFSET)
         enemy.vy = 0.0
         enemy.leap = null
         enemy.landingCooldownLeft = EnemyLeap.LANDING_COOLDOWN
         return true
+    }
+
+    /** The shared non-lethal support rule for voluntary steps and pursuit-leap landings. */
+    private fun safeFloorRow(at: Vec2): Int? {
+        val row = TileMap.toTile(at.y + LiveEnemy.FEET_OFFSET)
+        val left = TileMap.toTile(at.x)
+        val right = TileMap.toTile(at.x + LiveEnemy.BODY_SIZE - EDGE)
+        val supported = level.tiles.blocksMovement(left, row) && level.tiles.blocksMovement(right, row)
+        val lethal = level.tiles.isLethal(left, row) || level.tiles.isLethal(right, row)
+        return row.takeIf { supported && !lethal }
     }
 
     private fun bodyBlocked(at: Vec2, width: Double, height: Double): Boolean {
@@ -1636,12 +1618,12 @@ class GameSimulation(
 
     private fun enemyDangerAt(at: Vec2): Boolean {
         val left = TileMap.toTile(at.x)
-        val right = TileMap.toTile(at.x + ENEMY_SIZE - EDGE)
+        val right = TileMap.toTile(at.x + LiveEnemy.BODY_SIZE - EDGE)
         val top = TileMap.toTile(at.y)
-        val bottom = TileMap.toTile(at.y + ENEMY_SIZE - EDGE)
-        if ((left..right).any { column -> (top..bottom).any { row -> level.tiles.isLethal(column, row) } }) return true
-        return Hazards.overlapped(level, at.x, at.y, ENEMY_SIZE, ENEMY_SIZE).isNotEmpty() ||
-            jetOverlap(at, ENEMY_SIZE, ENEMY_SIZE)
+        val bottom = TileMap.toTile(at.y + LiveEnemy.BODY_SIZE - EDGE)
+        return (left..right).any { column -> (top..bottom).any { row -> level.tiles.isLethal(column, row) } } ||
+            Hazards.overlapped(level, at.x, at.y, LiveEnemy.BODY_SIZE, LiveEnemy.BODY_SIZE).isNotEmpty() ||
+            jetOverlap(at, LiveEnemy.BODY_SIZE, LiveEnemy.BODY_SIZE)
     }
 
     private fun jetOverlap(at: Vec2, width: Double, height: Double): Boolean {
@@ -1657,7 +1639,7 @@ class GameSimulation(
 
     private fun advanceBosses() {
         val target = BossTarget(
-            centre = centreOf(player),
+            centre = player.centre(Physics.Default),
             onGround = player.onGround,
             crouched = player.stance == io.github.ksean.cyberslop.physics.Stance.Crouch,
         )
@@ -1742,7 +1724,7 @@ class GameSimulation(
     }
 
     private fun beamTouchesPlayer(beam: LiveBossBeam): Boolean {
-        val point = centreOf(player)
+        val point = player.centre(Physics.Default)
         val segment = beam.end - beam.start
         val lengthSquared = segment.lengthSquared
         val along = if (lengthSquared <= Vec2.EPSILON) 0.0 else {
@@ -1805,10 +1787,10 @@ class GameSimulation(
         val pairedRoll = if (powerup) DropTable.rollPowerup(rng, level.mapIndex, runPool, floor = powerupFloor) else null
         val (weapon, paired) = awardOverride?.invoke(rolled, pairedRoll) ?: (rolled to pairedRoll)
         items.add(
-            GroundItem(
-                deathDropPlacement.place(at, paired = paired != null),
-                weapon,
-                paired,
+            GroundItem.equipment(
+                position = deathDropPlacement.place(at, paired = paired != null),
+                weapon = weapon,
+                powerup = paired,
                 guaranteed = true,
             ),
         )
@@ -1830,58 +1812,65 @@ class GameSimulation(
             autoFire.clearCooldown()
         }
         if (ramenRng.nextInt(RAMEN_DROP_DENOMINATOR) == 0 && optionalLoot) {
-            items += GroundItem(
-                deathDropPlacement.placeGrounded(centreOfEnemy(enemy)),
-                null,
-                null,
-                ramen = true,
-            )
+            items += GroundItem.ramen(deathDropPlacement.placeGrounded(enemy.centre))
         }
         if (rng.nextDouble() > DropTable.killDropChance(level.mapIndex)) return
         // Rolled whether or not it is kept: the loot stream also feeds crits and stuns, and a
         // guaranteed-only run has to be the same fight with the loot merely withheld.
-        val at = deathDropPlacement.place(centreOfEnemy(enemy), paired = false)
+        val at = deathDropPlacement.place(enemy.centre, paired = false)
         val drop = if (rng.nextDouble() < DropTable.weaponShare()) {
-            GroundItem(at, DropTable.rollWeapon(rng, level.mapIndex, unlocked = unlockedWeapons), null)
+            GroundItem.equipment(
+                position = at,
+                weapon = DropTable.rollWeapon(rng, level.mapIndex, unlocked = unlockedWeapons),
+            )
         } else {
-            GroundItem(at, null, DropTable.rollPowerup(rng, level.mapIndex, runPool))
+            GroundItem.equipment(
+                position = at,
+                powerup = DropTable.rollPowerup(rng, level.mapIndex, runPool),
+            )
         }
         if (optionalLoot) items.add(drop)
     }
 
     private fun collectItems(): List<DiscoveryId> {
         val reach = DeathDropPlacement.PICKUP_REACH
-        val centre = centreOf(player)
+        val centre = player.centre(Physics.Default)
         val taken = items.filter { it.inReachOf(centre, reach) }
         val collected = mutableListOf<DiscoveryId>()
         taken.forEach { item ->
-            // Weapon first, then powerup (PROD-070): a paired award is one item, so its powerup
-            // resolves against either its new weapon or the preserved matching-weapon build.
-            item.weapon?.let { weapon ->
-                val (next, outcome) = run.loadout.collect(weapon)
-                run = run.copy(loadout = next)
-                gainScrap(outcome.scrap)
-                collected += DiscoveryId.Weapon(weapon.id)
-            }
-            item.powerup?.let { powerup ->
-                val (next, outcome) = run.loadout.collect(powerup.id, level.mapIndex, item.guaranteed)
-                run = run.copy(loadout = next)
-                // Both losing outcomes pay out: the pickup that lost, or the slot it displaced.
-                val scrap = when (outcome) {
-                    is Pickup.Scrapped -> outcome.scrap
-                    is Pickup.Displaced -> outcome.scrap
-                    is Pickup.Applied -> 0
+            when (val payload = item.payload) {
+                is GroundItem.Equipment -> {
+                    // Weapon first, then powerup (PROD-070): a paired award is one item, so its
+                    // powerup resolves against the new or preserved matching-weapon build.
+                    payload.weapon?.let { weapon ->
+                        val (next, outcome) = run.loadout.collect(weapon)
+                        run = run.copy(loadout = next)
+                        gainScrap(outcome.scrap)
+                        collected += DiscoveryId.Weapon(weapon.id)
+                    }
+                    payload.powerup?.let { powerup ->
+                        val (next, outcome) = run.loadout.collect(
+                            powerup.id,
+                            level.mapIndex,
+                            payload.guaranteed,
+                        )
+                        run = run.copy(loadout = next)
+                        // Both losing outcomes pay out: the pickup that lost, or the slot displaced.
+                        val scrap = when (outcome) {
+                            is Pickup.Scrapped -> outcome.scrap
+                            is Pickup.Displaced -> outcome.scrap
+                            is Pickup.Applied -> 0
+                        }
+                        gainScrap(scrap)
+                        collected += DiscoveryId.Powerup(powerup.id)
+                    }
                 }
-                gainScrap(scrap)
-                collected += DiscoveryId.Powerup(powerup.id)
+                GroundItem.Ramen -> {
+                    run = run.healed(run.maxHealth * RAMEN_HEAL_FRACTION)
+                    playerHealSecondsLeft = HEAL_FLASH_SECONDS
+                }
             }
-            if (item.ramen) {
-                run = run.healed(run.maxHealth * RAMEN_HEAL_FRACTION)
-                playerHealSecondsLeft = HEAL_FLASH_SECONDS
-            }
-            if (item.weapon != null || item.powerup != null || item.ramen) {
-                emittedAudioCues += AudioCue.PickupPulse
-            }
+            emittedAudioCues += AudioCue.PickupPulse
             autoFire.rebuild(run.loadout.weapon, run.loadout.slots)
         }
         items.removeAll(taken)
@@ -1903,7 +1892,7 @@ class GameSimulation(
     private fun gainScrap(amount: Int) {
         if (amount <= 0) return
         run = run.copy(scrap = run.scrap + amount)
-        val origin = Vec2(player.x + Physics.Default.width / 2.0, player.y - SCRAP_GAIN_HEAD_GAP)
+        val origin = Vec2(player.centre(Physics.Default).x, player.y - SCRAP_GAIN_HEAD_GAP)
         val previous = liveScrapGains.lastOrNull()
         if (previous?.bornTick == elapsedTicks) {
             liveScrapGains[liveScrapGains.lastIndex] = previous.copy(
@@ -1928,14 +1917,6 @@ class GameSimulation(
     }
 
     // ---- helpers ------------------------------------------------------------------------------
-
-    private fun centreOf(state: PlayerState) = Vec2(
-        state.x + Physics.Default.width / 2.0,
-        state.y + state.height(Physics.Default) / 2.0,
-    )
-
-    private fun centreOfEnemy(enemy: LiveEnemy) =
-        Vec2(enemy.position.x + ENEMY_HALF, enemy.position.y + ENEMY_HALF)
 
     private fun falloffAt(falloff: Falloff, distance: Double): Double = when (falloff) {
         Falloff.None -> 1.0
@@ -2000,8 +1981,8 @@ class GameSimulation(
     private fun overlapsPlayer(enemy: LiveEnemy): Boolean {
         val width = Physics.Default.width
         val height = player.height(Physics.Default)
-        return enemy.position.x < player.x + width && enemy.position.x + ENEMY_SIZE > player.x &&
-            enemy.position.y < player.y + height && enemy.position.y + ENEMY_SIZE > player.y
+        return enemy.position.x < player.x + width && enemy.position.x + LiveEnemy.BODY_SIZE > player.x &&
+            enemy.position.y < player.y + height && enemy.position.y + LiveEnemy.BODY_SIZE > player.y
     }
 
     private fun overlapsPlayer(boss: LiveBoss): Boolean {
@@ -2049,10 +2030,6 @@ class GameSimulation(
         const val DEFAULT_PROJECTILE_SPEED = 520.0
         const val DEFAULT_LIFETIME = 2.0
         const val PROJECTILE_RADIUS = 7.0
-        const val ENEMY_HALF = 7.0
-        const val ENEMY_SIZE = 14.0
-        /** An enemy stands in a cell: its feet are the cell's bottom edge, not its 14 px body's. */
-        const val ENEMY_FEET = TILE_SIZE.toDouble()
         /** How near the player has to be for an enemy to notice them (`specs/enemies.md`). */
         const val AWARE_PX = 22.0 * TILE_SIZE
         const val DISENGAGE_PX = 28.0 * TILE_SIZE

@@ -226,15 +226,17 @@ class EnemyMovementTest {
     @Test
     fun `an engaged enemy at exactly the disengage radius stays engaged`() {
         val sim = TestLevels.simulation()
-        val playerCentre = Vec2(sim.player.x + 6.0, sim.player.y + 13.0)
+        val playerCentre = sim.player.centre(Physics.Default)
         val swarm = TestLevels.enemyAt(sim, EnemyArchetype.Swarm, column = 60)
-        swarm.position = playerCentre + Vec2(GameSimulation.DISENGAGE_PX, 0.0) - Vec2(7.0, 7.0)
+        swarm.position = playerCentre + Vec2(GameSimulation.DISENGAGE_PX, 0.0) -
+            Vec2(LiveEnemy.BODY_HALF, LiveEnemy.BODY_HALF)
         swarm.engaged = true
 
         sim.tick(InputFrame())
         assertTrue(swarm.engaged, "an enemy exactly at the disengage radius dropped off")
 
-        swarm.position = playerCentre + Vec2(GameSimulation.DISENGAGE_PX + 1.0, 0.0) - Vec2(7.0, 7.0)
+        swarm.position = playerCentre + Vec2(GameSimulation.DISENGAGE_PX + 1.0, 0.0) -
+            Vec2(LiveEnemy.BODY_HALF, LiveEnemy.BODY_HALF)
         sim.tick(InputFrame())
         assertFalse(swarm.engaged, "an enemy beyond the disengage radius stayed engaged")
     }
@@ -253,7 +255,7 @@ class EnemyMovementTest {
         // The player runs into the arena and stands there: the swarm wants to close and must not.
         repeat(600) { tick ->
             sim.tick(InputFrame(right = tick < 170))
-            val leading = TileMap.toTile(swarm.position.x + 2 * GameSimulation.ENEMY_HALF - 0.001)
+            val leading = TileMap.toTile(swarm.position.x + LiveEnemy.BODY_SIZE - 0.001)
             assertTrue(leading < boundary, "a walker entered the arena approach: column $leading")
         }
         assertTrue(swarm.engaged, "fixture: the swarm disengaged")
@@ -268,7 +270,7 @@ class EnemyMovementTest {
         flyer.engaged = true
         repeat(600) { tick ->
             sim.tick(InputFrame(right = tick < 170))
-            val leading = TileMap.toTile(flyer.position.x + 2 * GameSimulation.ENEMY_HALF - 0.001)
+            val leading = TileMap.toTile(flyer.position.x + LiveEnemy.BODY_SIZE - 0.001)
             assertTrue(leading < boundary, "a flyer entered the arena approach: column $leading")
         }
         assertTrue(flyer.position.x > TileMap.toWorld(boundary - 3), "the flyer did not close on the approach at all")

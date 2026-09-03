@@ -198,13 +198,10 @@ class EnemyAttackTest {
     }
 
     private fun placeAtHorizontalDistance(sim: GameSimulation, enemy: LiveEnemy, distance: Double) {
-        val playerCentre = Vec2(
-            sim.player.x + Physics.Default.width / 2.0,
-            sim.player.y + sim.player.height(Physics.Default) / 2.0,
-        )
+        val playerCentre = sim.player.centre(Physics.Default)
         enemy.position = Vec2(
-            playerCentre.x + distance - GameSimulation.ENEMY_HALF,
-            playerCentre.y - GameSimulation.ENEMY_HALF,
+            playerCentre.x + distance - LiveEnemy.BODY_HALF,
+            playerCentre.y - LiveEnemy.BODY_HALF,
         )
     }
 
@@ -262,7 +259,7 @@ class EnemyAttackTest {
         repeat(10) { sim.tick(InputFrame(right = true)) }
         val strikes = strikesOver(sim, windUpTicks + 2 - 10)
 
-        val offset = sim.player.x + 6.0 - (brute.position.x + GameSimulation.ENEMY_HALF)
+        val offset = sim.player.centre(Physics.Default).x - brute.centre.x
         assertTrue(offset > 0.0 && offset < swing.reachPx, "fixture: player at offset $offset is not behind and in reach")
         assertTrue(brute.lastSwing != null, "fixture: the brute never struck")
         assertEquals(emptyList(), strikes, "a swing aimed left hit a player standing to the right")
@@ -296,7 +293,7 @@ class EnemyAttackTest {
         val level = TestLevels.flat(committedColumns = column..column)
         val sim = TestLevels.simulation(level)
         val boundary = TileMap.toWorld(column)
-        val width = io.github.ksean.cyberslop.physics.Physics.Default.width
+        val width = Physics.Default.width
 
         var entered = false
         repeat(40) {
@@ -345,7 +342,7 @@ class EnemyAttackTest {
 
     /** An enemy projectile that will overlap the player's centre on the next tick. */
     private fun shootThePlayer(sim: GameSimulation, damage: Double) {
-        val centre = Vec2(sim.player.x + 6.0, sim.player.y + 13.0)
+        val centre = sim.player.centre(Physics.Default)
         sim.projectiles.add(
             LiveProjectile(
                 position = centre - Vec2(4.0, 0.0),

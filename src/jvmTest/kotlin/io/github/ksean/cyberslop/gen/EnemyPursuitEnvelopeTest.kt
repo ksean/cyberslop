@@ -48,7 +48,7 @@ class EnemyPursuitEnvelopeTest {
     fun `the generated seed cohort stays inside both real-box envelopes`() {
         for (seed in 1uL..COHORT) {
             for (map in 1..10) {
-                val level = LevelGenerator.generate(seed * SPREAD, map).level
+                val level = GeneratedLevels.level(seed * SPREAD, map)
                 val violations = EnemyPursuitEnvelope.audit(level)
                 assertTrue(violations.isEmpty(), "seed $seed map $map: $violations")
             }

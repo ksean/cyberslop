@@ -2,14 +2,13 @@ package io.github.ksean.cyberslop.sim
 
 import io.github.ksean.cyberslop.combat.WeaponId
 import io.github.ksean.cyberslop.combat.Weapons
+import io.github.ksean.cyberslop.core.TrigTable
 import io.github.ksean.cyberslop.core.Vec2
 import io.github.ksean.cyberslop.gen.LevelGenerator
-import io.github.ksean.cyberslop.loot.PowerupId
 import io.github.ksean.cyberslop.physics.InputFrame
 import io.github.ksean.cyberslop.physics.TICK_SECONDS
 import io.github.ksean.cyberslop.loot.WeaponPickup
 import io.github.ksean.cyberslop.run.RunState
-import io.github.ksean.cyberslop.world.TileMap
 import kotlin.test.Test
 import kotlin.test.assertEquals
 import kotlin.test.assertFalse
@@ -40,13 +39,13 @@ class MechanicsTest {
 
     @Test
     fun `a swing never reaches behind the direction it is pointed`() {
-        val forward = io.github.ksean.cyberslop.core.Vec2(1.0, 0.0)
-        val backward = io.github.ksean.cyberslop.core.Vec2(-1.0, 0.0)
+        val forward = Vec2(1.0, 0.0)
+        val backward = Vec2(-1.0, 0.0)
 
-        assertTrue(io.github.ksean.cyberslop.core.TrigTable.withinArc(forward, forward, 40.0))
+        assertTrue(TrigTable.withinArc(forward, forward, 40.0))
         assertEquals(
             false,
-            io.github.ksean.cyberslop.core.TrigTable.withinArc(forward, backward, 40.0),
+            TrigTable.withinArc(forward, backward, 40.0),
             "an arc of 80 degrees reached directly behind the swing",
         )
     }
@@ -155,7 +154,7 @@ class MechanicsTest {
         val sim = simulation()
 
         assertTrue(
-            sim.items.any { it.weapon != null },
+            sim.items.any { it.equipmentPayload?.weapon != null },
             "no starter cache: map one would face its mini-boss with the broken bottle",
         )
     }
@@ -166,7 +165,7 @@ class MechanicsTest {
 
         repeat(600) { sim.tick(InputFrame()) }
 
-        sim.items.mapNotNull { it.weapon }.forEach { weapon ->
+        sim.items.mapNotNull { it.equipmentPayload?.weapon }.forEach { weapon ->
             assertTrue(
                 Weapons.all.indexOf(weapon) < 3,
                 "${weapon.name} dropped while locked",
@@ -223,6 +222,5 @@ class MechanicsTest {
 
     private companion object {
         val SEED = 0xC0FFEEuL
-        const val TOLERANCE = 4.0
     }
 }

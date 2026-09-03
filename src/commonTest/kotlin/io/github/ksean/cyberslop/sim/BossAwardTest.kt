@@ -31,7 +31,7 @@ class BossAwardTest {
 
             // One item carries both (PROD-070): the weapon resolves first whichever side the
             // player walks in from, so the award cannot wipe its own powerup.
-            val award = sim.items.drop(before).filter { it.guaranteed }.single()
+            val award = sim.items.drop(before).filter { it.isGuaranteedEquipment }.single().requireEquipment()
             val weapon = award.weapon ?: error("seed $seed: the award holds no weapon")
             val powerup = award.powerup ?: error("seed $seed: the award holds no powerup")
             assertTrue(weapon.tier.ordinal >= Tier.Chromed.ordinal, "seed $seed: boss weapon was ${weapon.tier}")
@@ -58,7 +58,7 @@ class BossAwardTest {
 
             sim.tick(InputFrame())
 
-            val award = sim.items.filter { it.guaranteed }.single()
+            val award = sim.items.filter { it.isGuaranteedEquipment }.single()
             assertEquals(
                 TileMap.toWorld(TestLevels.FLOOR_ROW + 1) - DeathDropPlacement.DEATH_DROP_RISE,
                 award.position.y,
@@ -93,7 +93,7 @@ class BossAwardTest {
 
         sim.tick(InputFrame())
 
-        val award = sim.items.filter { it.guaranteed }.single()
+        val award = sim.items.filter { it.isGuaranteedEquipment }.single()
         assertFalse(TileMap.toTile(award.position.x) in gap, "the award remained over the pit")
         assertEquals(
             TileMap.toWorld(TestLevels.FLOOR_ROW + 1) - DeathDropPlacement.DEATH_DROP_RISE,
@@ -103,7 +103,7 @@ class BossAwardTest {
 
     private fun approachOnGroundThenJump(sim: GameSimulation, item: GroundItem) {
         repeat(MAX_ALIGN_TICKS) {
-            val centreX = sim.player.x + Physics.Default.width / 2.0
+            val centreX = sim.player.centre(Physics.Default).x
             val delta = item.position.x - centreX
             val braking = sim.player.vx * sim.player.vx / (2.0 * Physics.Default.groundFriction)
             val press = abs(delta) > braking + ALIGN_TOLERANCE

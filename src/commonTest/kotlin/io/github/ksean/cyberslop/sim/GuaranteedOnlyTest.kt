@@ -18,7 +18,7 @@ class GuaranteedOnlyTest {
         val level = LevelGenerator.generate(SEED, 3).level
         assertTrue(level.pickups.isNotEmpty(), "fixture: the map placed no caches")
         val sim = GameSimulation(level, RunState.begin(SEED).copy(mapIndex = 3), SEED, optionalLoot = false)
-        assertTrue(sim.items.none { !it.guaranteed }, "a cache was placed in guaranteed-only mode")
+        assertTrue(sim.items.none { !it.isGuaranteedEquipment }, "a cache was placed in guaranteed-only mode")
     }
 
     @Test
@@ -32,7 +32,7 @@ class GuaranteedOnlyTest {
             sim.tick(InputFrame())
         }
         assertTrue(sim.run.scrap >= 30, "fixture: too few kills (scrap ${sim.run.scrap})")
-        assertTrue(sim.items.none { !it.guaranteed }, "a kill dropped optional loot in guaranteed-only mode")
+        assertTrue(sim.items.none { !it.isGuaranteedEquipment }, "a kill dropped optional loot in guaranteed-only mode")
     }
 
     /** Round-3 finding: skipping the drop draws shifted the crit stream, so the mode was a different fight. */

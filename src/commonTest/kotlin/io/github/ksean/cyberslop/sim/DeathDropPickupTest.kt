@@ -29,7 +29,7 @@ class DeathDropPickupTest {
     @Test
     fun `the starter cache still resolves while running on flat ground`() {
         val sim = GameSimulation(TestLevels.flat(), RunState.begin(1uL), 1uL)
-        val starter = sim.items.single { it.guaranteed }
+        val starter = sim.items.single { it.isGuaranteedEquipment }
 
         repeat(MAX_ALIGN_TICKS) {
             if (starter in sim.items) sim.tick(InputFrame(right = true))
@@ -41,8 +41,8 @@ class DeathDropPickupTest {
 
     @Test
     fun `running under a rank-and-file weapon does not collect it but jumping does`() {
-        val (sim, item) = simulationWithDrop { it.weapon != null }
-        val weapon = item.weapon ?: error("fixture: no weapon")
+        val (sim, item) = simulationWithDrop { it.equipmentPayload?.weapon != null }
+        val weapon = item.requireEquipment().weapon ?: error("fixture: no weapon")
 
         approachOnGroundThenJump(sim, item)
 
@@ -51,8 +51,8 @@ class DeathDropPickupTest {
 
     @Test
     fun `running under a rank-and-file powerup does not collect it but jumping does`() {
-        val (sim, item) = simulationWithDrop { it.powerup != null }
-        val powerup = item.powerup ?: error("fixture: no powerup")
+        val (sim, item) = simulationWithDrop { it.equipmentPayload?.powerup != null }
+        val powerup = item.requireEquipment().powerup ?: error("fixture: no powerup")
 
         approachOnGroundThenJump(sim, item)
 
@@ -61,7 +61,7 @@ class DeathDropPickupTest {
 
     private fun approachOnGroundThenJump(sim: GameSimulation, item: GroundItem) {
         repeat(MAX_ALIGN_TICKS) {
-            val centreX = sim.player.x + Physics.Default.width / 2.0
+            val centreX = sim.player.centre(Physics.Default).x
             val delta = item.position.x - centreX
             val braking = sim.player.vx * sim.player.vx / (2.0 * Physics.Default.groundFriction)
             val press = abs(delta) > braking + ALIGN_TOLERANCE

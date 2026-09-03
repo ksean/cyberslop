@@ -6,6 +6,7 @@ import kotlin.test.assertEquals
 import kotlin.test.assertFailsWith
 import kotlin.test.assertTrue
 
+@OptIn(ExperimentalUnsignedTypes::class)
 class RngTest {
     @Test
     fun `the same seed replays the same sequence`() {

@@ -39,7 +39,7 @@ class RoutePressureTest {
     fun `the route harness collects no optional loot`() {
         val generated = LevelGenerator.generate(SPREAD, 3)
         val outcome = PressureHarness.route(SPREAD, generated)
-        assertTrue(outcome.sim.items.none { !it.guaranteed }, "the harness had optional loot on offer")
+        assertTrue(outcome.sim.items.none { !it.isGuaranteedEquipment }, "the harness had optional loot on offer")
         assertTrue(PressureHarness.floorRun(SPREAD, 1).loadout.slots.totalStacks == 0, "the map-1 bot starts with a powerup")
     }
 

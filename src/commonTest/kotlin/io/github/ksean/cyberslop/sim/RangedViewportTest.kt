@@ -39,7 +39,7 @@ class RangedViewportTest {
         ).also { it.stun(1.0) }
         val weapon = resolved(WeaponId.SableCorpRailgun)
         val shot = LiveProjectile(
-            position = Vec2(100.0, enemyCentre(offscreen).y),
+            position = Vec2(100.0, offscreen.centre.y),
             velocity = Vec2(6_000.0, 0.0),
             damage = weapon.damagePerProjectile,
             pierceLeft = GameSimulation.MAX_PIERCE,
@@ -170,7 +170,7 @@ class RangedViewportTest {
         assertTrue(shot in sim.projectiles, "fixture: the first viewport spent the shot")
         val target = TestLevels.enemyAt(sim, EnemyArchetype.Turret, column = 8, health = 1_000.0)
             .also {
-                it.position = Vec2(shot.position.x - GameSimulation.ENEMY_HALF, 213.0)
+                it.position = Vec2(shot.position.x - LiveEnemy.BODY_HALF, 213.0)
                 it.stun(1.0)
             }
 
@@ -194,7 +194,7 @@ class RangedViewportTest {
         ).also { it.stun(1.0) }
         val psychicWeapon = resolved(WeaponId.NeuralSpike)
         psychic.projectiles += projectile(
-            Vec2(100.0, enemyCentre(psychicTarget).y),
+            Vec2(100.0, psychicTarget.centre.y),
             Vec2(6_000.0, 0.0),
             psychicWeapon,
             passesTerrain = true,
@@ -279,7 +279,7 @@ class RangedViewportTest {
     @Test
     fun `terrain before the view may bounce but an exact edge tie spends the shot`() {
         val weapon = resolved(WeaponId.SableCorpRailgun)
-        val y = TileMap.toWorld(TestLevels.FLOOR_ROW) + GameSimulation.ENEMY_HALF
+        val y = TileMap.toWorld(TestLevels.FLOOR_ROW) + LiveEnemy.BODY_HALF
 
         val beforeEdge = TestLevels.simulation(TestLevels.flat(wallColumn = 8)).also {
             it.enemies.clear()
@@ -302,9 +302,6 @@ class RangedViewportTest {
         assertEquals(1, spent.bouncesLeft)
         assertEquals(160.0, (tied.impacts.single().shape as HitShape.Impact).at.x, 1e-9)
     }
-
-    private fun enemyCentre(enemy: LiveEnemy) =
-        enemy.position + Vec2(GameSimulation.ENEMY_HALF, GameSimulation.ENEMY_HALF)
 
     private fun simulation(weaponId: WeaponId, vararg powerups: PowerupId): GameSimulation {
         val slots = powerups.fold(PowerupSlots.empty()) { held, powerup ->

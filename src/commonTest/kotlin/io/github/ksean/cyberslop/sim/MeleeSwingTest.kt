@@ -36,7 +36,7 @@ class MeleeSwingTest {
 
         val moved = sim.activeSwing!!
         assertNotEquals(openingOrigin, moved.origin)
-        assertEquals(playerCentre(sim), moved.origin)
+        assertEquals(sim.player.centre(Physics.Default), moved.origin)
         assertTrue(moved.progress > opening.progress)
     }
 
@@ -86,7 +86,7 @@ class MeleeSwingTest {
     @Test
     fun `player movement is resolved before the opening sector tests a body`() {
         val sim = simulation()
-        val oldOrigin = playerCentre(sim)
+        val oldOrigin = sim.player.centre(Physics.Default)
         val reach = Weapons.startingWeapon.rangePx
         enemyAt(sim, oldOrigin + Vec2(25.0, 0.0))
         val target = enemyAt(
@@ -113,7 +113,7 @@ class MeleeSwingTest {
     @Test
     fun `targets entering the cumulative sector are hit once and targets leaving early are not`() {
         val sim = simulation()
-        val origin = playerCentre(sim)
+        val origin = sim.player.centre(Physics.Default)
         val entering = enemyAt(sim, origin + TrigTable.rotate(Vec2.Right, 25.0) * 50.0)
         val leaving = enemyAt(sim, origin + TrigTable.rotate(Vec2.Right, 30.0) * 50.0)
         val enteringHealth = entering.health
@@ -136,7 +136,7 @@ class MeleeSwingTest {
     fun `one activation hits every overlapping target regardless of projectile pierce`() {
         fun damaged(spikeDriver: Boolean): Int {
             val sim = simulation(if (spikeDriver) slots(PowerupId.SpikeDriver) else PowerupSlots.empty())
-            val origin = playerCentre(sim)
+            val origin = sim.player.centre(Physics.Default)
             val targets = listOf(-30.0, 0.0, 30.0).map { angle ->
                 enemyAt(sim, origin + TrigTable.rotate(Vec2.Right, angle) * 48.0)
             }
@@ -169,20 +169,15 @@ class MeleeSwingTest {
     private fun enemyAt(sim: GameSimulation, centre: Vec2): LiveEnemy {
         val enemy = LiveEnemy(
             archetype = EnemyArchetype.Turret,
-            position = centre - Vec2(GameSimulation.ENEMY_HALF, GameSimulation.ENEMY_HALF),
+            position = centre - Vec2(LiveEnemy.BODY_HALF, LiveEnemy.BODY_HALF),
             health = 1_000.0,
-            homeX = centre.x - GameSimulation.ENEMY_HALF,
+            homeX = centre.x - LiveEnemy.BODY_HALF,
             patrolPx = 0.0,
         )
         enemy.stun(10.0)
         sim.enemies += enemy
         return enemy
     }
-
-    private fun playerCentre(sim: GameSimulation): Vec2 = Vec2(
-        sim.player.x + Physics.Default.width / 2.0,
-        sim.player.y + sim.player.height(Physics.Default) / 2.0,
-    )
 
     private companion object {
         val SEED = 0x5A1A6uL

@@ -52,7 +52,7 @@ class SimulationDeterminismTest {
         mutated("projectile payload") {
             it.projectiles.add(LiveProjectile(Vec2.Zero, Vec2.Right, 1.0, 0, 1.0, passesTerrain = false, fromPlayer = true, weapon = it.autoFire.weapon))
         }
-        mutated("items") { it.items.add(GroundItem(Vec2.Zero, null, null)) }
+        mutated("items") { it.items.add(GroundItem.ramen(Vec2.Zero)) }
         mutated("bosses") { it.boss.fight.engage() }
         mutated("boss aiming velocity") { it.boss.aimingVelocity = Vec2.Right }
         mutated("boss rest") { it.miniboss.restSecondsLeft += 0.1 }
@@ -102,8 +102,8 @@ class SimulationDeterminismTest {
         )
         payloadDiffers(
             "ground-item position",
-            { it.items += GroundItem(Vec2.Zero, it_weapon(), null) },
-            { it.items += GroundItem(Vec2.Right, it_weapon(), null) },
+            { it.items += GroundItem.equipment(Vec2.Zero, weapon = it_weapon()) },
+            { it.items += GroundItem.equipment(Vec2.Right, weapon = it_weapon()) },
         )
     }
 
@@ -180,8 +180,12 @@ class SimulationDeterminismTest {
                 sim.tick(InputFrame())
             }
             return Snapshot(
-                contents = sim.items.map {
-                    (it.weapon?.id?.ordinal ?: -1) to (it.powerup?.id?.ordinal ?: -1)
+                contents = sim.items.map { item ->
+                    when (val payload = item.payload) {
+                        is GroundItem.Equipment ->
+                            (payload.weapon?.id?.ordinal ?: -1) to (payload.powerup?.id?.ordinal ?: -1)
+                        GroundItem.Ramen -> -1 to -1
+                    }
                 },
                 positions = sim.items.map { it.position },
                 rngState = sim.lootRng.state,

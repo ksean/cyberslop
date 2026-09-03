@@ -107,6 +107,7 @@ class LiveEnemy(
     val healthFraction: Double get() = (health / maxHealth).coerceIn(0.0, 1.0)
     val stunned: Boolean get() = stunSecondsLeft > 0.0
     val windingUp: Boolean get() = windUpLeft > 0.0
+    val centre: Vec2 get() = position + Vec2(BODY_HALF, BODY_HALF)
 
     /** Slows take the strongest rather than compounding, and never pass the floor. */
     fun slow(fraction: Double, seconds: Double) {
@@ -123,6 +124,13 @@ class LiveEnemy(
 
     fun speedScale(floor: Double): Double =
         if (slowSecondsLeft > 0.0) maxOf(floor, 1.0 - slowFraction) else 1.0
+
+    companion object {
+        const val BODY_SIZE = 14.0
+        const val BODY_HALF = BODY_SIZE / 2.0
+        /** The body stands in one tile cell, with its feet at that cell's bottom edge. */
+        const val FEET_OFFSET = TILE_SIZE.toDouble()
+    }
 }
 
 /** What a boss attack is aimed at and tested against: where the player is and what they are doing. */
@@ -461,8 +469,8 @@ class LiveBoss(
         val topLeft = Vec2(centreX - halfWidth, position.y - height)
         if (bodyBlocked(topLeft)) return false
         val liveLevel = level ?: return true
-        if (Hazards.overlapped(liveLevel, topLeft.x, topLeft.y, BODY_WIDTH, BODY_HEIGHT).isNotEmpty()) return false
-        return !activeJetOverlap(topLeft)
+        return Hazards.overlapped(liveLevel, topLeft.x, topLeft.y, BODY_WIDTH, BODY_HEIGHT).isEmpty() &&
+            !activeJetOverlap(topLeft)
     }
 
     private fun beginLeap(direction: Int): Boolean {
@@ -583,8 +591,8 @@ class LiveBoss(
 
 /** A melee swing the renderer can draw: where, which way, how wide, and how long it lingers. */
 data class SwingVisual(
-    val origin: io.github.ksean.cyberslop.core.Vec2,
-    val direction: io.github.ksean.cyberslop.core.Vec2,
+    val origin: Vec2,
+    val direction: Vec2,
     val arcDegrees: Double,
     val reachPx: Double,
     val secondsLeft: Double,

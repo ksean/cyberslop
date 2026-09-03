@@ -2,11 +2,11 @@ package io.github.ksean.cyberslop.sim
 
 import io.github.ksean.cyberslop.combat.WeaponId
 import io.github.ksean.cyberslop.combat.Weapons
-import io.github.ksean.cyberslop.core.Vec2
 import io.github.ksean.cyberslop.entity.EnemyArchetype
 import io.github.ksean.cyberslop.loot.Loadout
 import io.github.ksean.cyberslop.loot.PowerupId
 import io.github.ksean.cyberslop.physics.InputFrame
+import io.github.ksean.cyberslop.physics.Physics
 import io.github.ksean.cyberslop.run.RunState
 import kotlin.test.Test
 import kotlin.test.assertTrue
@@ -22,7 +22,12 @@ class ProjectileOwnershipTest {
 
         while (sim.projectiles.isEmpty()) sim.tick(InputFrame())
         // The build is wiped by a weapon pickup while the slug is still in the air.
-        sim.items.add(GroundItem(Vec2(sim.player.x + 6.0, sim.player.y + 13.0), Weapons.of(WeaponId.RustlineMachete), null))
+        sim.items.add(
+            GroundItem.equipment(
+                sim.player.centre(Physics.Default),
+                weapon = Weapons.of(WeaponId.RustlineMachete),
+            ),
+        )
         sim.tick(InputFrame())
         assertTrue(sim.run.loadout.slots.distinctCount == 0, "fixture: the pickup did not clear the build")
         assertTrue(sim.projectiles.isNotEmpty(), "fixture: the slug already landed")

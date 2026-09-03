@@ -1,11 +1,11 @@
 package io.github.ksean.cyberslop.loot
 
-import io.github.ksean.cyberslop.core.Vec2
-import io.github.ksean.cyberslop.gen.LevelGenerator
+import io.github.ksean.cyberslop.gen.GeneratedLevels
 import io.github.ksean.cyberslop.physics.InputFrame
 import io.github.ksean.cyberslop.physics.Physics
 import io.github.ksean.cyberslop.run.RunState
 import io.github.ksean.cyberslop.sim.GameSimulation
+import io.github.ksean.cyberslop.sim.equipmentPayload
 import kotlin.math.abs
 import kotlin.test.Test
 import kotlin.test.assertTrue
@@ -28,7 +28,7 @@ class LootDensityTest {
         val counts = mutableListOf<Int>()
         for (seed in 1uL..COHORT) {
             for (mapIndex in 1..10) {
-                counts += LevelGenerator.generate(seed * SPREAD, mapIndex).level.pickups.size
+                counts += GeneratedLevels.level(seed * SPREAD, mapIndex).pickups.size
             }
         }
 
@@ -51,7 +51,7 @@ class LootDensityTest {
 
         for (seed in 1uL..COHORT) {
             for (mapIndex in listOf(1, 5, 10)) {
-                val level = LevelGenerator.generate(seed * SPREAD, mapIndex).level
+                val level = GeneratedLevels.level(seed * SPREAD, mapIndex)
                 val run = RunState.begin(seed).copy(mapIndex = mapIndex)
                 val sim = GameSimulation(level, run, seed * SPREAD)
 
@@ -59,7 +59,7 @@ class LootDensityTest {
                 // reach that would each bias the count downward: the weapon's opening swing kills on
                 // its own, and `collectItems` runs in the same tick, so a drop at the player's feet
                 // is taken before it is ever counted. Measured: leaving them in reported 0.1875.
-                val centre = centreOf(sim)
+                val centre = sim.player.centre(Physics.Default)
                 sim.enemies.removeAll { (it.position - centre).length <= CLEAR_RADIUS_PX }
 
                 // And the same for pickups already lying there. A static drop (PROD-047) can be
@@ -86,7 +86,7 @@ class LootDensityTest {
                     // the weapon/powerup items this round appended, just as the asserted 30/70
                     // split does.
                     val equipment = sim.items.subList(before, sim.items.size)
-                        .filter { it.weapon != null || it.powerup != null }
+                        .mapNotNull { it.equipmentPayload }
                     drops += equipment.size
                     weapons += equipment.count { it.weapon != null }
                 }
@@ -109,11 +109,6 @@ class LootDensityTest {
                 "${DropTable.weaponShare()} PROD-046 requires",
         )
     }
-
-    private fun centreOf(sim: GameSimulation) = Vec2(
-        sim.player.x + Physics.Default.width / 2.0,
-        sim.player.y + sim.player.height(Physics.Default) / 2.0,
-    )
 
     private companion object {
         const val COHORT = 40uL

@@ -6,6 +6,7 @@ import io.github.ksean.cyberslop.combat.Weapons
 import io.github.ksean.cyberslop.core.Vec2
 import io.github.ksean.cyberslop.entity.EnemyArchetype
 import io.github.ksean.cyberslop.physics.InputFrame
+import io.github.ksean.cyberslop.physics.Physics
 import io.github.ksean.cyberslop.run.RunState
 import kotlin.test.Test
 import kotlin.test.assertEquals
@@ -21,8 +22,8 @@ class OrbitWeaponTest {
     private fun enemyAt(sim: GameSimulation, offsetX: Double): LiveEnemy {
         val enemy = TestLevels.enemyAt(sim, EnemyArchetype.Brute, column = TestLevels.SPAWN_COLUMN)
         enemy.stun(seconds = 60.0)
-        val centre = Vec2(sim.player.x + 6.0, sim.player.y + 13.0)
-        enemy.position = centre + Vec2(offsetX - GameSimulation.ENEMY_HALF, -GameSimulation.ENEMY_HALF)
+        val centre = sim.player.centre(Physics.Default)
+        enemy.position = centre + Vec2(offsetX - LiveEnemy.BODY_HALF, -LiveEnemy.BODY_HALF)
         return enemy
     }
 

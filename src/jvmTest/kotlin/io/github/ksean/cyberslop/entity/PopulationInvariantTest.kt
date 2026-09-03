@@ -1,6 +1,6 @@
 package io.github.ksean.cyberslop.entity
 
-import io.github.ksean.cyberslop.gen.LevelGenerator
+import io.github.ksean.cyberslop.gen.GeneratedLevels
 import io.github.ksean.cyberslop.gen.Populator
 import io.github.ksean.cyberslop.gen.DifficultyCurve
 import kotlin.test.Test
@@ -32,7 +32,7 @@ class PopulationInvariantTest {
 
     @Test
     fun `start exclusion endpoints are rejected and the next columns are accepted`() {
-        val level = LevelGenerator.generate(BASE, 1).level
+        val level = GeneratedLevels.level(BASE, 1)
         val sample = level.enemies.first()
         val left = level.spawnColumn - Populator.START_CLEAR_TILES
         val right = level.spawnColumn + Populator.START_CLEAR_TILES
@@ -98,7 +98,7 @@ class PopulationInvariantTest {
         for (seedIndex in 0 until SEEDS) {
             val seed = BASE + seedIndex.toULong() * STRIDE
             for (mapIndex in 1..10) {
-                check(LevelGenerator.generate(seed, mapIndex).level, "seed $seed map $mapIndex")
+                check(GeneratedLevels.level(seed, mapIndex), "seed $seed map $mapIndex")
             }
         }
     }
@@ -107,7 +107,7 @@ class PopulationInvariantTest {
     @Test
     fun `every map is mostly melee and holds at least three archetypes`() {
         for (seed in 1uL..12uL) for (mapIndex in 1..10) {
-            val level = LevelGenerator.generate(seed * 0x9E3779B97F4A7C15uL, mapIndex).level
+            val level = GeneratedLevels.level(seed * 0x9E3779B97F4A7C15uL, mapIndex)
             val ranged = level.enemies.count { it.archetype.shoots }
             assertTrue(ranged <= level.enemies.size * Populator.MAX_RANGED_SHARE, "map $mapIndex seed $seed: $ranged of ${level.enemies.size} are ranged")
             val kinds = level.enemies.map { it.archetype }.toSet()
@@ -122,7 +122,7 @@ class PopulationInvariantTest {
     @Test
     fun `no spawn stands in an arena or on the approach to one`() {
         for (seed in 1uL..12uL) for (mapIndex in 1..10) {
-            val level = LevelGenerator.generate(seed * 0x9E3779B97F4A7C15uL, mapIndex).level
+            val level = GeneratedLevels.level(seed * 0x9E3779B97F4A7C15uL, mapIndex)
             val keepOut = listOf(
                 level.miniboss.leftTile - Populator.ARENA_APPROACH_TILES..level.miniboss.rightTile,
                 level.boss.leftTile - Populator.ARENA_APPROACH_TILES..level.widthTiles,

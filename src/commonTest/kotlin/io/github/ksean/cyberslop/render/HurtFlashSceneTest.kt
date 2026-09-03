@@ -84,10 +84,10 @@ class HurtFlashSceneTest {
         val damaged = rects(frame(sim))
         assertEquals(full.size + 2, damaged.size, "a damaged enemy did not add exactly a back and a fill rect")
         val added = damaged.filter { it !in full }
-        val width = GameSimulation.ENEMY_SIZE * Scene.ZOOM
+        val width = LiveEnemy.BODY_SIZE * Scene.ZOOM
         assertTrue(added.any { it[2] == width }, "no back rect of $width: $added")
         assertTrue(added.any { kotlin.math.abs(it[2] - width * 0.4) < 1e-9 }, "no fill rect of 40 %: $added")
-        val ground = (enemy.position.y + 16.0) * Scene.ZOOM
+        val ground = (enemy.position.y + LiveEnemy.FEET_OFFSET) * Scene.ZOOM
         assertTrue(added.all { it[1] < ground - EnemyLooks.of(enemy.archetype, sim.level.mapIndex).height * Scene.ZOOM }, "the bar is not above the figure")
     }
 

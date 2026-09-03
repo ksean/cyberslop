@@ -18,7 +18,8 @@ class BossPressureTest {
                 // it arrives holding exactly what the floor models; one that walked past the
                 // mini-boss, or past its award lying in the arena, is put on the same footing
                 // before the fight — the floor assumes every guaranteed award is taken.
-                val awardTaken = route.sim.miniboss.fight.defeated && route.sim.items.none { it.guaranteed && it.weapon != null }
+                val awardTaken = route.sim.miniboss.fight.defeated &&
+                    route.sim.items.none { it.isGuaranteedEquipment && it.equipmentPayload?.weapon != null }
                 if (awardTaken) {
                     assertTrue(route.sim.run.loadout.weapon.id == LootFloor.weaponAt(mapIndex).id, "map $mapIndex seed $seed: the route ended holding ${route.sim.run.loadout.weapon.name}, not the floor's")
                     assertTrue(route.sim.run.loadout.slots.held == LootFloor.slotsAt(mapIndex).held, "map $mapIndex seed $seed: the route ended with ${route.sim.run.loadout.slots.held}")

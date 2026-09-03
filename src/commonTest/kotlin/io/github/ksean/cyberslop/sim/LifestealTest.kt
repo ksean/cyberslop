@@ -130,10 +130,10 @@ class LifestealTest {
     fun `a hit landing after the killing blow in the same tick heals nobody`() {
         val sim = simulation(WeaponId.ScraplineZipPistol, PowerupId.RedMarketSiphon to 3, damaged = 99.5, level = TestLevels.flat())
         val enemy = TestLevels.enemyAt(sim, EnemyArchetype.Turret, column = 12)
-        val centre = Vec2(sim.player.x + Physics.Default.width / 2.0, sim.player.y + sim.player.height(Physics.Default) / 2.0)
+        val centre = sim.player.centre(Physics.Default)
         // In list order: the enemy's shot lands on the player, then the player's lands on the turret.
         sim.projectiles.add(LiveProjectile(centre - Vec2(1.0, 0.0), Vec2(60.0, 0.0), 50.0, 0, 1.0, passesTerrain = false, fromPlayer = false))
-        val target = Vec2(enemy.position.x + 7.0, enemy.position.y + 7.0)
+        val target = enemy.centre
         sim.projectiles.add(LiveProjectile(target - Vec2(1.0, 0.0), Vec2(60.0, 0.0), 50.0, 0, 1.0, passesTerrain = false, fromPlayer = true, weapon = sim.autoFire.weapon))
         val report = sim.tick(InputFrame())
         assertTrue(enemy.health < enemy.maxHealth, "fixture: the player's shot did not land")
@@ -208,8 +208,11 @@ class LifestealTest {
     ): GameSimulation {
         var slots = PowerupSlots.empty()
         build.forEach { (id, stacks) -> repeat(stacks) { slots = slots.collect(id).first } }
-        val run = RunState.begin(TestLevels.SEED).copy(mapIndex = mapIndex).let { it.copy(health = it.maxHealth) }.damaged(damaged)
-            .let { it.copy(loadout = Loadout(Weapons.of(weapon), slots)) }
+        val initial = RunState.begin(TestLevels.SEED).copy(mapIndex = mapIndex)
+        val run = initial.copy(
+            health = initial.maxHealth,
+            loadout = Loadout(Weapons.of(weapon), slots),
+        ).damaged(damaged)
         return GameSimulation(level, run, TestLevels.SEED)
     }
 

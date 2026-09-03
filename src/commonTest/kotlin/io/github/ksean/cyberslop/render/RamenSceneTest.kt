@@ -16,14 +16,14 @@ import kotlin.test.assertTrue
 /** PROD-110 / P-88: fixed bowl geometry and presentation-only green feedback. */
 class RamenSceneTest {
     @Test
-    fun `ramen doubles its introduction geometry while staying fixed and grounded`() {
+    fun `ramen matches its canonical P-89 design signature while staying fixed and grounded`() {
         val (sim, at) = simulationWithRamen()
 
         val first = ramenSignature(frame(sim, 0.0))
         val later = ramenSignature(frame(sim, 0.9))
 
         assertEquals(first, later, "ramen hovered or animated")
-        assertSignatureEquals(INTRODUCTION_SIGNATURE, normaliseToIntroductionSize(first, at))
+        assertSignatureEquals(CANONICAL_DESIGN_SIGNATURE, normaliseToDesignSpace(first, at))
         assertEquals(2, first.count { it.style == Scene.RAMEN_CHOPSTICK })
         assertTrue(first.count { it.style == Scene.RAMEN_NOODLE } >= 4)
         assertTrue(first.any { it.style == Scene.RAMEN_BOWL })
@@ -114,7 +114,7 @@ class RamenSceneTest {
             }
         }
 
-    private fun normaliseToIntroductionSize(segments: List<Segment>, at: Vec2): List<Segment> {
+    private fun normaliseToDesignSpace(segments: List<Segment>, at: Vec2): List<Segment> {
         val anchorX = at.x * Scene.ZOOM
         val supportY = (at.y + TILE_SIZE / 2.0) * Scene.ZOOM
         return segments.map { segment ->
@@ -168,7 +168,7 @@ class RamenSceneTest {
             TileMap.toWorld(RAMEN_COLUMN) + TILE_SIZE / 2.0,
             TileMap.toWorld(TestLevels.FLOOR_ROW) + TILE_SIZE / 2.0,
         )
-        sim.items += GroundItem(at, null, null, ramen = true)
+        sim.items += GroundItem.ramen(at)
         return sim to at
     }
 
@@ -178,7 +178,7 @@ class RamenSceneTest {
         const val RAMEN_COLUMN = 8
         const val RAMEN_SCALE = 2.0
         val CAMERA = Camera(0.0, 0.0, 560.0, 320.0)
-        val INTRODUCTION_SIGNATURE = listOf(
+        val CANONICAL_DESIGN_SIGNATURE = listOf(
             Segment(Scene.RAMEN_OUTLINE, 2.0, -8.0, -7.0, 8.0, -7.0),
             Segment(Scene.RAMEN_OUTLINE, 2.0, -7.5, -6.5, -4.0, -1.0),
             Segment(Scene.RAMEN_OUTLINE, 2.0, 7.5, -6.5, 4.0, -1.0),

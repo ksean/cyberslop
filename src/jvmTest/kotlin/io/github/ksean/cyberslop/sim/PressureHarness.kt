@@ -73,7 +73,7 @@ object PressureHarness {
     internal fun collectGuaranteedAwards(sim: GameSimulation): Boolean {
         val routeCentreX = playerCentreX(sim)
         while (true) {
-            val item = sim.items.firstOrNull { it.guaranteed } ?: return true
+            val item = sim.items.firstOrNull { it.isGuaranteedEquipment } ?: return true
             if (!moveToRest(sim, item.position.x)) return false
             if (!jumpThrough(sim, item)) return false
             if (!moveToRest(sim, routeCentreX)) return false
@@ -142,8 +142,7 @@ object PressureHarness {
         return false
     }
 
-    private fun playerCentreX(sim: GameSimulation): Double =
-        sim.player.x + Physics.Default.width / 2.0
+    private fun playerCentreX(sim: GameSimulation): Double = sim.player.centre(Physics.Default).x
 
     /** Holds exactly the loadout the floor models at [mapIndex]'s main boss (`LootFloor.weaponAt`/`slotsAt`). */
     fun holdFloor(sim: GameSimulation, mapIndex: Int) =

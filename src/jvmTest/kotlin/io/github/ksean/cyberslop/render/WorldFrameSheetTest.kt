@@ -91,15 +91,17 @@ class WorldFrameSheetTest {
         sim.items.clear()
         DROPS.forEachIndexed { index, id ->
             sim.items.add(
-                GroundItem(Vec2(sim.player.x + FIRST + index * PITCH, ground), Weapons.of(id), null),
+                GroundItem.equipment(
+                    Vec2(sim.player.x + FIRST + index * PITCH, ground),
+                    weapon = Weapons.of(id),
+                ),
             )
         }
         LOOT.forEachIndexed { index, id ->
             sim.items.add(
-                GroundItem(
-                    Vec2(sim.player.x + FIRST + (DROPS.size + index) * PITCH, ground),
-                    null,
-                    Powerups.of(id),
+                GroundItem.equipment(
+                    position = Vec2(sim.player.x + FIRST + (DROPS.size + index) * PITCH, ground),
+                    powerup = Powerups.of(id),
                 ),
             )
         }

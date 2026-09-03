@@ -22,7 +22,7 @@ class HazardPlacementTest {
         var checked = 0
         for (seed in 1uL..COHORT) {
             for (mapIndex in 1..10) {
-                val generated = LevelGenerator.generate(seed * SPREAD, mapIndex)
+                val generated = GeneratedLevels.generated(seed * SPREAD, mapIndex)
                 val level = generated.level
                 val replay = WitnessReplay.replay(level, generated.witness)
                 val label = "map $mapIndex seed $seed"
@@ -111,7 +111,7 @@ class HazardPlacementTest {
     @Test
     fun `the gate column and exit corridor contain no hazard kind`() {
         for (seed in 1uL..COHORT) for (mapIndex in 1..10) {
-            val level = LevelGenerator.generate(seed * SPREAD, mapIndex).level
+            val level = GeneratedLevels.level(seed * SPREAD, mapIndex)
             val label = "map $mapIndex seed $seed"
             for (column in level.gateColumn until level.widthTiles) {
                 for (row in 0 until level.tiles.height) {
@@ -129,7 +129,8 @@ class HazardPlacementTest {
     @Test
     fun `there are no damaging hazards on map one and more of them as the maps go on`() {
         val means = (1..10).map { mapIndex ->
-            (1uL..COHORT).sumOf { seed -> Hazards.count(LevelGenerator.generate(seed * SPREAD, mapIndex).level) }.toDouble() / COHORT.toDouble()
+            (1uL..COHORT).sumOf { seed -> Hazards.count(GeneratedLevels.level(seed * SPREAD, mapIndex)) }
+                .toDouble() / COHORT.toDouble()
         }
         assertEquals(0.0, means[0], "map 1 carries damaging hazards")
         means.zipWithNext().forEachIndexed { index, (earlier, later) ->
@@ -141,7 +142,7 @@ class HazardPlacementTest {
     fun `generated broken glass forms one to two tile patches`() {
         var patches = 0
         for (seed in 1uL..COHORT) for (mapIndex in 2..10) {
-            val level = LevelGenerator.generate(seed * SPREAD, mapIndex).level
+            val level = GeneratedLevels.level(seed * SPREAD, mapIndex)
             Hazards.glassPatches(level).forEach { patch ->
                 patches++
                 assertTrue(patch.size in 1..2, "map $mapIndex seed $seed generated glass length ${patch.size}")

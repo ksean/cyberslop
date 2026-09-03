@@ -25,6 +25,12 @@
 - **ENG-012:** The browser entry point must remain a composition root that delegates behaviour.
 - **ENG-013:** No rendering framework or game engine may be added. Rendering uses the browser's own
   `CanvasRenderingContext2D` through the existing browser bindings.
+- **ENG-014:** `Scene.compose` must be a presentation composition root: it owns frame order and the
+  shared `SceneBuilder`, then delegates backdrop/world, ground-item, actor, combat-effect and
+  overlay geometry to small `commonMain` painters. Those painters append to the shared builder;
+  they do not introduce a second draw-list abstraction, renderer interface or per-feature canvas
+  state. Extracting them must preserve the complete ordered `DrawList`, including layer, style,
+  primitive, stroke width and batch sharing.
 
 ```
 commonMain/io/github/ksean/cyberslop/
@@ -63,6 +69,10 @@ wasmJsMain/io/github/ksean/cyberslop/
   envelope; traversal distances must not be literals in generation code.
 - **ENG-056:** Map verification must run in the shipping build; a map whose witness fails replay
   must not be presented.
+- **ENG-057:** A ground item must have exactly one closed payload variant: equipment loot or ramen.
+  Equipment loot contains a weapon, a powerup or both and alone may be guaranteed; ramen contains
+  neither. Invalid empty loot and loot-plus-ramen states must be unrepresentable. Collection,
+  presentation and digest code must handle the variants exhaustively.
 
 ## Presentation
 
@@ -95,6 +105,15 @@ wasmJsMain/io/github/ksean/cyberslop/
   a few lines.
 - **ENG-023:** Gradle deprecation warnings caused by project configuration are failures
   (`--warning-mode=fail`).
+- **ENG-024:** Repeated domain geometry must have one named source of truth at the type that owns
+  it. In particular, `PlayerState` owns derivation of its centre from `Physics`, while `LiveEnemy`
+  owns its body size, centre and feet offset. Simulation, presentation and tests must not repeat
+  those formulas or substitute default-physics numeric literals for them. Do not add a generic
+  geometry framework where these small domain properties suffice.
+- **ENG-025:** Orchestrators may own sequencing and aggregate state, but feature calculations and
+  geometry belong to focused functions or types. Refactoring must follow existing stable domain
+  boundaries and must not introduce interfaces, inheritance or stateful subsystems solely to make
+  a file shorter.
 
 ## Verification
 
@@ -109,6 +128,16 @@ wasmJsMain/io/github/ksean/cyberslop/
 - **ENG-034:** A successful push to `main` publishes the verified distribution through GitHub Pages
   (`.github/workflows/pages.yml`, artifact `build/dist/wasmJs/productionExecutable`, published only
   after the check script succeeds).
+- **ENG-035:** Tests describe the current contract, not the sequence in which that contract evolved.
+  One assertion path exercised with several inputs should be table-driven; overlapping historical
+  cases should be folded into the current property. Tests for distinct production boundaries,
+  source sets or independently diagnosable rules remain separate. Test files and classes group one
+  cohesive property family rather than accumulating unrelated checks in a catch-all suite.
+- **ENG-036:** Heavy deterministic fixtures may be memoized in test code only. A generated-level
+  corpus is keyed by the exact seed and map index, invokes generation at most once per key in one
+  test process, and gives every consumer an isolated deep copy of mutable grids and masks. Tests
+  whose subject is generation itself, fresh-call determinism or generation time bypass the cache.
+  Sharing fixtures must not reduce the tested seeds, maps, properties or failure labels.
 
 | Layer | Source set | Runs on | Covers |
 |---|---|---|---|

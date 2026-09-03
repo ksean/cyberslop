@@ -174,6 +174,30 @@ and the loot-floor expectations only.
     linear presentation scale while the ground anchor and every simulation rule remain unchanged.
     Complete RAMEN-SCALE-1 in `tasks.md` test-first, inspect the regenerated ramen sheet, then run
     `./scripts/check.sh`.
+24. **Make ground-item payloads valid by construction.** *(done)*
+    Add ENG-057 and replace the nullable weapon/powerup plus ramen boolean combination with closed
+    equipment-loot and ramen variants. Keep collection order, rendering, placement, audio and the
+    deterministic digest unchanged. Complete PICKUP-MODEL-1 in `tasks.md` under characterization
+    tests, then run `./scripts/check.sh`.
+25. **Centralize actor body geometry.** *(done)*
+    Add ENG-024 so `PlayerState` and `LiveEnemy` own their centre/body derivations, replacing the
+    repeated formulas and raw default-physics offsets in simulation, presentation and tests.
+    Complete BODY-GEOMETRY-1 in `tasks.md`, then run `./scripts/check.sh`.
+26. **Decompose scene painting and cohere its tests.** *(done)*
+    Add ENG-014, ENG-025 and ENG-035. Leave `Scene.compose` as the ordered composition root while
+    extracting focused painters, split the 54-test catch-all `SceneTest` by current responsibility,
+    table-drive equivalent cases and express ramen's final signature without historical geometry.
+    Complete SCENE-COHESION-1 in `tasks.md` with exact draw-list parity and regenerated sheets.
+27. **Reuse isolated heavy generation fixtures.** *(done)*
+    Add ENG-036 and replace repeated `LevelGenerator.generate(seed, mapIndex)` setup in read-only
+    JVM cohort tests with a memoized test corpus that returns isolated mutable state. Preserve every
+    seed, map, assertion and direct generator test. Complete TEST-CORPUS-1 in `tasks.md`, compare the
+    before/after generation count and check duration, then run `./scripts/check.sh`.
+28. **Remove current inspection debt.** *(done)*
+    Remove the audited unused declarations and parameters, unresolved KDoc, redundant qualifiers,
+    unnecessary non-null assertions and trivial duplicate branches without changing behaviour or
+    adding a lint dependency. Complete CLEANUP-1 in `tasks.md`, rerun IntelliJ inspections and
+    `./scripts/check.sh`.
 
 ## Agents
 

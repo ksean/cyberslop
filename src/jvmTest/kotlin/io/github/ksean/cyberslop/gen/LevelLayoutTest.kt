@@ -22,7 +22,7 @@ class LevelLayoutTest {
             val thirds = IntArray(3)
             var total = 0
             repeat(COHORT) { index ->
-                val level = LevelGenerator.generate(SEED + index.toULong() * STRIDE, map).level
+                val level = GeneratedLevels.level(SEED + index.toULong() * STRIDE, map)
                 // Thirds of the ground a spawn may stand on: nothing stands on the boss's ground
                 // (the arena, its approach and the exit corridor), so the raw map's last third
                 // would be short by rule rather than by pooling.
@@ -46,7 +46,7 @@ class LevelLayoutTest {
     @Test
     fun `the ground runs all the way to the right-hand edge`() {
         (1..10).forEach { map ->
-            val level = LevelGenerator.generate(SEED, map).level
+            val level = GeneratedLevels.level(SEED, map)
             for (column in level.boss.rightTile + 1 until level.widthTiles) {
                 assertTrue(
                     (0 until level.tiles.height).any { level.tiles[column, it] == TileKind.Solid },
@@ -59,7 +59,7 @@ class LevelLayoutTest {
     @Test
     fun `an exit corridor exists past the boss arena`() {
         (1..10).forEach { map ->
-            val level = LevelGenerator.generate(SEED, map).level
+            val level = GeneratedLevels.level(SEED, map)
             assertTrue(
                 level.widthTiles - level.boss.rightTile > MIN_EXIT_TILES,
                 "map $map leaves only ${level.widthTiles - level.boss.rightTile} tiles past the arena",
@@ -70,7 +70,7 @@ class LevelLayoutTest {
     @Test
     fun `a gate seals the exit while the boss is alive`() {
         (1..10).forEach { map ->
-            val level = LevelGenerator.generate(SEED, map).level
+            val level = GeneratedLevels.level(SEED, map)
             assertTrue(
                 (0 until level.tiles.height).any {
                     level.tiles.blocksMovement(level.gateColumn, it)
@@ -83,7 +83,7 @@ class LevelLayoutTest {
     @Test
     fun `the witness still arrives with the gate in place`() {
         (1..10).forEach { map ->
-            val generated = LevelGenerator.generate(SEED, map)
+            val generated = GeneratedLevels.generated(SEED, map)
             val result = io.github.ksean.cyberslop.verify.WitnessReplay
                 .replay(generated.level, generated.witness)
             assertTrue(result.reachedBoss, "map $map: the gate broke the witness")

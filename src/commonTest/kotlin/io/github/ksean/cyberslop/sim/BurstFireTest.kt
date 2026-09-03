@@ -14,6 +14,7 @@ import io.github.ksean.cyberslop.run.RunState
 import kotlin.math.abs
 import kotlin.test.Test
 import kotlin.test.assertEquals
+import kotlin.test.assertNotNull
 import kotlin.test.assertTrue
 
 /**
@@ -43,15 +44,20 @@ class BurstFireTest {
             val now = shots(sim)
             if (now.size > seen && secondOrigin == null) {
                 secondOrigin = origin(now.last())
-                secondMuzzle = playerCentre(sim)
+                secondMuzzle = sim.player.centre(Physics.Default)
             }
             seen = now.size
         }
         val rounds = shots(sim)
         assertEquals(3, rounds.size)
         rounds.forEach { assertEquals(first.velocity, it.velocity, "a later round bent off the trigger aim") }
-        assertTrue(abs(secondOrigin!!.x - secondMuzzle!!.x) < 1e-6, "the second round left ${secondOrigin!!.x}, not the muzzle at ${secondMuzzle!!.x}")
-        assertTrue(secondOrigin!!.x > triggerMuzzle.x + 1.0, "the player moved but the second round left the trigger muzzle")
+        val originAtSecondRound = assertNotNull(secondOrigin, "the second round never fired")
+        val muzzleAtSecondRound = assertNotNull(secondMuzzle, "the second round had no muzzle")
+        assertTrue(
+            abs(originAtSecondRound.x - muzzleAtSecondRound.x) < 1e-6,
+            "the second round left ${originAtSecondRound.x}, not the muzzle at ${muzzleAtSecondRound.x}",
+        )
+        assertTrue(originAtSecondRound.x > triggerMuzzle.x + 1.0, "the player moved but the second round left the trigger muzzle")
     }
 
     @Test
@@ -124,16 +130,11 @@ class BurstFireTest {
     /** Where a projectile left this tick: it has already flown one tick from its origin. */
     private fun origin(p: LiveProjectile) = p.position - p.velocity * TICK_SECONDS
 
-    private fun playerCentre(sim: GameSimulation) = Vec2(
-        sim.player.x + Physics.Default.width / 2.0,
-        sim.player.y + sim.player.height(Physics.Default) / 2.0,
-    )
-
     /** The player over committed columns, a turret far enough that no round lands inside the burst. */
     private fun simulation(weapon: WeaponId, vararg build: PowerupId): GameSimulation {
         var slots = PowerupSlots.empty()
         build.forEach { slots = slots.collect(it).first }
-        val run = RunState.begin(TestLevels.SEED).let { it.copy(loadout = Loadout(Weapons.of(weapon), slots)) }
+        val run = RunState.begin(TestLevels.SEED).copy(loadout = Loadout(Weapons.of(weapon), slots))
         val sim = GameSimulation(TestLevels.flat(committedColumns = 1..5), run, TestLevels.SEED)
         TestLevels.enemyAt(sim, EnemyArchetype.Turret, column = 16)
         return sim

@@ -79,8 +79,7 @@ class BossAttackChoiceTest {
             boss.tick(TICK_SECONDS, target)
             val attack = boss.currentAttack
             if (attack != null && attack !== last) modules.add(attack.module)
-            last = attack ?: last.takeIf { attack != null }
-            if (attack == null) last = null
+            last = attack
             ticks++
         }
         assertEquals(count, modules.size, "fixture: only ${modules.size} attacks in $ticks ticks")

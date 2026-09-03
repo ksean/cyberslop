@@ -27,7 +27,7 @@ class ProjectileSweepTest {
             val weapon = railgun(opticsStacks)
             val speed = weapon.spec.projectileSpeed * weapon.reachScale
             val tickTravel = speed * TICK_SECONDS
-            val centre = enemy.position + Vec2(GameSimulation.ENEMY_HALF, GameSimulation.ENEMY_HALF)
+            val centre = enemy.centre
             val start = centre - Vec2(tickTravel / 2.0, 0.0)
             assertTrue((start - centre).length > GameSimulation.PROJECTILE_RADIUS, "fixture: start overlaps")
             assertTrue(
@@ -66,7 +66,7 @@ class ProjectileSweepTest {
             val enemy = TestLevels.enemyAt(sim, EnemyArchetype.Turret, column = 8, health = 1_000.0)
             enemy.stun(1.0)
             val weapon = railgun(0)
-            val centre = enemyCentre(enemy)
+            val centre = enemy.centre
             val start = centre + Vec2(-20.0, offset)
             val before = enemy.health
             sim.projectiles += projectile(start, Vec2(2_400.0, 0.0), weapon, pierceLeft = 0)
@@ -90,7 +90,7 @@ class ProjectileSweepTest {
                     .also { it.stun(1.0) }
             }
             val weapon = railgun(0)
-            val start = enemyCentre(enemies.getValue(8)) - Vec2(15.0, 0.0)
+            val start = enemies.getValue(8).centre - Vec2(15.0, 0.0)
             sim.projectiles += projectile(start, Vec2(3_600.0, 0.0), weapon, pierceLeft = 1)
 
             sim.tick(InputFrame())
@@ -109,7 +109,7 @@ class ProjectileSweepTest {
         val enemy = TestLevels.enemyAt(sim, EnemyArchetype.Turret, column = 8, health = 1_000.0)
         enemy.stun(1.0)
         val weapon = railgun(0)
-        val shot = projectile(enemyCentre(enemy) - Vec2(1.0, 0.0), Vec2(60.0, 0.0), weapon)
+        val shot = projectile(enemy.centre - Vec2(1.0, 0.0), Vec2(60.0, 0.0), weapon)
         sim.projectiles += shot
 
         repeat(2) { sim.tick(InputFrame()) }
@@ -142,7 +142,7 @@ class ProjectileSweepTest {
         val behindWall = TestLevels.enemyAt(sim, EnemyArchetype.Turret, column = 10, health = 1_000.0)
             .also { it.stun(1.0) }
         val weapon = railgun(0)
-        val start = enemyCentre(beforeWall) - Vec2(15.0, 0.0)
+        val start = beforeWall.centre - Vec2(15.0, 0.0)
         sim.projectiles += projectile(start, Vec2(3_600.0, 0.0), weapon)
 
         sim.tick(InputFrame())
@@ -159,7 +159,7 @@ class ProjectileSweepTest {
             .also { it.stun(1.0) }
         val weapon = railgun(0)
         val shot = projectile(
-            enemyCentre(enemy) - Vec2(15.0, 0.0),
+            enemy.centre - Vec2(15.0, 0.0),
             Vec2(3_600.0, 0.0),
             weapon,
             bouncesLeft = 1,
@@ -211,6 +211,4 @@ class ProjectileSweepTest {
         bouncesLeft = bouncesLeft,
     )
 
-    private fun enemyCentre(enemy: LiveEnemy) =
-        enemy.position + Vec2(GameSimulation.ENEMY_HALF, GameSimulation.ENEMY_HALF)
 }

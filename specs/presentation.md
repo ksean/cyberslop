@@ -451,8 +451,22 @@ parallel brown chopsticks (`#7b4a2d`) emerge from the bowl's right half and angl
 right. The silhouette must remain identifiable with colour removed. The bowl's bottom is aligned
 to its selected support surface. It has no kind ring, tier pips, coloured bloom, rarity scaling or
 hover; presentation time never changes its geometry or position. Its complete geometry and every
-stroke width are exactly twice their PROD-110 introduction values, preserving the bowl, noodle and
-chopstick proportions while doubling both visual dimensions.
+stroke width use the single design-space signature below at `RAMEN_VISUAL_SCALE = 2.0`. Coordinates
+are screen-pixel offsets from the ground-aligned anchor before that scale is applied; each arrow
+joins consecutive endpoints in one polyline.
+
+| Part | Design stroke | Design-space endpoints |
+|---|---:|---|
+| Bowl outline | 2.0 | `(-8,-7)→(8,-7)`; `(-7.5,-6.5)→(-4,-1)`; `(7.5,-6.5)→(4,-1)`; `(-4,-1)→(4,-1)` |
+| Bowl body | 1.5 | the same four segments as the outline |
+| Worn mark | 1.5 | `(3.5,-1.8)→(6.4,-5.8)` |
+| Left noodles | 1.5 | `(-5,-7)→(-6.5,-9)→(-4.5,-11)→(-6,-13)` |
+| Middle noodles | 1.5 | `(-1,-7)→(0.5,-9)→(-1.5,-11)→(0,-13)` |
+| Chopsticks | 1.5 | `(2,-6.5)→(7,-15.5)`; `(4,-6.5)→(9,-15.5)` |
+
+The final stroked envelope is 37.5 × 32.5 screen pixels and its bottom is at anchor y. This table,
+the scale and the styles above form the current ramen drawing definition; no prior-size geometry is
+part of the contract.
 
 Collecting a bowl starts `playerHealSecondsLeft = HEAL_FLASH_SECONDS = 0.12 s`, including when the
 health cap prevents an increase. While positive, the player's body, limbs, head, trim and arms use
@@ -716,11 +730,11 @@ its `Return to title` button receives focus as before.
   weapon retain their styles, then returns to normal. Pause freezes the timer. If a hurt flash
   overlaps, red renders for its complete window while the green timer remains unchanged, then the
   complete green window renders. Mutating only the heal timer changes neither save nor P-40 digest.
-- **P-89** Ramen visual scale: every ramen segment endpoint's offset from its ground-aligned anchor
-  and every ramen stroke width is exactly twice the corresponding pre-P-89 value. The resulting
-  bounds are twice as wide and twice as tall, the bottom still meets the same support coordinate,
-  the chopsticks remain parallel on the right and the noodle strokes retain their alternating
-  slopes. Pickup position, contact reach, healing, RNG, hover absence and P-40 digest are unchanged.
+- **P-89** Ramen visual signature: one scene test applies `RAMEN_VISUAL_SCALE = 2.0` to every
+  endpoint and stroke width in the canonical design-space table, producing an exact 37.5 × 32.5 px
+  stroked envelope whose bottom meets the support coordinate. It also verifies the parallel
+  right-side chopsticks and alternating noodle slopes. Pickup position, contact reach, healing,
+  RNG, hover absence and P-40 digest are independent controls and remain unchanged.
 - **P-76** Backdrop identity and detail: the backdrop-profile registry is total over the ten
   `ThemeId`s; every profile has a unique colour-independent structural signature containing at
   least the motifs required by its table row. For a representative level, all three depths contain

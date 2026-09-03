@@ -49,16 +49,13 @@ class MeleeSwingFrameSheetTest {
     private fun simulation(elapsed: Double, hit: Boolean): GameSimulation {
         val sim = GameSimulation(TestLevels.flat(), RunState.begin(SEED), SEED)
         sim.enemies.clear()
-        val origin = Vec2(
-            sim.player.x + Physics.Default.width / 2.0,
-            sim.player.y + sim.player.height(Physics.Default) / 2.0,
-        )
+        val origin = sim.player.centre(Physics.Default)
         val targetCentre = origin + TrigTable.rotate(Vec2.Right, TARGET_DEGREES) * TARGET_DISTANCE
         sim.enemies += LiveEnemy(
             EnemyArchetype.Brute,
-            targetCentre - Vec2(GameSimulation.ENEMY_HALF, GameSimulation.ENEMY_HALF),
+            targetCentre - Vec2(LiveEnemy.BODY_HALF, LiveEnemy.BODY_HALF),
             health = 1_000.0,
-            homeX = targetCentre.x - GameSimulation.ENEMY_HALF,
+            homeX = targetCentre.x - LiveEnemy.BODY_HALF,
             patrolPx = 0.0,
         ).also { if (hit) it.hurtSecondsLeft = GameSimulation.HURT_FLASH_SECONDS }
         sim.activeSwing = ActiveMeleeSwing(

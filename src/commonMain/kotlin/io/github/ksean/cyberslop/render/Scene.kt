@@ -46,6 +46,7 @@ object Scene {
      * following or clamping changes.
      */
     const val ZOOM = 3.5
+    private const val TILE_SCREEN_SIZE = TILE_SIZE * ZOOM
 
     /**
      * Half the width of a Street-tier drop, in **screen** pixels.
@@ -111,57 +112,97 @@ object Scene {
         val width = camera.viewWidth * ZOOM
         val height = camera.viewHeight * ZOOM
 
-        sky(builder, palette, width, height)
-        skyline(builder, palette, backdrop, camera, width, height)
         val presentationTime = presentationTime(timeSeconds, alpha)
-        tiles(builder, palette, sim.level, camera, presentationTime)
-        arenas(builder, palette, sim.level, camera)
-        jets(builder, palette, sim.level, camera, timeSeconds, presentationTime)
-        pickups(builder, sim, camera, presentationTime)
-        enemies(builder, palette, sim, camera, presentationTime)
-        bosses(builder, palette, sim, camera)
-        projectiles(builder, palette, sim, camera)
-        hitIndicator(builder, palette, sim, camera)
+        WorldHazardPainter.paint(
+            builder, palette, backdrop, sim, camera, width, height, timeSeconds, presentationTime,
+        )
+        GroundItemPainter.paint(builder, sim, camera, presentationTime)
+        ActorBossPainter.paintEnemiesAndBosses(builder, palette, sim, camera, presentationTime)
+        CombatEffectPainter.paintProjectilesAndHits(builder, palette, sim, camera)
         // Both the arc and the figure hang off one interpolated position, or the swing sits ahead
         // of the hand that threw it by a tick of travel.
         val muzzle = drawnMuzzle(sim, alpha)
+        CombatEffectPainter.paintMelee(builder, palette, sim, camera, muzzle)
+        ActorBossPainter.paintPlayer(builder, palette, sim, camera, muzzle)
+        CombatEffectPainter.paintScrapFeedback(builder, sim, camera, alpha)
+        HudOverlayPainter.paint(builder, palette, sim, camera, hud, width, height, debugMasks, discovery)
+
+        return builder.build()
+    }
+
+    internal fun paintWorldAndHazards(
+        builder: SceneBuilder,
+        palette: Palette,
+        backdrop: Backdrop,
+        sim: GameSimulation,
+        camera: Camera,
+        width: Double,
+        height: Double,
+        timeSeconds: Double,
+        presentationTime: Double,
+    ) {
+        sky(builder, palette, width, height)
+        skyline(builder, palette, backdrop, camera, width, height)
+        tiles(builder, palette, sim.level, camera, presentationTime)
+        arenas(builder, palette, sim.level, camera)
+        jets(builder, palette, sim.level, camera, timeSeconds, presentationTime)
+    }
+
+    internal fun paintEnemiesAndBosses(
+        builder: SceneBuilder,
+        palette: Palette,
+        sim: GameSimulation,
+        camera: Camera,
+        presentationTime: Double,
+    ) {
+        enemies(builder, palette, sim, camera, presentationTime)
+        bosses(builder, palette, sim, camera)
+    }
+
+    internal fun paintProjectilesAndHits(
+        builder: SceneBuilder,
+        palette: Palette,
+        sim: GameSimulation,
+        camera: Camera,
+    ) {
+        projectiles(builder, palette, sim, camera)
+        hitIndicator(builder, palette, sim, camera)
+    }
+
+    internal fun paintMelee(
+        builder: SceneBuilder,
+        palette: Palette,
+        sim: GameSimulation,
+        camera: Camera,
+        muzzle: Vec2,
+    ) {
         if (sim.deathSequence == null) swing(builder, palette, sim, camera, muzzle)
-        player(builder, palette, sim, camera, muzzle)
-        scrapGains(builder, sim, camera, alpha)
+    }
+
+    internal fun paintPlayer(
+        builder: SceneBuilder,
+        palette: Palette,
+        sim: GameSimulation,
+        camera: Camera,
+        muzzle: Vec2,
+    ) = player(builder, palette, sim, camera, muzzle)
+
+    internal fun paintHudAndOverlay(
+        builder: SceneBuilder,
+        palette: Palette,
+        sim: GameSimulation,
+        camera: Camera,
+        hud: HudModel,
+        width: Double,
+        height: Double,
+        debugMasks: Boolean,
+        discovery: DiscoveryEntry?,
+    ) {
         if (debugMasks) masks(builder, sim.level, camera)
         if (discovery == null) {
             hud(builder, palette, hud, width, height)
         } else {
             discoveryCard(builder, palette, discovery, width, height)
-        }
-
-        return builder.build()
-    }
-
-    /** Floating world-space feedback for every positive active-gameplay Scrap award (PROD-086). */
-    private fun scrapGains(
-        builder: SceneBuilder,
-        sim: GameSimulation,
-        camera: Camera,
-        alpha: Double,
-    ) {
-        sim.scrapGains.forEach { gain ->
-            val secondsLeft = gain.previousSecondsLeft +
-                (gain.secondsLeft - gain.previousSecondsLeft) * alpha.coerceIn(0.0, 1.0)
-            val opacity = (secondsLeft / GameSimulation.SCRAP_GAIN_SECONDS).coerceIn(0.0, 1.0)
-            val progress = 1.0 - opacity
-            builder.text(
-                TextItem(
-                    text = "+${gain.amount}",
-                    x = (gain.origin.x - camera.x) * ZOOM,
-                    y = (gain.origin.y - camera.y) * ZOOM - GameSimulation.SCRAP_GAIN_RISE_PX * progress,
-                    sizePx = SCRAP_GAIN_SIZE,
-                    style = SCRAP_GAIN_GOLD,
-                    align = TextAlign.Centre,
-                    bold = true,
-                    opacity = opacity,
-                ),
-            )
         }
     }
 
@@ -515,7 +556,7 @@ object Scene {
                         if (!level.tiles.blocksMovement(x, y - 1)) {
                             if (x > level.gateColumn) {
                                 exitEdge.rect(screenX, screenY, size, EDGE_PX)
-                                exitSparks(exitSparkDots, screenX, screenY, size, x, y, timeSeconds)
+                                exitSparks(exitSparkDots, screenX, screenY, x, y, timeSeconds)
                             } else {
                                 edge.rect(screenX, screenY, size, EDGE_PX)
                             }
@@ -527,7 +568,7 @@ object Scene {
                         hazard.rect(screenX, screenY, size, size)
                         if (level.tiles[x, y - 1] != TileKind.Acid) {
                             hazardGlow.rect(screenX, screenY, size, EDGE_PX)
-                            acidBubbles(bubbleGlow, bubbleBody, screenX, screenY, size, x, y, timeSeconds)
+                            acidBubbles(bubbleGlow, bubbleBody, screenX, screenY, x, y, timeSeconds)
                         }
                     }
 
@@ -546,7 +587,7 @@ object Scene {
                     }
 
                     TileKind.BrokenGlass -> brokenGlass(
-                        glassShards, glassCrumbs, screenX, screenY, size, x, y,
+                        glassShards, glassCrumbs, screenX, screenY, x, y,
                     )
 
                     else -> Unit
@@ -562,24 +603,23 @@ object Scene {
         crumbs: DrawBatch,
         screenX: Double,
         screenY: Double,
-        size: Double,
         tileX: Int,
         tileY: Int,
     ) {
-        val base = screenY + size
+        val base = screenY + TILE_SCREEN_SIZE
         for (index in GLASS_X_START.indices) {
             val phase = positiveMod(tileX * 7 + tileY * 11 + index * 5, 17) / 16.0 - 0.5
-            val x1 = screenX + size * (GLASS_X_START[index] + phase * 0.025)
-            val y1 = base - size * (GLASS_Y_START[index] + phase * 0.018)
-            val x2 = screenX + size * (GLASS_X_END[index] - phase * 0.018)
-            val y2 = base - size * (GLASS_Y_END[index] - phase * 0.015)
+            val x1 = screenX + TILE_SCREEN_SIZE * (GLASS_X_START[index] + phase * 0.025)
+            val y1 = base - TILE_SCREEN_SIZE * (GLASS_Y_START[index] + phase * 0.018)
+            val x2 = screenX + TILE_SCREEN_SIZE * (GLASS_X_END[index] - phase * 0.018)
+            val y2 = base - TILE_SCREEN_SIZE * (GLASS_Y_END[index] - phase * 0.015)
             shards.segment(x1, y1, x2, y2)
         }
         for (index in GLASS_CRUMB_X.indices) {
             val phase = positiveMod(tileX * 13 + tileY * 3 + index * 7, 19) / 18.0 - 0.5
             crumbs.dot(
-                screenX + size * (GLASS_CRUMB_X[index] + phase * 0.02),
-                base - size * (GLASS_CRUMB_Y[index] - phase * 0.015),
+                screenX + TILE_SCREEN_SIZE * (GLASS_CRUMB_X[index] + phase * 0.02),
+                base - TILE_SCREEN_SIZE * (GLASS_CRUMB_Y[index] - phase * 0.015),
                 GLASS_CRUMB_RADIUS,
             )
         }
@@ -589,7 +629,6 @@ object Scene {
         sparks: DrawBatch,
         screenX: Double,
         screenY: Double,
-        size: Double,
         tileX: Int,
         tileY: Int,
         timeSeconds: Double,
@@ -603,7 +642,7 @@ object Scene {
                 (timeSeconds % EXIT_SPARK_PERIOD) / EXIT_SPARK_PERIOD +
                     stagger.toDouble() / EXIT_PHASE_STEPS
                 ) % 1.0
-            val x = screenX + size * EXIT_SPARK_X[index]
+            val x = screenX + TILE_SCREEN_SIZE * EXIT_SPARK_X[index]
             val y = screenY - EXIT_SPARK_RISE * progress
             sparks.dot(x, y, EXIT_SPARK_RADIUS * (1.0 - progress))
         }
@@ -615,29 +654,27 @@ object Scene {
         body: DrawBatch,
         screenX: Double,
         screenY: Double,
-        size: Double,
         tileX: Int,
         tileY: Int,
         timeSeconds: Double,
     ) {
         for (index in BUBBLE_X.indices) {
-            val phase = positiveRemainder(
+            val phase = positiveFraction(
                 timeSeconds / BUBBLE_CYCLE +
                     (tileX * BUBBLE_PHASE_X + tileY * BUBBLE_PHASE_Y + index * BUBBLE_PHASE_INDEX)
                         .toDouble() / BUBBLE_PHASE_STEPS,
-                1.0,
             )
-            val x = screenX + size * BUBBLE_X[index]
-            val y = screenY + size * BUBBLE_RISE * (1.0 - phase)
+            val x = screenX + TILE_SCREEN_SIZE * BUBBLE_X[index]
+            val y = screenY + TILE_SCREEN_SIZE * BUBBLE_RISE * (1.0 - phase)
             val radius = BUBBLE_MIN_RADIUS + (BUBBLE_MAX_RADIUS - BUBBLE_MIN_RADIUS) * phase
             glow.dot(x, y, radius)
             body.dot(x, y, (radius - BUBBLE_RING).coerceAtLeast(BUBBLE_INNER_MIN))
         }
     }
 
-    private fun positiveRemainder(value: Double, modulus: Double): Double {
-        val remainder = value % modulus
-        return if (remainder < 0.0) remainder + modulus else remainder
+    private fun positiveFraction(value: Double): Double {
+        val remainder = value % 1.0
+        return if (remainder < 0.0) remainder + 1.0 else remainder
     }
 
     /** A burning barrel: a body in its floor cell and three wavy tongues in the cell above (P-73). */
@@ -669,7 +706,7 @@ object Scene {
             body.rect(left, top, width, size * DRUM_HEIGHT)
             bands.rect(left, top + size * DRUM_HEIGHT * 0.3, width, BAND_PX)
             bands.rect(left, top + size * DRUM_HEIGHT * 0.7, width, BAND_PX)
-            barrelFlame(outer, core, x + size / 2.0, top, size, timeSeconds, barrel)
+            barrelFlame(outer, core, x + size / 2.0, top, timeSeconds, barrel)
         }
     }
 
@@ -679,12 +716,11 @@ object Scene {
         core: List<DrawBatch>,
         centreX: Double,
         lidY: Double,
-        size: Double,
         timeSeconds: Double,
         barrel: Barrel,
     ) {
         for (tongue in BARREL_FLAME_LENGTHS.indices) {
-            val points = barrelFlamePoints(outer, centreX, lidY, size, timeSeconds, barrel, tongue)
+            val points = barrelFlamePoints(outer, centreX, lidY, timeSeconds, barrel, tongue)
             for (segment in outer.indices) {
                 val from = points[segment]
                 val to = points[segment + 1]
@@ -698,19 +734,18 @@ object Scene {
         outer: List<DrawBatch>,
         centreX: Double,
         lidY: Double,
-        size: Double,
         timeSeconds: Double,
         barrel: Barrel,
         tongue: Int,
     ): List<Vec2> {
         val startY = lidY - outer.first().width / 2.0
-        val tipY = lidY - size * BARREL_FLAME_LENGTHS[tongue] + outer.last().width / 2.0
+        val tipY = lidY - TILE_SCREEN_SIZE * BARREL_FLAME_LENGTHS[tongue] + outer.last().width / 2.0
         val coordinatePhase = positiveMod(
             barrel.column * BARREL_PHASE_X + barrel.row * BARREL_PHASE_Y,
             BARREL_PHASE_STEPS,
         ).toDouble() / BARREL_PHASE_STEPS
-        val cycle = positiveRemainder(timeSeconds / BARREL_WAVE_PERIOD + coordinatePhase, 1.0)
-        val anchorX = centreX + size * BARREL_FLAME_ANCHORS[tongue]
+        val cycle = positiveFraction(timeSeconds / BARREL_WAVE_PERIOD + coordinatePhase)
+        val anchorX = centreX + TILE_SCREEN_SIZE * BARREL_FLAME_ANCHORS[tongue]
         return (0..outer.size).map { point ->
             val progress = point.toDouble() / outer.size
             val envelope = TrigTable.sinDegrees(180.0 * progress)
@@ -720,7 +755,7 @@ object Scene {
                 360.0 * (cycle + BARREL_FLAME_PHASES[tongue] + progress * BARREL_WAVE_TURNS),
             )
             Vec2(
-                anchorX + size * (staticTurn + wave),
+                anchorX + TILE_SCREEN_SIZE * (staticTurn + wave),
                 startY + (tipY - startY) * progress,
             )
         }
@@ -768,7 +803,7 @@ object Scene {
             val bottom = (TileMap.toWorld(jet.bottomRow + 1) - camera.y) * ZOOM
             brokenPipe(pipeNeck, pipeMouth, pipeRim, pipeCrack, x, bottom)
             if (!jet.isOnAt(timeSeconds)) return@forEach
-            flame(outer, core, x, top, bottom, size, presentationTime)
+            flame(outer, core, x, top, bottom, presentationTime)
         }
     }
 
@@ -779,11 +814,10 @@ object Scene {
         centreX: Double,
         top: Double,
         bottom: Double,
-        size: Double,
         timeSeconds: Double,
     ) {
         for (tongue in JET_LENGTHS.indices) {
-            val points = flamePoints(outer, centreX, top, bottom, size, timeSeconds, tongue)
+            val points = flamePoints(outer, centreX, top, bottom, timeSeconds, tongue)
             for (segment in outer.indices) {
                 val from = points[segment]
                 val to = points[segment + 1]
@@ -798,14 +832,13 @@ object Scene {
         centreX: Double,
         top: Double,
         bottom: Double,
-        size: Double,
         timeSeconds: Double,
         tongue: Int,
     ): List<Vec2> {
         val startY = bottom - outer.first().width / 2.0
         val tongueTop = bottom - (bottom - top) * JET_LENGTHS[tongue]
         val tipY = tongueTop + outer.last().width / 2.0
-        val cycle = positiveRemainder(timeSeconds / JET_WAVE_PERIOD + JET_PHASE_EPSILON, 1.0)
+        val cycle = positiveFraction(timeSeconds / JET_WAVE_PERIOD + JET_PHASE_EPSILON)
         return (0..outer.size).map { point ->
             val progress = point.toDouble() / outer.size
             val envelope = TrigTable.sinDegrees(180.0 * progress)
@@ -816,7 +849,7 @@ object Scene {
             )
             val branch = JET_DIRECTIONS[tongue] * JET_BRANCH * progress
             Vec2(
-                centreX + size * (branch + staticTurn + wave),
+                centreX + TILE_SCREEN_SIZE * (branch + staticTurn + wave),
                 startY + (tipY - startY) * progress,
             )
         }
@@ -879,123 +912,6 @@ object Scene {
      * allow a drop to be drawn in a colour the same frame gives an effect. The halo under the icon
      * does the separating now, and does it against terrain the glow never helped with.
      */
-    private fun pickups(
-        builder: SceneBuilder,
-        sim: GameSimulation,
-        camera: Camera,
-        timeSeconds: Double,
-    ) {
-        sim.items.forEach { item ->
-            // A paired award (weapon and powerup on one item) draws both, the powerup a tile to
-            // the right, so it looks like the two drops it resolves as.
-            item.weapon?.let {
-                pickup(builder, camera, item.position, PickupLook.of(it), WeaponIcons.of(it.id), timeSeconds)
-            }
-            item.powerup?.let {
-                pickup(builder, camera, item.powerupPosition, PickupLook.of(it), PowerupIcons.of(it.id), timeSeconds)
-            }
-            if (item.ramen) ramen(builder, camera, item.position)
-        }
-    }
-
-    /** A fixed ground-aligned bowl, separate from hovering weapon and powerup icon grammar. */
-    private fun ramen(builder: SceneBuilder, camera: Camera, at: Vec2) {
-        val x = (at.x - camera.x) * ZOOM
-        if (x < -OFF_SCREEN || x > camera.viewWidth * ZOOM + OFF_SCREEN) return
-        val groundY = (at.y + TILE_SIZE / 2.0 - camera.y) * ZOOM
-        val rimY = groundY - RAMEN_RIM_RISE * RAMEN_VISUAL_SCALE
-        val baseY = groundY - RAMEN_OUTLINE_WIDTH * RAMEN_VISUAL_SCALE / 2.0
-
-        fun scaled(value: Double): Double = value * RAMEN_VISUAL_SCALE
-
-        fun bowl(batch: DrawBatch) {
-            batch.segment(x - scaled(8.0), rimY, x + scaled(8.0), rimY)
-            batch.segment(x - scaled(7.5), rimY + scaled(0.5), x - scaled(4.0), baseY)
-            batch.segment(x + scaled(7.5), rimY + scaled(0.5), x + scaled(4.0), baseY)
-            batch.segment(x - scaled(4.0), baseY, x + scaled(4.0), baseY)
-        }
-
-        bowl(builder.batch(
-            Layer.ItemHalo,
-            RAMEN_OUTLINE,
-            Primitive.Segment,
-            scaled(RAMEN_OUTLINE_WIDTH),
-        ))
-        bowl(builder.batch(
-            Layer.Items,
-            RAMEN_BOWL,
-            Primitive.Segment,
-            scaled(RAMEN_BODY_WIDTH),
-        ))
-        builder.batch(
-            Layer.ItemWear,
-            RAMEN_WEAR,
-            Primitive.Segment,
-            scaled(RAMEN_DETAIL_WIDTH),
-        ).segment(
-            x + scaled(3.5),
-            baseY - scaled(0.8),
-            x + scaled(6.4),
-            rimY + scaled(1.2),
-        )
-
-        val noodles = builder.batch(
-            Layer.Items,
-            RAMEN_NOODLE,
-            Primitive.Segment,
-            scaled(RAMEN_DETAIL_WIDTH),
-        )
-        noodles.segment(x - scaled(5.0), rimY, x - scaled(6.5), rimY - scaled(2.0))
-        noodles.segment(x - scaled(6.5), rimY - scaled(2.0), x - scaled(4.5), rimY - scaled(4.0))
-        noodles.segment(x - scaled(4.5), rimY - scaled(4.0), x - scaled(6.0), rimY - scaled(6.0))
-        noodles.segment(x - scaled(1.0), rimY, x + scaled(0.5), rimY - scaled(2.0))
-        noodles.segment(x + scaled(0.5), rimY - scaled(2.0), x - scaled(1.5), rimY - scaled(4.0))
-        noodles.segment(x - scaled(1.5), rimY - scaled(4.0), x, rimY - scaled(6.0))
-
-        val chopsticks = builder.batch(
-            Layer.Items,
-            RAMEN_CHOPSTICK,
-            Primitive.Segment,
-            scaled(RAMEN_DETAIL_WIDTH),
-        )
-        chopsticks.segment(
-            x + scaled(2.0),
-            rimY + scaled(0.5),
-            x + scaled(7.0),
-            groundY - scaled(15.5),
-        )
-        chopsticks.segment(
-            x + scaled(4.0),
-            rimY + scaled(0.5),
-            x + scaled(9.0),
-            groundY - scaled(15.5),
-        )
-    }
-
-    /**
-     * A drop: its icon in its materials, ringed in its kind's colour, hovering (PROD-050, PROD-078,
-     * PROD-079). The ring is drawn here and nowhere else, which is what keeps it off the hand and
-     * out of the HUD; the hover is an offset on the drawn origin only, so where the player must
-     * stand to collect the item is the simulation's business alone.
-     */
-    private fun pickup(
-        builder: SceneBuilder,
-        camera: Camera,
-        at: Vec2,
-        look: PickupLook,
-        icon: Icon,
-        timeSeconds: Double,
-    ) {
-        val x = (at.x - camera.x) * ZOOM
-        val y = (at.y - camera.y) * ZOOM - hoverOffset(timeSeconds, at.x)
-        if (x < -OFF_SCREEN || x > camera.viewWidth * ZOOM + OFF_SCREEN) return
-
-        val scale = PICKUP_PX * look.scale
-        kindRing(builder, look, x, y, scale)
-        IconPainter.paint(builder, icon, x, y, scale, Layer.ItemHalo, Layer.Items, Layer.ItemWear)
-        tierPips(builder, look, x, y + scale * IconStyles.KIND_RING + PIP_DROP)
-    }
-
     /**
      * The time a frame shows: the tick's time less the fraction of a tick the frame has not yet
      * reached. The player and camera are interpolated by [alpha] (ENG-062), so a drop that hovered
@@ -1011,39 +927,6 @@ object Scene {
     fun hoverOffset(timeSeconds: Double, x: Double): Double =
         HOVER_PX * TrigTable.sinDegrees(360.0 * timeSeconds / HOVER_PERIOD + x * HOVER_PHASE_DEGREES_PER_PX)
 
-    private fun kindRing(builder: SceneBuilder, look: PickupLook, x: Double, y: Double, scale: Double) {
-        val radius = IconStyles.KIND_RING * scale
-        val at = Vec2(x, y)
-        val colour = IconStyles.ringOf(look)
-        IconStyles.bloomWidthOf(look, scale)?.let { width ->
-            ring(builder, colour, at, radius, Layer.ItemHalo, width, KIND_RING_SEGMENTS)
-        }
-        ring(builder, IconStyles.HALO, at, radius, Layer.ItemHalo, IconStyles.haloWidthOf(StrokeWeight.Hair, scale), KIND_RING_SEGMENTS)
-        ring(builder, colour, at, radius, Layer.Items, IconStyles.widthOf(StrokeWeight.Hair, scale), KIND_RING_SEGMENTS)
-    }
-
-    /**
-     * Rarity, now that shape is spent on identity.
-     *
-     * Counted rather than compared: telling a 1.0-scale drop from a 1.3-scale one needs both on
-     * screen at once, where four pips against two needs neither a second drop nor colour.
-     */
-    private fun tierPips(builder: SceneBuilder, look: PickupLook, centreX: Double, y: Double) {
-        val count = look.tierOrdinal + 1
-        val halo = builder.batch(Layer.ItemHalo, IconStyles.HALO, Primitive.Dot)
-        val pips = builder.batch(
-            Layer.Items,
-            IconStyles.ringOf(look),
-            Primitive.Dot,
-        )
-        val first = centreX - (count - 1) * PIP_PITCH / 2.0
-        for (index in 0 until count) {
-            val x = first + index * PIP_PITCH
-            halo.dot(x, y, PIP_PX + PIP_HALO)
-            pips.dot(x, y, PIP_PX)
-        }
-    }
-
     private fun enemies(
         builder: SceneBuilder,
         palette: Palette,
@@ -1051,15 +934,15 @@ object Scene {
         camera: Camera,
         timeSeconds: Double,
     ) {
-        val player = centreOfPlayer(sim)
+        val player = sim.player.centre(Physics.Default)
 
         sim.enemies.forEach { enemy ->
             if (!enemy.alive) return@forEach
             // The simulation anchors an enemy at the top-left of a 14 px box, in a 16 px cell whose
             // floor is one tile below. Drawing from that anchor put a Brute's feet eight pixels
             // under the floor and its whole figure seven pixels left of what a shot has to hit.
-            val x = (enemy.position.x + ENEMY_HALF - camera.x) * ZOOM
-            val ground = (enemy.position.y + TILE_SIZE - camera.y) * ZOOM
+            val x = (enemy.centre.x - camera.x) * ZOOM
+            val ground = (enemy.position.y + LiveEnemy.FEET_OFFSET - camera.y) * ZOOM
             if (x < -OFF_SCREEN || x > camera.viewWidth * ZOOM + OFF_SCREEN) return@forEach
 
             val look = EnemyLooks.of(enemy.archetype, sim.level.mapIndex)
@@ -1071,7 +954,7 @@ object Scene {
             enemyStatuses(builder, enemy, look, x, ground, timeSeconds)
             // The boss's bar, for anyone who has been hurt (PROD-077); full health shows none.
             if (enemy.health < enemy.maxHealth) {
-                healthBar(builder, palette, x, ground - look.height * ZOOM - BAR_GAP, GameSimulation.ENEMY_SIZE * ZOOM, enemy.healthFraction)
+                healthBar(builder, palette, x, ground - look.height * ZOOM - BAR_GAP, LiveEnemy.BODY_SIZE * ZOOM, enemy.healthFraction)
             }
         }
     }
@@ -1081,11 +964,11 @@ object Scene {
         enemy: LiveEnemy,
         look: EnemyLook,
         x: Double,
-        ground: Double,
+        feet: Double,
         timeSeconds: Double,
     ) {
-        if (enemy.burn.secondsLeft > 0.0) burnIndicators(builder, enemy, look, x, ground, timeSeconds)
-        if (enemy.bleed.secondsLeft > 0.0) bleedIndicators(builder, enemy, look, x, ground, timeSeconds)
+        if (enemy.burn.secondsLeft > 0.0) burnIndicators(builder, enemy, look, x, feet, timeSeconds)
+        if (enemy.bleed.secondsLeft > 0.0) bleedIndicators(builder, enemy, look, x, feet, timeSeconds)
     }
 
     private fun burnIndicators(
@@ -1093,19 +976,19 @@ object Scene {
         enemy: LiveEnemy,
         look: EnemyLook,
         x: Double,
-        ground: Double,
+        feet: Double,
         timeSeconds: Double,
     ) {
         val outer = builder.batch(Layer.ActorStatus, BURN_OUTER, Primitive.Segment, BURN_OUTER_WIDTH)
         val core = builder.batch(Layer.ActorStatus, BURN_CORE, Primitive.Segment, BURN_CORE_WIDTH)
         val outerEmbers = builder.batch(Layer.ActorStatus, BURN_OUTER, Primitive.Dot)
         val coreEmbers = builder.batch(Layer.ActorStatus, BURN_CORE, Primitive.Dot)
-        val span = GameSimulation.ENEMY_SIZE * ZOOM
+        val span = LiveEnemy.BODY_SIZE * ZOOM
         val height = look.height * ZOOM
         repeat(STATUS_COUNT) { index ->
             val progress = statusProgress(timeSeconds, enemy, index, BURN_PERIOD)
             val atX = x + (index - 1) * span * STATUS_SPACING
-            val atY = ground - height * (STATUS_START + STATUS_TRAVEL * progress)
+            val atY = feet - height * (STATUS_START + STATUS_TRAVEL * progress)
             val size = BURN_SIZE * (1.0 - STATUS_SHRINK * progress)
             outer.segment(atX - size, atY + size, atX, atY - size)
             outer.segment(atX, atY - size, atX + size, atY + size)
@@ -1126,7 +1009,7 @@ object Scene {
     ) {
         val drops = builder.batch(Layer.ActorStatus, BLEED, Primitive.Segment, BLEED_WIDTH)
         val bulbs = builder.batch(Layer.ActorStatus, BLEED, Primitive.Dot)
-        val span = GameSimulation.ENEMY_SIZE * ZOOM
+        val span = LiveEnemy.BODY_SIZE * ZOOM
         val top = ground - look.height * ZOOM
         val height = look.height * ZOOM
         repeat(STATUS_COUNT) { index ->
@@ -1154,11 +1037,6 @@ object Scene {
 
     private fun positiveMod(value: Int, modulus: Int): Int = ((value % modulus) + modulus) % modulus
 
-    private fun centreOfPlayer(sim: GameSimulation) = Vec2(
-        sim.player.x + Physics.Default.width / 2.0,
-        sim.player.y + sim.player.height(Physics.Default) / 2.0,
-    )
-
     /**
      * Where an armed enemy is looking, as a unit vector — the player when it is close enough to
      * fire on, and the way it is patrolling otherwise.
@@ -1174,7 +1052,7 @@ object Scene {
         // A shot resolves on the aim taken when its wind-up began, so that is what the telegraph
         // shows — a barrel that kept tracking a dodging player would lie about where the shot goes.
         if (enemy.windingUp) return enemy.attackDirection
-        val offset = player - Vec2(enemy.position.x + ENEMY_HALF, enemy.position.y + ENEMY_HALF)
+        val offset = player - enemy.centre
         val range = GameSimulation.SHOOTER_RANGE
         if (offset.lengthSquared > range * range) return patrol
         return offset.normalisedOr(patrol)
@@ -1187,7 +1065,7 @@ object Scene {
      */
     fun enemyMotion(sim: GameSimulation, enemy: LiveEnemy): Motion {
         val look = EnemyLooks.of(enemy.archetype, sim.level.mapIndex)
-        val aim = engagement(enemy, look, centreOfPlayer(sim))
+        val aim = engagement(enemy, look, sim.player.centre(Physics.Default))
         // A shooter turns to face what it is shooting at; everything else walks its patrol. The
         // full direction goes to the pose, not just its sign — a shooter firing upward has to look
         // like it, since its projectile leaves on that diagonal.
@@ -1306,7 +1184,7 @@ object Scene {
         enemy: LiveEnemy,
         aim: Vec2,
         x: Double,
-        ground: Double,
+        feet: Double,
     ) {
         val size = look.height * ZOOM
         val folded = !enemy.engaged
@@ -1317,8 +1195,6 @@ object Scene {
             else -> CRAWLER_LEG_HEIGHT
         }
         val baseHeight = size * BASE_HEIGHT
-        val feet = ground
-
         val hurt = enemy.hurtSecondsLeft > 0.0
         val legs = builder.batch(
             Layer.ActorBehind,
@@ -1443,7 +1319,7 @@ object Scene {
         val headRadius = pose.headRadius * ZOOM * (look?.headScale ?: 1.0)
         builder.batch(Layer.ActorHead, bodyStyle, Primitive.Dot).dot(headX, headY, headRadius)
 
-        val glow = eyeStyle ?: palette.glow[look?.glowTone ?: palette.glow.size - 1]
+        val glow = eyeStyle ?: palette.glow[look?.glowTone ?: (palette.glow.size - 1)]
         builder.batch(Layer.ActorGlow, glow, Primitive.Dot).dot(
             headX + headRadius * EYE_LEAD * (if (pose.leadHand.x >= pose.hip.x) 1.0 else -1.0),
             headY,
@@ -1960,7 +1836,7 @@ object Scene {
         ring(builder, style, at, radius, Layer.Effects, strokeWidth(width), PULSE_SEGMENTS)
 
     /** A stroked circle as [chords] chords, on [layer] at an already-snapped [width]. */
-    private fun ring(builder: SceneBuilder, style: String, at: Vec2, radius: Double, layer: Layer, width: Double, chords: Int) {
+    internal fun ring(builder: SceneBuilder, style: String, at: Vec2, radius: Double, layer: Layer, width: Double, chords: Int) {
         val batch = builder.batch(layer, style, Primitive.Segment, width)
         var previous = Vec2(at.x + radius, at.y)
         for (step in 1..chords) {
@@ -2115,7 +1991,7 @@ object Scene {
      * either side of a crouch — 42 screen pixels at this zoom. The feet are continuous across a
      * stance change by construction, because that is the point the movement model anchors.
      *
-     * Exposed as [drawnCentre] because the camera has to follow the same point. It did not: it
+     * Exposed as [drawnFollow] because the camera has to follow the same point. It did not: it
      * followed the stance-dependent corner, so at the vertical dead-zone edge a crouch moved the
      * whole world by that same 42 pixels while the player stood still. Fixing the figure and
      * leaving the camera alone fixed half a defect.
@@ -2238,7 +2114,7 @@ object Scene {
         val outer = builder.batch(Layer.ActorStatus, POISON_OUTER, Primitive.Segment, POISON_OUTER_WIDTH)
         val core = builder.batch(Layer.ActorStatus, POISON_CORE, Primitive.Segment, POISON_CORE_WIDTH)
         repeat(STATUS_COUNT) { index ->
-            val progress = positiveRemainder(timeSeconds / POISON_PERIOD + index.toDouble() / STATUS_COUNT, 1.0)
+            val progress = positiveFraction(timeSeconds / POISON_PERIOD + index.toDouble() / STATUS_COUNT)
             val anchor = bodyPoint(pose, (index + 1.0) / (STATUS_COUNT + 1.0), x, feet)
             val centre = Vec2(
                 anchor.x + (index - 1) * POISON_SPACING,
@@ -2262,7 +2138,7 @@ object Scene {
         val outerEmbers = builder.batch(Layer.ActorStatus, BURN_OUTER, Primitive.Dot)
         val coreEmbers = builder.batch(Layer.ActorStatus, BURN_CORE, Primitive.Dot)
         repeat(STATUS_COUNT) { index ->
-            val progress = positiveRemainder(timeSeconds / BURN_PERIOD + index.toDouble() / STATUS_COUNT, 1.0)
+            val progress = positiveFraction(timeSeconds / BURN_PERIOD + index.toDouble() / STATUS_COUNT)
             val anchor = bodyPoint(pose, (index + 1.0) / (STATUS_COUNT + 1.0), x, feet)
             val atX = anchor.x + (index - 1) * PLAYER_STATUS_SPACING
             val atY = anchor.y - PLAYER_STATUS_TRAVEL * progress
@@ -2286,7 +2162,7 @@ object Scene {
         val drops = builder.batch(Layer.ActorStatus, BLEED, Primitive.Segment, BLEED_WIDTH)
         val bulbs = builder.batch(Layer.ActorStatus, BLEED, Primitive.Dot)
         repeat(STATUS_COUNT) { index ->
-            val progress = positiveRemainder(timeSeconds / BLEED_PERIOD + index.toDouble() / STATUS_COUNT, 1.0)
+            val progress = positiveFraction(timeSeconds / BLEED_PERIOD + index.toDouble() / STATUS_COUNT)
             val anchor = bodyPoint(pose, (index + 1.0) / (STATUS_COUNT + 1.0), x, feet)
             val atX = anchor.x + (index - 1) * PLAYER_STATUS_SPACING
             val atY = anchor.y + PLAYER_STATUS_TRAVEL * progress
@@ -2658,15 +2534,9 @@ object Scene {
     private const val PIPE_CRACK_END_X = 0.11
     private const val PIPE_CRACK_END_Y = 0.43
 
-    private const val PIP_PX = 2.0
-    private const val PIP_HALO = 1.25
-    private const val PIP_PITCH = 7.0
-    private const val PIP_DROP = 7.0
     private const val OFF_SCREEN = 120.0
     private const val REFERENCE_SPEED = 70.0
 
-    /** Matches the simulation's own enemy half-extent, used to find an enemy's centre. */
-    private const val ENEMY_HALF = 7.0
     const val BURN_PERIOD = 0.75
     const val BLEED_PERIOD = 0.65
     const val BURN_OUTER = "#ff5a1f"
@@ -2788,7 +2658,6 @@ object Scene {
     private const val PULSE_SEGMENTS = 12
 
     /** A drop's kind ring, drawn rounder than an effect's pulse because it is a fixture, not a flash. */
-    private const val KIND_RING_SEGMENTS = 16
 
     /** The hover phase `x / 40` radians (`specs/presentation.md`), in degrees per world px. */
     private const val HOVER_PHASE_DEGREES_PER_PX = 1.4324
@@ -2881,14 +2750,8 @@ object Scene {
     const val RAMEN_WEAR = "#c36b45"
     const val RAMEN_NOODLE = "#d6b85f"
     const val RAMEN_CHOPSTICK = "#7b4a2d"
-    private const val RAMEN_RIM_RISE = 7.0
-    private const val RAMEN_OUTLINE_WIDTH = 2.0
-    private const val RAMEN_BODY_WIDTH = 1.5
-    private const val RAMEN_DETAIL_WIDTH = 1.5
-    private const val RAMEN_VISUAL_SCALE = 2.0
 
     const val SCRAP_GAIN_GOLD = "#ffd45a"
-    private const val SCRAP_GAIN_SIZE = 18.0
 
     /** The development overlay's colour. Never part of what a player sees. */
     private const val ARC_MASK = "#1e3a5f"

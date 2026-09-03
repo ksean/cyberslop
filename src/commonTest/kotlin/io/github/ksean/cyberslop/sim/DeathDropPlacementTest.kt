@@ -18,7 +18,10 @@ class DeathDropPlacementTest {
     @Test
     fun `a flat-ground death drop preserves x and rests two tiles above its support`() {
         val level = TestLevels.flat()
-        val death = Vec2(TileMap.toWorld(20) + 7.0, TileMap.toWorld(TestLevels.FLOOR_ROW) + 7.0)
+        val death = Vec2(
+            TileMap.toWorld(20) + LiveEnemy.BODY_HALF,
+            TileMap.toWorld(TestLevels.FLOOR_ROW) + LiveEnemy.BODY_HALF,
+        )
 
         val drop = DeathDropPlacement(level).place(death, paired = false)
 
@@ -39,7 +42,10 @@ class DeathDropPlacementTest {
     fun `paired icons fall back far enough from adjacent raised ground`() {
         val level = TestLevels.flat()
         level.tiles[21, TestLevels.FLOOR_ROW] = TileKind.Solid
-        val death = Vec2(TileMap.toWorld(20) + 7.0, TileMap.toWorld(TestLevels.FLOOR_ROW) + 7.0)
+        val death = Vec2(
+            TileMap.toWorld(20) + LiveEnemy.BODY_HALF,
+            TileMap.toWorld(TestLevels.FLOOR_ROW) + LiveEnemy.BODY_HALF,
+        )
 
         val drop = DeathDropPlacement(level).place(death, paired = true)
 
@@ -54,7 +60,10 @@ class DeathDropPlacementTest {
     fun `a low ceiling rejects the death projection`() {
         val level = TestLevels.flat()
         level.tiles[20, TestLevels.FLOOR_ROW - 1] = TileKind.Solid
-        val death = Vec2(TileMap.toWorld(20) + 7.0, TileMap.toWorld(TestLevels.FLOOR_ROW) + 7.0)
+        val death = Vec2(
+            TileMap.toWorld(20) + LiveEnemy.BODY_HALF,
+            TileMap.toWorld(TestLevels.FLOOR_ROW) + LiveEnemy.BODY_HALF,
+        )
 
         val drop = DeathDropPlacement(level).place(death, paired = false)
 
@@ -123,10 +132,7 @@ class DeathDropPlacementTest {
     }
 
     private fun inReachOf(item: Vec2, player: PlayerState): Boolean {
-        val centre = Vec2(
-            player.x + Physics.Default.width / 2.0,
-            player.y + player.height(Physics.Default) / 2.0,
-        )
+        val centre = player.centre(Physics.Default)
         return (item - centre).lengthSquared <
             DeathDropPlacement.PICKUP_REACH * DeathDropPlacement.PICKUP_REACH
     }

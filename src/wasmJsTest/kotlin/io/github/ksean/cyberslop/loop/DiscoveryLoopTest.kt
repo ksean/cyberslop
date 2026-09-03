@@ -4,6 +4,7 @@ import io.github.ksean.cyberslop.combat.WeaponId
 import io.github.ksean.cyberslop.combat.Weapons
 import io.github.ksean.cyberslop.game.DiscoverySession
 import io.github.ksean.cyberslop.physics.InputFrame
+import io.github.ksean.cyberslop.physics.Physics
 import io.github.ksean.cyberslop.progression.DiscoveryRecorder
 import io.github.ksean.cyberslop.progression.PlayerProfile
 import io.github.ksean.cyberslop.sim.GroundItem
@@ -24,10 +25,9 @@ class DiscoveryLoopTest {
         )
         val sim = TestLevels.simulation()
         sim.items.clear()
-        sim.items += GroundItem(
-            io.github.ksean.cyberslop.core.Vec2(sim.player.x + 6.0, sim.player.y + 13.0),
-            Weapons.of(WeaponId.RustlineMachete),
-            null,
+        sim.items += GroundItem.equipment(
+            position = sim.player.centre(Physics.Default),
+            weapon = Weapons.of(WeaponId.RustlineMachete),
         )
         val frames = FixedStepFrames()
         val step = {

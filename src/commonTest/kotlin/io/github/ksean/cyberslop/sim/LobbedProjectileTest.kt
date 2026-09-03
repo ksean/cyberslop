@@ -32,11 +32,8 @@ class LobbedProjectileTest {
         assertTrue(target.aimingVelocity.lengthSquared > 0.0, "fixture target did not move")
 
         sim.autoFire.remaining = 0.0
-        val origin = Vec2(
-            sim.player.x + Physics.Default.width / 2.0,
-            sim.player.y + sim.player.height(Physics.Default) / 2.0,
-        )
-        val targetAtTrigger = enemyCentre(target)
+        val origin = sim.player.centre(Physics.Default)
+        val targetAtTrigger = target.centre
         val pattern = sim.autoFire.weapon.spec.pattern as FirePattern.Projectile
         val expected = ProjectileBallistics.solve(
             origin = origin,
@@ -65,10 +62,7 @@ class LobbedProjectileTest {
         assertTrue(sim.boss.aimingVelocity.lengthSquared > 0.0, "fixture boss did not move")
 
         sim.autoFire.remaining = 0.0
-        val origin = Vec2(
-            sim.player.x + Physics.Default.width / 2.0,
-            sim.player.y + sim.player.height(Physics.Default) / 2.0,
-        )
+        val origin = sim.player.centre(Physics.Default)
         val pattern = sim.autoFire.weapon.spec.pattern as FirePattern.Projectile
         val expected = ProjectileBallistics.solve(
             origin = origin,
@@ -153,7 +147,7 @@ class LobbedProjectileTest {
         sim.tick(InputFrame())
         val grenade = sim.projectiles.single { it.fromPlayer }
         val before = grenade.velocity
-        val desired = (enemyCentre(target) - grenade.position).normalisedOr(before)
+        val desired = (target.centre - grenade.position).normalisedOr(before)
         val turned = TrigTable.turnToward(
             before,
             desired,
@@ -251,14 +245,9 @@ class LobbedProjectileTest {
         level: Level = TestLevels.flat(),
     ): GameSimulation {
         val slots = build.fold(PowerupSlots.empty()) { held, powerup -> held.collect(powerup).first }
-        val run = RunState.begin(TestLevels.SEED).let {
-            it.copy(loadout = Loadout(Weapons.of(weapon), slots))
-        }
+        val run = RunState.begin(TestLevels.SEED).copy(loadout = Loadout(Weapons.of(weapon), slots))
         return GameSimulation(level, run, TestLevels.SEED)
     }
-
-    private fun enemyCentre(enemy: LiveEnemy) =
-        enemy.position + Vec2(GameSimulation.ENEMY_HALF, GameSimulation.ENEMY_HALF)
 
     private fun assertVector(expected: Vec2, actual: Vec2) {
         assertClose(expected.x, actual.x)

@@ -4,6 +4,7 @@ import io.github.ksean.cyberslop.verify.Foothold
 import io.github.ksean.cyberslop.verify.WitnessReplay
 import io.github.ksean.cyberslop.run.RunState
 import io.github.ksean.cyberslop.sim.GameSimulation
+import io.github.ksean.cyberslop.sim.equipmentPayload
 import io.github.ksean.cyberslop.world.TILE_SIZE
 import io.github.ksean.cyberslop.world.TileMap
 import kotlin.test.Test
@@ -96,7 +97,7 @@ class StaticDropTest {
             "a pickup at $centre is not inside the cell it stands in",
         )
         assertTrue(
-            sim.items.all { it.weapon != null || it.powerup != null },
+            sim.items.all { it.equipmentPayload != null },
             "a ground item is neither a weapon nor a powerup, so contact resolves to nothing",
         )
     }
@@ -124,7 +125,7 @@ class StaticDropTest {
         assertTrue(placed.size == level.pickups.size, "not every site was realised")
         placed.forEach { item ->
             assertTrue(
-                item.weapon != null || item.powerup != null,
+                item.equipmentPayload != null,
                 "a cache holds neither a weapon nor a powerup",
             )
         }

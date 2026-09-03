@@ -33,6 +33,7 @@ data class GeneratedLevel(val level: Level, val witness: Witness, val report: Ge
  */
 object LevelGenerator {
     private const val HEIGHT = 64
+    private const val BASE_ROW = HEIGHT - 14
     private const val SPAWN_TILES = 10
     private const val ARENA_CLEARANCE = 6
     private const val RAMP_TILES = 6
@@ -201,12 +202,9 @@ object LevelGenerator {
         val jets = mutableListOf<FireJet>()
 
         val band = curve.verticalBandTiles
-        val baseRow = HEIGHT - 14
-        val highestRow = (baseRow - band).coerceAtLeast(ARENA_CLEARANCE + 2)
+        val highestRow = (BASE_ROW - band).coerceAtLeast(ARENA_CLEARANCE + 2)
 
-        var floorRow = baseRow
-        var cursor = 0
-        var segmentReason = ""
+        var floorRow = BASE_ROW
 
         // Every tile a move writes is journalled, so a move that turns out not to work can be
         // abandoned completely rather than repaired in place. That keeps "correct by construction"
@@ -250,7 +248,7 @@ object LevelGenerator {
         }
 
         carveFloor(0, SPAWN_TILES, floorRow)
-        cursor = SPAWN_TILES
+        var cursor = SPAWN_TILES
 
         val spawnColumn = 2
         // Captured now, not at the end. `floorRow` moves as the spine climbs and drops, and a Level
@@ -275,12 +273,19 @@ object LevelGenerator {
         // out of the world instead of finishing.
         val bossLeft = width - arenaWidth - EXIT_CORRIDOR_TILES - 1
 
-        // --- first half ---
-        if (!runSegment(walker, rng, profile, curve, envelope, tiles, jets,
+        fun runTo(label: String, limit: Int): Outcome? {
+            val result = runSegment(
+                walker, rng, profile, curve, envelope, jets,
                 ::carveFloor, { journal.size to maskJournal.size }, ::rollbackTo, ::write,
-                cursor, minibossLeft - RAMP_TILES, floorRow, baseRow, highestRow
-            ).also { cursor = it.cursor; floorRow = it.floorRow; segmentReason = it.reason }.ok
-        ) return Outcome(null, "first segment: $segmentReason")
+                cursor, limit, floorRow, highestRow,
+            )
+            cursor = result.cursor
+            floorRow = result.floorRow
+            return if (result.ok) null else Outcome(null, "$label segment: ${result.reason}")
+        }
+
+        // --- first half ---
+        runTo("first", minibossLeft - RAMP_TILES)?.let { return it }
 
         // Carve the approach *and* the arena before walking. Braking overshoots slightly, so
         // walking toward ground that has not been carved yet drops the player into the pit below.
@@ -296,11 +301,7 @@ object LevelGenerator {
         cursor = miniboss.rightTile + 1
 
         // --- second half ---
-        if (!runSegment(walker, rng, profile, curve, envelope, tiles, jets,
-                ::carveFloor, { journal.size to maskJournal.size }, ::rollbackTo, ::write,
-                cursor, bossLeft - RAMP_TILES, floorRow, baseRow, highestRow
-            ).also { cursor = it.cursor; floorRow = it.floorRow; segmentReason = it.reason }.ok
-        ) return Outcome(null, "second segment: $segmentReason")
+        runTo("second", bossLeft - RAMP_TILES)?.let { return it }
 
         val budget = Budget(envelope)
         val boss = Arena(bossLeft, (bossLeft + arenaWidth - 1).coerceAtMost(width - 1), floorRow)
@@ -360,7 +361,6 @@ object LevelGenerator {
         profile: ThemeProfile,
         curve: DifficultyCurve,
         envelope: io.github.ksean.cyberslop.physics.MovementEnvelope,
-        tiles: TileMap,
         jets: MutableList<FireJet>,
         carveFloor: (Int, Int, Int) -> Unit,
         journalSize: () -> Pair<Int, Int>,
@@ -369,7 +369,6 @@ object LevelGenerator {
         startCursor: Int,
         limit: Int,
         startRow: Int,
-        baseRow: Int,
         highestRow: Int,
     ): SegmentResult {
         val budget = Budget(envelope)
@@ -390,7 +389,7 @@ object LevelGenerator {
             val (tileMark, maskMark) = journalSize()
             val proposed = attemptMove(
                 pickMove(rng, profile, curve), walker, rng, profile, curve, envelope,
-                tiles, jets, carveFloor, write, cursor, limit, floorRow, baseRow, highestRow,
+                jets, carveFloor, write, cursor, limit, floorRow, highestRow,
             )
 
             if (proposed != null) {
@@ -423,19 +422,16 @@ object LevelGenerator {
         profile: ThemeProfile,
         curve: DifficultyCurve,
         envelope: io.github.ksean.cyberslop.physics.MovementEnvelope,
-        tiles: TileMap,
         jets: MutableList<FireJet>,
         carveFloor: (Int, Int, Int) -> Unit,
         write: (Int, Int, TileKind) -> Unit,
         startCursor: Int,
         limit: Int,
-        startRow: Int,
-        baseRow: Int,
+        floorRow: Int,
         highestRow: Int,
     ): MoveResult? {
         val budget = Budget(envelope)
         var cursor = startCursor
-        val floorRow = startRow
 
         when (kind) {
             MoveKind.Gap -> {
@@ -463,7 +459,7 @@ object LevelGenerator {
 
             MoveKind.Drop -> {
                 val drop = 1 + rng.nextInt(budget.maxDrop)
-                val target = (floorRow + drop).coerceAtMost(baseRow)
+                val target = (floorRow + drop).coerceAtMost(BASE_ROW)
                 if (target == floorRow || cursor + budget.landing + 2 >= limit) return null
                 carveFloor(cursor, budget.landing, target)
                 if (!walker.walkRightTo(
@@ -581,9 +577,6 @@ object LevelGenerator {
         }
         return MoveKind.Flat
     }
-
-    private fun crossingSeconds(corridorTiles: Int): Double =
-        TileMap.toWorld(corridorTiles) / Physics.Default.maxRunSpeed
 
     private fun mixAttempt(seed: ULong, attempt: Int): ULong =
         seed xor (attempt.toULong() * 0x9E3779B97F4A7C15uL)

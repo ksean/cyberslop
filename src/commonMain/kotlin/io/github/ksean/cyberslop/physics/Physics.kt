@@ -1,6 +1,6 @@
 package io.github.ksean.cyberslop.physics
 
-import kotlin.math.sqrt
+import io.github.ksean.cyberslop.core.Vec2
 
 const val TICK_SECONDS = 1.0 / 60.0
 
@@ -35,12 +35,6 @@ data class Physics(
     val airtime: Double get() = 2.0 * jumpImpulse / gravity
     val flatReach: Double get() = maxRunSpeed * airtime
     val stoppingDistance: Double get() = maxRunSpeed * maxRunSpeed / (2.0 * groundFriction)
-    val runwayLength: Double get() = maxRunSpeed * maxRunSpeed / (2.0 * groundAccel)
-
-    /** Horizontal reach of a running jump that lands `drop` pixels below the take-off. */
-    fun reachFallingBy(drop: Double): Double =
-        maxRunSpeed * (jumpImpulse / gravity + sqrt(2.0 * (apexHeight + drop) / gravity))
-
     companion object {
         val Default = Physics(
             gravity = 2400.0,
@@ -100,4 +94,10 @@ data class PlayerState(
 ) {
     fun height(physics: Physics): Double =
         if (stance == Stance.Crouch) physics.crouchingHeight else physics.standingHeight
+
+    /** Centre of the active collision body under [physics] (ENG-024). */
+    fun centre(physics: Physics): Vec2 = Vec2(
+        x + physics.width / 2.0,
+        y + height(physics) / 2.0,
+    )
 }

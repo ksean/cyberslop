@@ -29,7 +29,7 @@ class PickupIconTest {
         val sim = simulation()
         TIER_RINGS.forEachIndexed { tier, (id, colour) ->
             sim.items.clear()
-            sim.items.add(GroundItem(dropAt(sim, 0.0), Weapons.of(id), null))
+            sim.items.add(GroundItem.equipment(dropAt(sim, 0.0), weapon = Weapons.of(id)))
             val frame = compose(sim)
 
             assertEquals(RING_CHORDS, ringOf(frame, colour).size, "$id drew no tier-$tier ring in $colour")
@@ -40,7 +40,7 @@ class PickupIconTest {
         }
 
         sim.items.clear()
-        sim.items.add(GroundItem(dropAt(sim, 0.0), null, Powerups.of(PowerupId.ChillProtocol)))
+        sim.items.add(GroundItem.equipment(dropAt(sim, 0.0), powerup = Powerups.of(PowerupId.ChillProtocol)))
         val powerupFrame = compose(sim)
         assertEquals(RING_CHORDS, ringOf(powerupFrame, IconStyles.POWERUP_RING).size)
         assertTrue(
@@ -65,7 +65,7 @@ class PickupIconTest {
         val bloomWidths = TIER_RINGS.mapIndexed { tier, (id, colour) ->
             sim.items.clear()
             val weapon = Weapons.of(id)
-            sim.items.add(GroundItem(dropAt(sim, 0.0), weapon, null))
+            sim.items.add(GroundItem.equipment(dropAt(sim, 0.0), weapon = weapon))
             val blooms = compose(sim).batches.filter {
                 it.layer == Layer.ItemHalo && it.style == colour && it.primitive == Primitive.Segment
             }
@@ -90,10 +90,10 @@ class PickupIconTest {
     fun `a paired drop keeps the weapon tier ring and the powerup blue independent`() {
         val sim = simulation().also { it.items.clear() }
         sim.items.add(
-            GroundItem(
-                dropAt(sim, 0.0),
-                Weapons.of(WeaponId.SableCorpRailgun),
-                Powerups.of(PowerupId.ForkBomb),
+            GroundItem.equipment(
+                position = dropAt(sim, 0.0),
+                weapon = Weapons.of(WeaponId.SableCorpRailgun),
+                powerup = Powerups.of(PowerupId.ForkBomb),
             ),
         )
         val frame = compose(sim)
@@ -125,7 +125,7 @@ class PickupIconTest {
             Triple(WeaponId.VoiceOfTheDeadNet, weaponRing(WeaponId.VoiceOfTheDeadNet), PickupLook.of(Weapons.of(WeaponId.VoiceOfTheDeadNet))),
         ).forEach { (id, colour, look) ->
             val sim = simulation().also { it.items.clear() }
-            sim.items.add(GroundItem(dropAt(sim, 0.0), Weapons.of(id), null))
+            sim.items.add(GroundItem.equipment(dropAt(sim, 0.0), weapon = Weapons.of(id)))
             val ring = ringOf(compose(sim), colour)
 
             val expected = IconStyles.KIND_RING * Scene.PICKUP_PX * look.scale
@@ -136,7 +136,7 @@ class PickupIconTest {
             assertTrue(ring.size >= MIN_RING_SEGMENTS, "$id's ring is ${ring.size} segments; that is a polygon")
         }
         val sim = simulation().also { it.items.clear() }
-        sim.items.add(GroundItem(dropAt(sim, 0.0), null, Powerups.of(PowerupId.ForkBomb)))
+        sim.items.add(GroundItem.equipment(dropAt(sim, 0.0), powerup = Powerups.of(PowerupId.ForkBomb)))
         assertTrue(ringOf(compose(sim), IconStyles.POWERUP_RING).isNotEmpty(), "a powerup drew no blue ring")
         assertTrue(TIER_RINGS.none { ringOf(compose(sim), it.second).isNotEmpty() }, "a powerup drew a weapon-tier ring")
     }
@@ -145,7 +145,7 @@ class PickupIconTest {
     @Test
     fun `a drop's ring sits on a halo ring of the same radius on the halo layer`() {
         val sim = simulation().also { it.items.clear() }
-        sim.items.add(GroundItem(dropAt(sim, 0.0), Weapons.of(WeaponId.ChromeFang), null))
+        sim.items.add(GroundItem.equipment(dropAt(sim, 0.0), weapon = Weapons.of(WeaponId.ChromeFang)))
         val frame = compose(sim)
         val colour = weaponRing(WeaponId.ChromeFang)
         val centre = ringCentreOf(frame, colour)
@@ -164,7 +164,11 @@ class PickupIconTest {
     @Test
     fun `both halves of a paired drop hover, out of step, and neither item moves`() {
         val sim = simulation().also { it.items.clear() }
-        val item = GroundItem(dropAt(sim, 0.0), Weapons.of(WeaponId.ChromeFang), Powerups.of(PowerupId.ForkBomb))
+        val item = GroundItem.equipment(
+            dropAt(sim, 0.0),
+            weapon = Weapons.of(WeaponId.ChromeFang),
+            powerup = Powerups.of(PowerupId.ForkBomb),
+        )
         sim.items.add(item)
         val before = item.position to item.powerupPosition
 
@@ -182,7 +186,7 @@ class PickupIconTest {
     @Test
     fun `the hover follows the interpolated frame time`() {
         val sim = simulation().also { it.items.clear() }
-        sim.items.add(GroundItem(dropAt(sim, 0.0), Weapons.of(WeaponId.ChromeFang), null))
+        sim.items.add(GroundItem.equipment(dropAt(sim, 0.0), weapon = Weapons.of(WeaponId.ChromeFang)))
         val t = 0.7
         val tick = io.github.ksean.cyberslop.physics.TICK_SECONDS
 
@@ -200,8 +204,8 @@ class PickupIconTest {
     @Test
     fun `weathering is on its own layer over the materials, whatever the mix of tiers`() {
         val sim = simulation().also { it.items.clear() }
-        sim.items.add(GroundItem(dropAt(sim, 0.0), Weapons.of(WeaponId.CorpoRiotBaton), null))
-        sim.items.add(GroundItem(dropAt(sim, 40.0), Weapons.of(WeaponId.SableCorpRailgun), null))
+        sim.items.add(GroundItem.equipment(dropAt(sim, 0.0), weapon = Weapons.of(WeaponId.CorpoRiotBaton)))
+        sim.items.add(GroundItem.equipment(dropAt(sim, 40.0), weapon = Weapons.of(WeaponId.SableCorpRailgun)))
         val frame = compose(sim)
         val icons = listOf(WeaponIcons.of(WeaponId.CorpoRiotBaton), WeaponIcons.of(WeaponId.SableCorpRailgun))
         val scales = listOf(Weapons.of(WeaponId.CorpoRiotBaton), Weapons.of(WeaponId.SableCorpRailgun))
@@ -238,7 +242,7 @@ class PickupIconTest {
     fun `a drop hovers about its resting position and the item itself does not move`() {
         val sim = simulation().also { it.items.clear() }
         val raised = dropAt(sim, 0.0) - Vec2(0.0, DeathDropPlacement.DEATH_DROP_RISE)
-        val item = GroundItem(raised, Weapons.of(WeaponId.ChromeFang), null)
+        val item = GroundItem.equipment(raised, weapon = Weapons.of(WeaponId.ChromeFang))
         sim.items.add(item)
         val before = item.position
 
@@ -308,8 +312,8 @@ class PickupIconTest {
     @Test
     fun `no drop colour is also a hazard or an effect colour`() {
         val sim = simulation()
-        sim.items.add(GroundItem(dropAt(sim, 0.0), Weapons.of(WeaponId.ChromeFang), null))
-        sim.items.add(GroundItem(dropAt(sim, 40.0), null, Powerups.of(PowerupId.BurnRig)))
+        sim.items.add(GroundItem.equipment(dropAt(sim, 0.0), weapon = Weapons.of(WeaponId.ChromeFang)))
+        sim.items.add(GroundItem.equipment(dropAt(sim, 40.0), powerup = Powerups.of(PowerupId.BurnRig)))
         val frame = compose(sim)
 
         val drops = itemStyles(frame)
@@ -399,11 +403,11 @@ class PickupIconTest {
         var offset = 0.0
         repeat(rounds) {
             WeaponId.entries.forEach {
-                items.add(GroundItem(dropAt(this, offset), Weapons.of(it), null))
+                items.add(GroundItem.equipment(dropAt(this, offset), weapon = Weapons.of(it)))
                 offset += SPACING
             }
             PowerupId.entries.forEach {
-                items.add(GroundItem(dropAt(this, offset), null, Powerups.of(it)))
+                items.add(GroundItem.equipment(dropAt(this, offset), powerup = Powerups.of(it)))
                 offset += SPACING
             }
         }
@@ -459,7 +463,7 @@ class PickupIconTest {
         // along with this one — the first version of this test measured a span of 363 px for a 53 px
         // icon and did not notice.
         sim.items.clear()
-        sim.items.add(GroundItem(dropAt(sim, 0.0), Weapons.of(id), null))
+        sim.items.add(GroundItem.equipment(dropAt(sim, 0.0), weapon = Weapons.of(id)))
         val frame = compose(sim)
 
         // The icon's own extent is its halo pass, which is one stroke per stroke of the icon;

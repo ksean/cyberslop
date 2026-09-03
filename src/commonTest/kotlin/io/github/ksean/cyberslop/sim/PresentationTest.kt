@@ -7,6 +7,7 @@ import io.github.ksean.cyberslop.physics.InputFrame
 import io.github.ksean.cyberslop.run.RunState
 import kotlin.test.Test
 import kotlin.test.assertFalse
+import kotlin.test.assertNotNull
 import kotlin.test.assertTrue
 
 /**
@@ -40,9 +41,8 @@ class PresentationTest {
             sim.lastSwing?.let { swing -> seen = swing }
         }
 
-        val swing = seen
-        assertTrue(swing != null, "a melee weapon swung 300 times and showed nothing")
-        assertTrue(swing!!.reachPx > 0.0, "the swing has no reach to draw")
+        val swing = assertNotNull(seen, "a melee weapon swung 300 times and showed nothing")
+        assertTrue(swing.reachPx > 0.0, "the swing has no reach to draw")
         assertTrue(swing.arcDegrees > 0.0, "the swing has no arc to draw")
     }
 

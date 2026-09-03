@@ -27,12 +27,12 @@ class ContactDrainTest {
     private fun overlaps(sim: GameSimulation, enemy: LiveEnemy): Boolean {
         val width = Physics.Default.width
         val height = sim.player.height(Physics.Default)
-        return enemy.position.x < sim.player.x + width && enemy.position.x + GameSimulation.ENEMY_SIZE > sim.player.x &&
-            enemy.position.y < sim.player.y + height && enemy.position.y + GameSimulation.ENEMY_SIZE > sim.player.y
+        return enemy.position.x < sim.player.x + width && enemy.position.x + LiveEnemy.BODY_SIZE > sim.player.x &&
+            enemy.position.y < sim.player.y + height && enemy.position.y + LiveEnemy.BODY_SIZE > sim.player.y
     }
 
     private fun overlapBoss(sim: GameSimulation, boss: LiveBoss) {
-        boss.placeAt(Vec2(sim.player.x + 6.0, sim.player.y + sim.player.height(Physics.Default)))
+        boss.placeAt(Vec2(sim.player.centre(Physics.Default).x, sim.player.y + sim.player.height(Physics.Default)))
     }
 
     @Test
