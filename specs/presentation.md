@@ -27,7 +27,8 @@ for a label. Buffers are reused per frame; allocation grows with actors on scree
 primitives they draw. The batch count bounds state changes, which is what was measured; it does not
 bound rasterization.
 
-Layers, back to front: `Sky`, `BackdropFar/Mid/Near`, `Haze`, `Terrain`, `Hazard`, `HazardSurface`,
+Layers, back to front: `Sky`, `BackdropDistant`, `BackdropFar/Mid/Near`, `Haze`, `Terrain`,
+`Hazard`, `HazardSurface`,
 `ItemHalo`, `Items`, `ItemWear`, actors (with `ActorWear` over `ActorTrim`), `ActorStatus`,
 `ShotGlow`, `ShotBody`, `ShotCore`, `Effects`, `Debug`, `Hud`, `HudOverlay`, `HudWear`. The halo, the
 material and the weathering of an icon are on three layers, and a shot's three marks on three,
@@ -51,16 +52,22 @@ does not independently decide whether the shot or an off-screen target can inter
 
 ## Palettes and the world
 
-Ten palettes, one per sub-theme, each with `sky`, `skyLow`, `backdropFar/Mid/Near`, `window`,
-`tileBody`, `tileEdge`, `tileDeep`, `hazard`, `hazardGlow`, `accent`, `haze` and a three-step `glow`
-ramp that is strictly increasing in luminance (enforced at construction). Colour temperature
-drifts across the run, from cold slate and sodium orange to sterile white-gold.
+Ten palettes, one per sub-theme, each with `sky`, `skyLow`, `backdropDistant`,
+`backdropFar/Mid/Near`, `window`, `tileBody`, `tileEdge`, `tileDeep`, `hazard`, `hazardGlow`,
+`accent`, `haze` and a three-step `glow` ramp that is strictly increasing in luminance (enforced at
+construction). `window` is also the canonical map-theme colour: the renderer reuses that exact
+value for the prominent themed parts of spikes and barrels instead of maintaining another colour
+that can drift away from it. `hazard` and `hazardGlow` remain the toxic-liquid and combat-effect
+roles and do not define the map theme. `backdropDistant` is a subdued tint in the window colour's
+hue family so the furthest landscape is related to the lights without competing with the
+playfield. Colour temperature drifts across the run, from cold slate and sodium orange to sterile
+white-gold.
 
 Tiles have a lit top edge and a darker body (two batches, not two draws per tile). A spike-strip
-tile has a low rectangular base in `palette.hazard` and three solid triangular blades in
-`palette.hazardGlow`; the blades have no outline-only `Segment` representation. Both colours come
-from the palette selected by the level's current theme, so the trap changes with the map while its
-geometry, footprint and damage do not.
+tile has a low rectangular base in `palette.tileEdge` and three solid triangular blades in
+`palette.window`, the canonical map-theme colour; the blades have no outline-only `Segment`
+representation. Both colours come from the palette selected by the level's current theme, so the
+trap changes with the map while its geometry, footprint and damage do not.
 
 Acid has a bright surface line and a dimmer body. Every exposed acid surface tile also carries three
 two-tone bubble rings: a `hazardGlow` outer dot under a smaller `hazard` dot, at three horizontal
@@ -98,12 +105,40 @@ The wave loop reads interpolated simulation time and freezes with pause.
 
 ### Cyberpunk-dystopian backdrops (PROD-040)
 
-The backdrop remains three procedural parallax layers at exactly 0.12×, 0.30× and 0.55× the
-camera rate, generated once per level from the `backdrop` stream and posed per frame by the existing
-damped horizontal and vertical offset. The far layer carries the largest masses and fewest marks;
-the middle layer adds recognisable infrastructure; the near layer has the densest roof damage,
-supports, pipes, cables, vents, light strips and antennae. Detail must enrich a silhouette without
-filling the playfield or competing with actors and hazards.
+The backdrop has four procedural parallax layers. `BackdropDistant` is behind every building and
+moves at exactly 0.024× the camera rate. The three building layers retain exactly 0.12×, 0.30× and
+0.55×, so the new layer is five times slower than the slowest building layer without altering the
+existing skyline depth. All four use the same damped horizontal and vertical pose rule. The
+distant horizon sits eight percent of the view height above the building horizon, leaving the
+lower part occluded while mountains and other large features remain visible. The landscape is
+generated once per level from its own derived backdrop stream, so adding it
+does not perturb the seeded geometry of the three building layers. The far building layer carries
+the largest masses and fewest marks; the middle layer adds recognisable infrastructure; the near
+layer has the densest roof damage, supports, pipes, cables, vents, light strips and antennae.
+Detail must enrich a silhouette without filling the playfield or competing with actors and
+hazards.
+
+Every `ThemeId` also has one authored distant-landscape profile. Its main silhouette uses
+`palette.backdropDistant`; only sparse accents use the exact `palette.window` theme colour. The
+profile distinguishes large features — mountains, mesas, cloud banks, canopy masses, crater rims
+and comparable horizon-scale forms — from ordinary detail. Large features may span a substantial
+part of the view. A discrete ordinary detail fits within a quarter of one tile in each dimension at
+the fixed presentation zoom; a longer texture mark such as a ripple, dune line, ice crack or lava
+channel remains no more than two screen pixels thick. This scale rule makes the landscape read as
+very far away rather than as another layer of foreground props.
+
+| Sub-theme | Window and map-theme colour | Required distant landscape |
+|---|---|---|
+| Ruined City Sprawl | sodium amber `#ffb069` | an ash desert of tall eroded mesas and half-buried megastructure ribs, with tiny windblown dust marks |
+| Rust Flats | ochre amber `#ffc46b` | rolling sand and rust dunes broken by slag heaps, with tiny scrap stakes and dune ripples |
+| Flooded Undercity | drowned cyan `#58e0d0` | a flat toxic floodplain beneath a distant storm wall, with drowned tree lines, tiny emergent pylons and water ripples |
+| Chem Foundry | acid green `#d8ff5a` | uncontrolled forest overgrowth with an irregular wild canopy, colossal dead trunks and tiny tree crowns and hanging vines |
+| Neon Slums | neon magenta `#ff5ac8` | a crystalline toxic-waste range with large angular outcrops, low smog banks and tiny shard fields |
+| Sable Refinery | molten orange `#ff9455` | a volcanic wasteland with a broad caldera and black ridges, crossed by thin lava channels and tiny vents |
+| Server Stacks | ice white-blue `#d7ecff` | a dystopian snowfield and glacial mountain range, with avalanche scars and tiny half-buried relay posts |
+| Skybridge Ruin | dusty pale gold `#ffd9a0` | a deep cloud ocean pierced by distant peaks and one colossal broken skybridge span, with tiny hanging cable fragments |
+| Reactor Core | irradiated warm white `#ffe3b0` | a radioactive ash tundra with a horizon-scale blast crater and fused ridges, with tiny glass spires and fallout streaks |
+| Arcology Vault | sterile white-gold `#fff3c4` | frozen salt and ice flats beneath a monolithic escarpment and sealed vault mass, with tiny surveillance pylons |
 
 Every `ThemeId` has an authored backdrop profile. The profile selects building proportions, roof
 profiles, window arrangements and at least three of the following primitive motif families:
@@ -126,15 +161,16 @@ unrelated motif.
 | Arcology Vault | fortified mega-towers, sealed arches, surveillance spires and rigid transit ribs |
 
 All motifs are abstract geometry with no readable text, logos or trademarks. They use the existing
-draw-list primitives on `BackdropFar`, `BackdropMid` and `BackdropNear`; colour and primitive
-vocabularies are fixed by depth, so the number of style batches does not grow with building or
-detail count. No bitmap, font or other runtime asset is introduced. A backdrop reads no tile,
-writes no tile, is excluded from the simulation digest and is never collidable.
+draw-list primitives on `BackdropDistant`, `BackdropFar`, `BackdropMid` and `BackdropNear`; colour
+and primitive vocabularies are fixed by depth, so the number of style batches does not grow with
+feature, building or detail count. No bitmap, font or other runtime asset is introduced. A
+backdrop reads no tile, writes no tile, is excluded from the simulation digest and is never
+collidable.
 
-Every burning barrel has a drum in `palette.hazard` and structural bands in `palette.tileEdge`,
-both resolved from the current level theme. It is topped by a smaller fire in the fixed warm outer
-`#ff5a1f` and hot-core `#ffd166` colours used by the game's other flames; changing the map theme
-must recolour the drum and bands but not either flame colour. A
+Every burning barrel has a drum in `palette.window`, the exact colour of the current theme's
+building windows, and structural bands in `palette.tileEdge`. It is topped by a smaller fire in the
+fixed warm outer `#ff5a1f` and hot-core `#ffd166` colours used by the game's other flames; changing
+the map theme must recolour the drum and bands but not either flame colour. A
 broad central tongue and two shorter asymmetric tongues rise from distinct points on the drum lid;
 each is a linked chain of diagonal strokes whose joints move laterally through a deterministic
 0.72 s loop. Their different phases and heights keep the silhouette irregular, and the tongues do
@@ -723,13 +759,27 @@ its `Return to title` button receives focus as before.
   Composing any phase changes neither damaging contact, barrel geometry nor the simulation digest,
   and one barrel and many barrels open the same set of flame style batches.
 - **P-93** Themed filled traps: for each of the ten map themes, one spike tile draws its base only
-  in that theme's `palette.hazard` and exactly three filled `Triangle` blades in that theme's
-  `palette.hazardGlow`, with no outline blade segments. A barrel in each theme draws its drum and
-  bands only in that theme's `palette.hazard` and `palette.tileEdge`; changing themes changes those
-  styles while preserving their geometry. Every barrel flame uses only `#ff5a1f` and `#ffd166` in
+  in that theme's `palette.tileEdge` and exactly three filled `Triangle` blades in that theme's
+  `palette.window`, with no outline blade segments. A barrel in each theme draws its drum and bands
+  only in that theme's `palette.window` and `palette.tileEdge`; changing themes changes those styles
+  while preserving their geometry. Every barrel flame uses only `#ff5a1f` and `#ffd166` in
   every theme and retains P-73's geometry and animation. A frame with many spike tiles or barrels
   opens the same set of respective body, blade, band and flame batches as a frame with one, and
   composing them changes no collision, damage, RNG state or simulation digest.
+- **P-94** Distant themed landscapes: for every `ThemeId`, `palette.window` is the one canonical
+  map-theme colour used unchanged by that theme's building windows, filled spike blades and barrel
+  drums, and the authored distant-landscape registry contains exactly the landscape in the table
+  above. Every profile has a colour-independent signature distinct from the other nine, at least
+  one large feature and ordinary details within the declared distant-scale limits. The composed
+  layers paint back to front as `BackdropDistant`, `BackdropFar`, `BackdropMid`, `BackdropNear` at
+  exactly 0.024, 0.12, 0.30 and 0.55 parallax, and camera movement offsets every distant primitive
+  at 0.024. Equal seed, level and theme reproduce equal landscape geometry; changing the seed
+  changes its arrangement without changing its profile; adding the distant stream leaves the
+  existing three seeded building layers unchanged. One distant feature and a horizon full of them
+  open the same distant-layer style batches. Generation and composition change no tile, collision,
+  non-backdrop RNG stream or simulation digest. The development world sheet renders all ten themes
+  for human review that each landscape reads as far away, matches its table entry, takes its colour
+  cues from the windows and preserves playfield contrast.
 - **P-85** Broken-glass presentation: every `BrokenGlass` tile draws exactly five unequal,
   disconnected `#7a3f2b` shard segments and three `#b66a45` crumbs within the bottom 30 % of its
   cell. The geometry contains no closed triangle or common baseline and differs
@@ -753,17 +803,17 @@ its `Return to title` button receives focus as before.
   stroked envelope whose bottom meets the support coordinate. It also verifies the parallel
   right-side chopsticks and alternating noodle slopes. Pickup position, contact reach, healing,
   RNG, hover absence and P-40 digest are independent controls and remain unchanged.
-- **P-76** Backdrop identity and detail: the backdrop-profile registry is total over the ten
+- **P-76** Building-backdrop identity and detail: the backdrop-profile registry is total over the ten
   `ThemeId`s; every profile has a unique colour-independent structural signature containing at
-  least the motifs required by its table row. For a representative level, all three depths contain
-  profile-owned structure and the near depth contains more detail marks per building than the far
-  depth. Equal seed, level and theme reproduce equal geometry; changing the seed varies geometry
-  without changing the profile, and changing the theme changes its signature. The three layers
-  remain ordered at exactly 0.12, 0.30 and 0.55 parallax, and camera movement offsets every body,
-  window and detail by its owning layer's rate. One building and a skyline of hundreds open the
-  same backdrop style batches. Generation and composition change no tile, collision, RNG stream
-  outside `backdrop` or simulation digest. The development world sheet renders all ten themes for
-  human review of dystopian readability, depth and playfield contrast.
+  least the building motifs required by its table row. For a representative level, all three
+  building depths contain profile-owned structure and the near depth contains more detail marks per
+  building than the far depth. Equal seed, level and theme reproduce equal geometry; changing the
+  seed varies geometry without changing the profile, and changing the theme changes its signature.
+  The three layers remain ordered at exactly 0.12, 0.30 and 0.55 parallax, and camera movement
+  offsets every body, window and detail by its owning layer's rate. One building and a skyline of
+  hundreds open the same backdrop style batches. Generation and composition change no tile,
+  collision, RNG stream outside `backdrop` or simulation digest. The development world sheet
+  renders all ten themes for human review of dystopian readability, depth and playfield contrast.
 - **P-77** Basic audio cues: a player melee activation reports exactly one `MeleeSwing`; a ranged
   single shot and a simultaneous spread each report exactly one `RangedFire`; a psychic single shot
   and simultaneous volley each report exactly one `PsychicFire`; every later round of either class's

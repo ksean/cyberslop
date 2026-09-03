@@ -14,6 +14,7 @@ package io.github.ksean.cyberslop.render
  */
 enum class Layer {
     Sky,
+    BackdropDistant,
     BackdropFar,
     BackdropMid,
     BackdropNear,

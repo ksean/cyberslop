@@ -225,6 +225,16 @@ object Scene {
         width: Double,
         height: Double,
     ) {
+        val distant = backdrop.distant
+        DistantLandscapePainter.paint(
+            builder = builder,
+            landscape = distant,
+            accent = palette.theme,
+            camera = camera,
+            horizon = height * (backdrop.horizonFraction - DISTANT_HORIZON_LIFT) +
+                verticalDrift(backdrop, camera, distant.parallax, height),
+            viewWidth = width,
+        )
         backdrop.layers.forEach { layer ->
             val bodyRects = builder.batch(layer.layer, layer.tint, Primitive.Rect)
             val bodySegments = builder.batch(
@@ -536,10 +546,11 @@ object Scene {
         val exitEdge = builder.batch(Layer.Terrain, EXIT_SURFACE, Primitive.Rect)
         val exitSparkDots = builder.batch(Layer.HazardSurface, EXIT_SPARK, Primitive.Dot)
         val hazard = builder.batch(Layer.Hazard, palette.hazard, Primitive.Rect)
+        val spikeBase = builder.batch(Layer.Hazard, palette.tileEdge, Primitive.Rect)
         val hazardGlow = builder.batch(Layer.Hazard, palette.hazardGlow, Primitive.Rect)
         val bubbleGlow = builder.batch(Layer.Hazard, palette.hazardGlow, Primitive.Dot)
         val bubbleBody = builder.batch(Layer.HazardSurface, palette.hazard, Primitive.Dot)
-        val spikes = builder.batch(Layer.Hazard, palette.hazardGlow, Primitive.Triangle)
+        val spikes = builder.batch(Layer.Hazard, palette.theme, Primitive.Triangle)
         val glassShards = builder.batch(
             Layer.HazardSurface, GLASS_RUST, Primitive.Segment, strokeWidth(GLASS_WIDTH),
         )
@@ -575,7 +586,7 @@ object Scene {
                     // Three solid blades stand on a darker themed base, distinct from low glass.
                     TileKind.Spikes -> {
                         val base = screenY + size
-                        hazard.rect(screenX, base - STRIP_BASE_PX, size, STRIP_BASE_PX)
+                        spikeBase.rect(screenX, base - STRIP_BASE_PX, size, STRIP_BASE_PX)
                         val pitch = size / STRIP_POINTS
                         for (n in 0 until STRIP_POINTS) {
                             val left = screenX + n * pitch
@@ -693,7 +704,7 @@ object Scene {
     ) {
         if (level.barrels.isEmpty()) return
         val size = TILE_SIZE * ZOOM
-        val body = builder.batch(Layer.Hazard, palette.hazard, Primitive.Rect)
+        val body = builder.batch(Layer.Hazard, palette.theme, Primitive.Rect)
         val bands = builder.batch(Layer.Hazard, palette.tileEdge, Primitive.Rect)
         val outer = BARREL_OUTER_WIDTHS.map { width ->
             builder.batch(Layer.Hazard, FIRE_OUTER, Primitive.Segment, size * width)
@@ -2464,6 +2475,7 @@ object Scene {
 
     // Layout and proportion. Everything here is either a screen pixel or a fraction of a figure.
     private const val BACKDROP_HORIZON = 0.72
+    private const val DISTANT_HORIZON_LIFT = 0.08
     private const val WINDOW_INSET = 0.30
     private const val WINDOW_FILL = 0.34
     private const val BACKDROP_STRUCTURE_STROKE = 2.75

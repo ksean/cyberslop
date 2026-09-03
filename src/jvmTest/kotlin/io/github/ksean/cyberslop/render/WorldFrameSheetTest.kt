@@ -311,7 +311,12 @@ class WorldFrameSheetTest {
         val BOSS_SEED = 0xB055uL
         val BOSS_MAPS = listOf(1, 5, 10)
         val ATTACK_LAYERS = setOf(Layer.ShotGlow, Layer.ShotBody, Layer.ShotCore, Layer.Effects)
-        val BACKDROP_LAYERS = setOf(Layer.BackdropFar, Layer.BackdropMid, Layer.BackdropNear)
+        val BACKDROP_LAYERS = setOf(
+            Layer.BackdropDistant,
+            Layer.BackdropFar,
+            Layer.BackdropMid,
+            Layer.BackdropNear,
+        )
 
         val DROPS = listOf(
             WeaponId.BrokenBottle,

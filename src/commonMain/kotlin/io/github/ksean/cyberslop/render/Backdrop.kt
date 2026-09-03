@@ -185,6 +185,7 @@ data class BackdropLayer(
  * moving, which is what the first rendered frame showed when the player fell down a shaft.
  */
 class Backdrop(
+    val distant: DistantLandscape,
     val layers: List<BackdropLayer>,
     val horizonFraction: Double,
     val referenceY: Double,
@@ -217,7 +218,14 @@ object Backdrops {
                 buildings = skyline(rng, depth, profile, levelWidthPx),
             )
         }
-        return Backdrop(layers, HORIZON, referenceY)
+        val distant = DistantLandscapes.of(
+            seed = seed,
+            mapIndex = level.mapIndex,
+            theme = level.theme,
+            tint = palette.backdropDistant,
+            levelWidthPx = levelWidthPx,
+        )
+        return Backdrop(distant, layers, HORIZON, referenceY)
     }
 
     private fun skyline(

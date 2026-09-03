@@ -418,6 +418,8 @@ class FakeContext2D {
         this.lineToCalls++
     }
 
+    closePath() {}
+
     arc() {}
 
     stroke() {

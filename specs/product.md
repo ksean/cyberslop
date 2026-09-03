@@ -126,9 +126,11 @@ build of powerups collected on contact, and permadeath with persistent unlocks.
   are linear between those endpoints. The existing rank-and-file population-density curve remains
   unchanged at a linear 4 to 9 enemies per 100 tiles from maps 1 through 10.
 - **PROD-114:** Spike traps and burning-barrel bodies must use colours from the current map's
-  palette. Each spike blade must be a filled shape rather than an outline made from line segments.
-  A burning barrel's drum and structural details must be map-themed, while the fire above it must
-  retain the fixed warm outer-flame and hot-core colours used by fire elsewhere in the game.
+  palette. The building-window colour is the map's canonical theme colour, and every filled spike
+  blade and barrel drum must use that exact colour. Supports, bands and other structural details
+  may use contrasting colours from the same palette. Each spike blade must be a filled shape rather
+  than an outline made from line segments. The fire above a barrel must retain the fixed warm
+  outer-flame and hot-core colours used by fire elsewhere in the game.
 - **PROD-094:** No lethal or damaging hazard may occupy the main boss's gate column or the exit
   corridor strictly beyond it, where entering completes the map. Nothing damaging may therefore
   sit on top of the wall behind the boss. The corridor's safe floor must be visibly marked by an
@@ -281,9 +283,13 @@ build of powerups collected on contact, and permadeath with persistent unlocks.
 - **PROD-040:** A coherent cyberpunk-dystopian 2D identity; every map's backdrop must depict a
   decayed, surveilled or industrial future rather than a generic modern skyline. Each sub-theme
   has its own palette, silhouette vocabulary and seeded structural detail so two sub-themes can be
-  told apart without reading the map name or relying on colour alone. The existing three-depth
-  parallax effect and its far-to-near speed ordering must remain visible. Exact motifs, depth rates
-  and procedural constraints are specified in [presentation.md](presentation.md).
+  told apart without reading the map name or relying on colour alone. A themed distant landscape
+  must sit behind the three building depths at exactly 0.024 times the camera rate — five times
+  slower than the 0.12 far-building layer — while the existing building rates and their
+  far-to-near ordering remain unchanged. Each landscape takes its identity and restrained colour
+  cues from that map's building-window colour; ordinary details remain tiny at this implied
+  distance while large landforms may span a substantial part of the horizon. Exact motifs, depth
+  rates and procedural constraints are specified in [presentation.md](presentation.md).
 - **PROD-041:** The player character is animated and visibly distinguishes standing, moving
   sideways, rising, falling, crouching, moving while crouched, firing a ranged weapon and swinging a
   melee weapon. Weapon animation composes over movement animation rather than replacing it.

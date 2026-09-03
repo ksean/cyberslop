@@ -18,12 +18,12 @@ class HazardThemePresentationTest {
             val palette = Palettes.of(theme)
 
             assertEquals(
-                setOf(palette.hazard, palette.tileEdge),
+                setOf(palette.theme, palette.tileEdge),
                 hazardBatches.filter { it.primitive == Primitive.Rect }.map { it.style }.toSet(),
                 "$theme did not theme the spike base, barrel drum and barrel bands",
             )
             assertEquals(
-                setOf(palette.hazardGlow),
+                setOf(palette.theme),
                 hazardBatches.filter { it.primitive == Primitive.Triangle }.map { it.style }.toSet(),
                 "$theme did not theme the filled spike blades",
             )

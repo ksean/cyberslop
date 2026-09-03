@@ -45,9 +45,12 @@ extend beyond the bottom 30 % of the tile, so a patch reads as small ground debr
 spike wall. Its colour and shape do not change its non-blocking collision or contact rate.
 
 Spike strips and barrel bodies resolve all of their colours from the current map palette
-(PROD-114, presentation.md P-93). Spike blades are filled triangles, not stroked outlines. The
-barrel's fire is the exception to its themed body: it retains the fixed warm outer-flame and
-yellow-hot core shared by the game's flame presentation.
+(PROD-114, presentation.md P-93 and P-94). The building-window colour is the canonical map-theme
+colour and is reused exactly for every filled spike blade and barrel drum; spike supports and
+barrel bands use the palette's contrasting tile-edge colour so their structure stays readable.
+Spike blades are filled triangles, not stroked outlines. The barrel's fire is the exception to its
+themed body: it retains the fixed warm outer-flame and yellow-hot core shared by the game's flame
+presentation.
 
 ## Contact rules
 

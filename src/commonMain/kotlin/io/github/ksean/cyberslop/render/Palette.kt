@@ -17,6 +17,7 @@ import io.github.ksean.cyberslop.world.ThemeId
 data class Palette(
     val sky: String,
     val skyLow: String,
+    val backdropDistant: String,
     val backdropFar: String,
     val backdropMid: String,
     val backdropNear: String,
@@ -44,9 +45,12 @@ data class Palette(
 
     val colours: List<String>
         get() = listOf(
-            sky, skyLow, backdropFar, backdropMid, backdropNear, window,
+            sky, skyLow, backdropDistant, backdropFar, backdropMid, backdropNear, window,
             tileBody, tileEdge, tileDeep, hazard, hazardGlow, accent, haze,
         ) + glow
+
+    /** The map's canonical theme colour is its building light, with no duplicate value to drift. */
+    val theme: String get() = window
 
     companion object {
         const val GLOW_TONES = 3
@@ -95,6 +99,7 @@ object Palettes {
         // Cold slate under sodium light.
         ThemeId.RuinedCitySprawl to Palette(
             sky = "#070912", skyLow = "#0e1220",
+            backdropDistant = "#241917",
             backdropFar = "#12172a", backdropMid = "#191f38", backdropNear = "#222a4a",
             window = "#ffb069",
             tileBody = "#39415f", tileEdge = "#6a7699", tileDeep = "#1b2033",
@@ -105,6 +110,7 @@ object Palettes {
         // Oxide and amber.
         ThemeId.RustFlats to Palette(
             sky = "#0d0b08", skyLow = "#191410",
+            backdropDistant = "#2c1f10",
             backdropFar = "#1e1811", backdropMid = "#2a2117", backdropNear = "#382b1e",
             window = "#ffc46b",
             tileBody = "#5c4229", tileEdge = "#96693c", tileDeep = "#2a1e12",
@@ -115,6 +121,7 @@ object Palettes {
         // Standing water and sick green light.
         ThemeId.FloodedUndercity to Palette(
             sky = "#030b0b", skyLow = "#071615",
+            backdropDistant = "#0d2927",
             backdropFar = "#0a1e1d", backdropMid = "#0f2b2b", backdropNear = "#16393a",
             window = "#58e0d0",
             tileBody = "#24494b", tileEdge = "#3d7d81", tileDeep = "#102526",
@@ -125,6 +132,7 @@ object Palettes {
         // Violet plant under acid-yellow vapour.
         ThemeId.ChemFoundry to Palette(
             sky = "#09070f", skyLow = "#120d1c",
+            backdropDistant = "#19231a",
             backdropFar = "#181026", backdropMid = "#221733", backdropNear = "#2e1f45",
             window = "#d8ff5a",
             tileBody = "#40325c", tileEdge = "#715a97", tileDeep = "#1e1730",
@@ -135,6 +143,7 @@ object Palettes {
         // The one everybody pictures: magenta and cyan.
         ThemeId.NeonSlums to Palette(
             sky = "#08050f", skyLow = "#120a1f",
+            backdropDistant = "#281231",
             backdropFar = "#19102c", backdropMid = "#241340", backdropNear = "#331a58",
             window = "#ff5ac8",
             tileBody = "#43285e", tileEdge = "#7a479b", tileDeep = "#21132f",
@@ -145,6 +154,7 @@ object Palettes {
         // Near-black, lit only by molten copper.
         ThemeId.SableRefinery to Palette(
             sky = "#06070a", skyLow = "#0d0f13",
+            backdropDistant = "#261611",
             backdropFar = "#111319", backdropMid = "#181b22", backdropNear = "#22262f",
             window = "#ff9455",
             tileBody = "#333947", tileEdge = "#5c687c", tileDeep = "#191c23",
@@ -155,6 +165,7 @@ object Palettes {
         // Cold blue and white LED.
         ThemeId.ServerStacks to Palette(
             sky = "#04070d", skyLow = "#091018",
+            backdropDistant = "#172536",
             backdropFar = "#0c1728", backdropMid = "#12203a", backdropNear = "#1a2d51",
             window = "#d7ecff",
             tileBody = "#27395a", tileEdge = "#486a96", tileDeep = "#131d2e",
@@ -165,6 +176,7 @@ object Palettes {
         // Grey dusk above the cloud layer, hazard orange below.
         ThemeId.SkybridgeRuin to Palette(
             sky = "#0b1018", skyLow = "#151c28",
+            backdropDistant = "#302a20",
             backdropFar = "#1b2432", backdropMid = "#26313f", backdropNear = "#35455f",
             window = "#ffd9a0",
             tileBody = "#47566f", tileEdge = "#7a8aa6", tileDeep = "#262f3d",
@@ -175,6 +187,7 @@ object Palettes {
         // Sodium red, and everything too hot to touch.
         ThemeId.ReactorCore to Palette(
             sky = "#0d0407", skyLow = "#17060b",
+            backdropDistant = "#2b1716",
             backdropFar = "#200810", backdropMid = "#2e0b16", backdropNear = "#40111e",
             window = "#ffe3b0",
             tileBody = "#5e2029", tileEdge = "#9c3e46", tileDeep = "#2c0e14",
@@ -185,6 +198,7 @@ object Palettes {
         // Sterile white-gold. The only clean place in the run, and the last.
         ThemeId.ArcologyVault to Palette(
             sky = "#0f0e0b", skyLow = "#1a1914",
+            backdropDistant = "#302e22",
             backdropFar = "#221f16", backdropMid = "#302d1e", backdropNear = "#423e2a",
             window = "#fff3c4",
             tileBody = "#5f5a41", tileEdge = "#a09873", tileDeep = "#34311f",

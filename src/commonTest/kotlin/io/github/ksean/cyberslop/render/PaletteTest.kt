@@ -36,6 +36,31 @@ class PaletteTest {
     }
 
     @Test
+    fun `each map theme colour is its building window colour`() {
+        ThemeId.entries.forEach { theme ->
+            val palette = Palettes.of(theme)
+
+            assertEquals(
+                palette.window,
+                palette.theme,
+                "$theme maintains a second theme colour that can drift from its windows",
+            )
+        }
+    }
+
+    @Test
+    fun `each distant landscape has its own subdued palette role`() {
+        val distant = ThemeId.entries.map { theme -> Palettes.of(theme).backdropDistant }
+
+        assertEquals(ThemeId.entries.size, distant.distinct().size)
+        ThemeId.entries.forEach { theme ->
+            val palette = Palettes.of(theme)
+            assertTrue(palette.backdropDistant != palette.sky, "$theme landscape vanishes into its sky")
+            assertTrue(palette.backdropDistant != palette.backdropFar, "$theme landscape merges with buildings")
+        }
+    }
+
+    @Test
     fun `a palette holds the roles the renderer needs`() {
         val palette = Palettes.of(ThemeId.NeonSlums)
 

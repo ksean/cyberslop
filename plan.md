@@ -216,6 +216,13 @@ and the loot-floor expectations only.
     map 10's target. Draw spike blades as filled map-palette shapes and keep barrel bodies themed
     while their flame colours stay fixed. Complete MAP-SCALING-1 in `tasks.md` test-first, inspect
     all ten themes, then run `./scripts/check.sh`.
+32. **Unify map-theme colour and add a distant landscape.** *(done)*
+    Extend PROD-040, PROD-114, P-76 and P-93 and add P-94: make each map's building-window colour
+    its canonical theme colour for spike blades and barrel drums, then add a fourth procedural
+    backdrop layer at 0.024× parallax with the ten authored window-inspired landscapes. Preserve
+    the three existing seeded building layers and their 0.12×, 0.30× and 0.55× rates. Complete
+    DISTANT-BACKDROP-1 in `tasks.md` test-first, inspect the ten-theme world sheet, then run
+    `./scripts/check.sh`.
 
 ## Agents
 
