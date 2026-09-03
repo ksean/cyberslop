@@ -119,26 +119,53 @@ Detail must enrich a silhouette without filling the playfield or competing with 
 hazards.
 
 Every `ThemeId` also has one authored distant-landscape profile. Its main silhouette uses
-`palette.backdropDistant`; only sparse accents use the exact `palette.window` theme colour. The
-profile distinguishes large features — mountains, mesas, cloud banks, canopy masses, crater rims
-and comparable horizon-scale forms — from ordinary detail. Large features may span a substantial
-part of the view. A discrete ordinary detail fits within a quarter of one tile in each dimension at
-the fixed presentation zoom; a longer texture mark such as a ripple, dune line, ice crack or lava
-channel remains no more than two screen pixels thick. This scale rule makes the landscape read as
-very far away rather than as another layer of foreground props.
+`palette.backdropDistant` as its body. Two additional authored colours,
+`backdropDistantShadow` and `backdropDistantFacet`, establish a fixed shadow/body/facet hierarchy;
+they remain closer in luminance to the sky than to foreground terrain. Sparse signal marks use the
+exact `palette.window` theme colour. All four colour roles are distinct in every theme, paint in
+that back-to-front order, and open no more than the fixed four primitive batches per role. Signal
+marks comprise no more than one eighth of emitted distant primitives, so the window colour reads as
+far-off artificial light or reflected contamination instead of turning the horizon into neon
+noise.
 
-| Sub-theme | Window and map-theme colour | Required distant landscape |
-|---|---|---|
-| Ruined City Sprawl | sodium amber `#ffb069` | an ash desert of tall eroded mesas and half-buried megastructure ribs, with tiny windblown dust marks |
-| Rust Flats | ochre amber `#ffc46b` | rolling sand and rust dunes broken by slag heaps, with tiny scrap stakes and dune ripples |
-| Flooded Undercity | drowned cyan `#58e0d0` | a flat toxic floodplain beneath a distant storm wall, with drowned tree lines, tiny emergent pylons and water ripples |
-| Chem Foundry | acid green `#d8ff5a` | uncontrolled forest overgrowth with an irregular wild canopy, colossal dead trunks and tiny tree crowns and hanging vines |
-| Neon Slums | neon magenta `#ff5ac8` | a crystalline toxic-waste range with large angular outcrops, low smog banks and tiny shard fields |
-| Sable Refinery | molten orange `#ff9455` | a volcanic wasteland with a broad caldera and black ridges, crossed by thin lava channels and tiny vents |
-| Server Stacks | ice white-blue `#d7ecff` | a dystopian snowfield and glacial mountain range, with avalanche scars and tiny half-buried relay posts |
-| Skybridge Ruin | dusty pale gold `#ffd9a0` | a deep cloud ocean pierced by distant peaks and one colossal broken skybridge span, with tiny hanging cable fragments |
-| Reactor Core | irradiated warm white `#ffe3b0` | a radioactive ash tundra with a horizon-scale blast crater and fused ridges, with tiny glass spires and fallout streaks |
-| Arcology Vault | sterile white-gold `#fff3c4` | frozen salt and ice flats beneath a monolithic escarpment and sealed vault mass, with tiny surveillance pylons |
+The profile distinguishes five semantic roles: `Landmark`, `SecondaryMass`, `StructuralDetail`,
+`SurfaceTrace` and `Atmosphere`. A 320-world-pixel composition cell contains exactly one landmark
+whose centre falls in the middle third, two to four secondary masses, eight to fourteen structural
+details, six to twelve surface traces and two to four atmospheric features. Neighbouring cells
+overlap their base silhouette so no sky seam appears. Landmark exclusion space prevents a second
+large peak from crossing its upper central silhouette, while the smaller features may cluster near
+its foot. Seeded horizontal jitter and unequal gaps prevent picket-fence repetition.
+
+Every landmark family has at least three authored variants with materially different outlines;
+reflection, translation or scaling alone does not count as a different outline. A landmark is a
+composition of at least six primitives and includes at least two subordinate scars, facets,
+supports, apertures or other internal marks. A secondary mass uses at least three primitives and
+overlaps the continuous horizon silhouette. Structural details tell the industrial or ecological
+story but remain tiny: a discrete one fits within a quarter of one tile in each dimension at the
+fixed presentation zoom. A longer surface trace such as a ripple, dune line, ice crack or lava
+channel remains no more than two screen pixels thick. Atmosphere may span a large area but uses
+only the shadow tone and cannot create a hard silhouette above the landmark. These scale and
+contrast rules make the scene detailed while still reading as extremely far away.
+
+| Sub-theme | Theme colour | Landmark and secondary composition | Small storytelling and atmosphere |
+|---|---|---|---|
+| Ruined City Sprawl | sodium amber `#ffb069` | a split, terraced ash mesa containing the exposed ribs of a buried arcology; receding shelf mesas, a collapsed transit arch and a half-submerged dome support it | broken antenna forks, bridge stubs and evacuation pylons collect at the mesa foot; stratified ash cuts, wind streaks and a low dust veil cross the scene |
+| Rust Flats | ochre amber `#ffc46b` | a colossal bucket-wheel crawler carcass half swallowed by rolling rust dunes; slag cones, corroded tank shells and a broken pipeline procession form the lower rhythm | tiny derricks, pump heads, scrap stakes and wheel teeth interrupt layered dune ripples; narrow heat bands hang behind the crawler |
+| Flooded Undercity | drowned cyan `#58e0d0` | a breached flood-control gate and leaning seawall beneath a distant supercell; toxic water shelves, drowned tower crowns and a submerged tree line establish the horizon | emergent pylons, snapped masts, drainage markers and half-sunk antennas cast short reflection marks among irregular ripple bands and slanted rain curtains |
+| Chem Foundry | acid green `#d8ff5a` | a colossal dead tree has engulfed the skeleton of a cooling tower; three uneven canopy tiers, root-covered industrial ruins and distant trunk columns make a wild forested basin | tiny crown clusters, snapped catwalks, hanging vines, fungal spires and suspended pipe fragments sit beneath drifting spore bands without forming a regular plantation |
+| Neon Slums | neon magenta `#ff5ac8` | a fractured crystal crown has grown through a fallen transmission mast; stepped crystal shelves, collapsed dish silhouettes and toxic smog banks create an angular waste range | small shard fans, bent cable pylons and buried sign frames punctuate fracture lines and smog streaks; isolated facet glints never form readable signs or text |
+| Sable Refinery | molten orange `#ff9455` | a broad breached caldera encloses the remains of a refinery and one leaning flare stack; asymmetrical volcanic ridges, cooled lava shelves and pipeline arches descend from it | tiny vents, pump silhouettes and fractured towers cluster beside branching lava channels, falling ash and separated ember points |
+| Server Stacks | ice white-blue `#d7ecff` | a many-ridged glacial mountain has entombed a stepped data-centre complex and broken relay dish; snow shelves, server-like ice monoliths and a distant avalanche wall layer the base | half-buried relay posts, cable conduits and avalanche fences follow wind-carved snow lines, narrow crevasses and sparse blowing-snow ribbons |
+| Skybridge Ruin | dusty pale gold `#ffd9a0` | two stranded megastructure pylons hold unequal ends of a colossal snapped skybridge above a deep cloud ocean; isolated peaks and smaller broken spans recede behind it | hanging cable fans, maintenance pods and beacon spars descend from the break while cloud strata, distant rain shafts and fine wind trails preserve open sky around the silhouette |
+| Reactor Core | irradiated warm white `#ffe3b0` | a horizon-scale blast crater frames a ruptured containment shell and incomplete reactor ring; fused ridges, vitrified shelves and a leaning exhaust stack radiate from the impact | glass spires, warning towers, dead utility trunks and conduit fragments emerge through concentric fracture traces, fallout streaks and a flattened ash plume |
+| Arcology Vault | sterile white-gold `#fff3c4` | a monolithic sealed vault is inset into a stepped frozen escarpment, with a dark transit aperture and offset buttress crown; salt terraces, buried domes and rigid causeways reinforce its controlled geometry | surveillance pylons, causeway markers, vent stacks and antenna needles align imperfectly across ice cracks, wind scour and vertical light-haze pillars |
+
+The distant layer is a composed panorama, not an independent random shuffle of motif records.
+Generation first chooses a landmark variant and its protected silhouette, then places supporting
+masses, details, traces and atmosphere relative to that anchor. Equal seeds reproduce the whole
+composition. Adjacent composition cells cannot repeat the same landmark variant, and within one
+cell no structural-detail family may occur more than three times consecutively. These constraints
+create authored rhythm without making repeated cells identical.
 
 Every `ThemeId` has an authored backdrop profile. The profile selects building proportions, roof
 profiles, window arrangements and at least three of the following primitive motif families:
@@ -780,6 +807,21 @@ its `Return to title` button receives focus as before.
   non-backdrop RNG stream or simulation digest. The development world sheet renders all ten themes
   for human review that each landscape reads as far away, matches its table entry, takes its colour
   cues from the windows and preserves playfield contrast.
+- **P-95** Detailed distant composition: every distant profile declares all five semantic roles and
+  all of the authored families in its row of the landscape table. Every generated 320-world-pixel
+  cell meets the exact role quotas above, centres one landmark in its middle third, keeps the
+  landmark's upper silhouette clear, overlaps the next cell's base and obeys the landmark-variant
+  and detail-repetition rules. Each landmark family exposes at least three non-equivalent outlines,
+  uses at least six primitives and carries at least two internal marks; each secondary mass uses at
+  least three primitives. `backdropDistantShadow`, `backdropDistant` and
+  `backdropDistantFacet` are distinct theme-authored tones, the exact window colour is the fourth
+  signal tone, and composed batches paint shadow/body/facet/signal in that order with signal marks
+  at no more than one eighth of all distant primitives. A minimal fixture and a full panorama open
+  the same set of at most sixteen distant style/primitive batches. Existing P-94 parallax,
+  determinism, scale, skyline-preservation, simulation-isolation and world-sheet review clauses
+  remain unchanged. The world sheet review additionally checks that all ten landmarks are
+  immediately distinguishable without colour, no panorama has an obvious repeated stamp, internal
+  detail survives at normal size, and actors, pickups, terrain and hazards retain priority.
 - **P-85** Broken-glass presentation: every `BrokenGlass` tile draws exactly five unequal,
   disconnected `#7a3f2b` shard segments and three `#b66a45` crumbs within the bottom 30 % of its
   cell. The geometry contains no closed triangle or common baseline and differs

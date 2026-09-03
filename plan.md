@@ -223,6 +223,13 @@ and the loot-floor expectations only.
     the three existing seeded building layers and their 0.12×, 0.30× and 0.55× rates. Complete
     DISTANT-BACKDROP-1 in `tasks.md` test-first, inspect the ten-theme world sheet, then run
     `./scripts/check.sh`.
+33. **Deepen every distant landscape into an authored panorama.** *(done)*
+    Extend PROD-040 and add P-95: replace each sparse motif sequence with seeded composition cells
+    containing a multi-part landmark, supporting masses, small environmental storytelling,
+    surface traces and atmosphere. Add three distinct landmark outlines per theme and a restrained
+    four-role tonal hierarchy while preserving P-94's distance, parallax, constant-batch and
+    simulation-isolation contracts. Complete DISTANT-DETAIL-1 in `tasks.md` test-first, inspect the
+    ten-theme world sheet at normal size and then run `./scripts/check.sh`.
 
 ## Agents
 

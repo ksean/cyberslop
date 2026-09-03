@@ -288,8 +288,12 @@ build of powerups collected on contact, and permadeath with persistent unlocks.
   slower than the 0.12 far-building layer — while the existing building rates and their
   far-to-near ordering remain unchanged. Each landscape takes its identity and restrained colour
   cues from that map's building-window colour; ordinary details remain tiny at this implied
-  distance while large landforms may span a substantial part of the horizon. Exact motifs, depth
-  rates and procedural constraints are specified in [presentation.md](presentation.md).
+  distance while large landforms may span a substantial part of the horizon. It must be a designed
+  scene rather than a sparse repeating silhouette: each screen-width composition has an authored
+  landmark, supporting masses, environmental storytelling, surface texture and atmosphere, with
+  multiple seeded outline variants and a fixed depth-ordered tonal hierarchy. Exact motifs, depth
+  rates, composition quotas and procedural constraints are specified in
+  [presentation.md](presentation.md).
 - **PROD-041:** The player character is animated and visibly distinguishes standing, moving
   sideways, rising, falling, crouching, moving while crouched, firing a ranged weapon and swinging a
   melee weapon. Weapon animation composes over movement animation rather than replacing it.

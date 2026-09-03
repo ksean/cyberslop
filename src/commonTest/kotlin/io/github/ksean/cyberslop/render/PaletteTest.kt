@@ -61,6 +61,36 @@ class PaletteTest {
     }
 
     @Test
+    fun `distant palette has an ordered four-tone hierarchy below the playfield`() {
+        ThemeId.entries.forEach { theme ->
+            val palette = Palettes.of(theme)
+            val tones = listOf(
+                palette.backdropDistantShadow,
+                palette.backdropDistant,
+                palette.backdropDistantFacet,
+                palette.theme,
+            )
+
+            assertEquals(tones.size, tones.distinct().size, "$theme repeats a distant colour role")
+            assertTrue(
+                Palette.luminanceOf(palette.backdropDistantShadow) <
+                    Palette.luminanceOf(palette.backdropDistant),
+                "$theme distant shadow is not darker than its body",
+            )
+            assertTrue(
+                Palette.luminanceOf(palette.backdropDistant) <
+                    Palette.luminanceOf(palette.backdropDistantFacet),
+                "$theme distant facet is not brighter than its body",
+            )
+            assertTrue(
+                Palette.luminanceOf(palette.backdropDistantFacet) <
+                    Palette.luminanceOf(palette.tileBody),
+                "$theme distant facet competes with playable terrain",
+            )
+        }
+    }
+
+    @Test
     fun `a palette holds the roles the renderer needs`() {
         val palette = Palettes.of(ThemeId.NeonSlums)
 

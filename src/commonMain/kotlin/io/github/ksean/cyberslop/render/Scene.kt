@@ -229,7 +229,7 @@ object Scene {
         DistantLandscapePainter.paint(
             builder = builder,
             landscape = distant,
-            accent = palette.theme,
+            palette = palette,
             camera = camera,
             horizon = height * (backdrop.horizonFraction - DISTANT_HORIZON_LIFT) +
                 verticalDrift(backdrop, camera, distant.parallax, height),

@@ -63,8 +63,9 @@ class SceneCompositionTest {
         val EXPECTED_SIGNATURE = LEGACY_SIGNATURE
             .replace(
                 "Sky:Rect:1|Sky:Rect:1|BackdropFar",
-                "Sky:Rect:1|Sky:Rect:1|BackdropDistant:Rect:4|BackdropDistant:Triangle:8|" +
-                    "BackdropDistant:Segment:28|BackdropDistant:Dot:4|BackdropFar",
+                "Sky:Rect:1|Sky:Rect:1|BackdropDistant:Segment:18|BackdropDistant:Rect:9|" +
+                    "BackdropDistant:Triangle:8|BackdropDistant:Segment:12|" +
+                    "BackdropDistant:Segment:96|BackdropDistant:Dot:2|BackdropFar",
             )
             .replace(
                 "Terrain:Rect:2|Hazard:Rect:2|Hazard:Triangle:3|Hazard:Rect:2|Hazard:Segment",

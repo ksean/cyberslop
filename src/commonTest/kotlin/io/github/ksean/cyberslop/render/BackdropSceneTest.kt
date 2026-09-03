@@ -53,7 +53,16 @@ class BackdropSceneTest {
                 .map { it.style }
                 .toSet()
 
-            assertEquals(setOf(palette.backdropDistant, palette.theme), styles, "$theme lost its landscape colour cue")
+            assertEquals(
+                setOf(
+                    palette.backdropDistantShadow,
+                    palette.backdropDistant,
+                    palette.backdropDistantFacet,
+                    palette.theme,
+                ),
+                styles,
+                "$theme lost its landscape tonal hierarchy",
+            )
         }
     }
 
@@ -190,10 +199,12 @@ class BackdropSceneTest {
     )
 
     private val distantFeatures = listOf(
+        distantFeature(DistantMotif.BuriedArcologyMesa, 12.0, 120.0, 92.0),
         distantFeature(DistantMotif.AshMesa, 12.0, 36.0, 24.0),
         distantFeature(DistantMotif.MegastructureRib, 50.0, 30.0, 20.0),
         distantFeature(DistantMotif.DustMark, 82.0, 2.0, 2.0),
         distantFeature(DistantMotif.DustStreak, 90.0, 12.0, DistantLandscapes.TEXTURE_STROKE_WORLD),
+        distantFeature(DistantMotif.DustVeil, 105.0, 72.0, 18.0),
     )
 
     private fun distantFeature(
@@ -203,6 +214,7 @@ class BackdropSceneTest {
         height: Double,
     ) = DistantFeature(
         motif = motif,
+        cellIndex = 0,
         x = x,
         baselineOffset = 0.0,
         width = width,
