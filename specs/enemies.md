@@ -21,9 +21,9 @@ standing on the lowest standable row of its column with a patrol span of 1–3 t
 subject to the placement invariants in completability.md, and with no part of the patrol inside
 the inclusive horizontal start exclusion `spawnColumn ± START_CLEAR_TILES`, where
 `START_CLEAR_TILES = 22`, either arena, the twenty-tile approach before it, or anywhere past the
-boss arena's approach — what
-stands there arrives at the boss with the player, or shoots into the fight from the exit corridor,
-and the boss fight is tuned as a boss fight. The generator resamples from the remaining legal
+boss arena's approach. This is an initial-population rule: after engagement, rank-and-file enemies
+may pursue into the mini-boss approach and arena, but not the main-boss protected ground. The
+generator resamples from the remaining legal
 columns so this exclusion does not reduce the requested population. Twenty-two start tiles equal
 the awareness radius, guaranteeing that no initial rank-and-file enemy is already aware of or
 targetable by the player. Twenty approach tiles leave a Swarm engaged at the awareness radius and
@@ -45,7 +45,7 @@ a Turret folds at `homeX` and waits. An engaged enemy is not confined to its pat
 radius is the one auto-aim uses, so an enemy the player's weapon can target is one that is acting
 on the player.
 
-## Movement (PROD-088)
+## Movement (PROD-088, PROD-112)
 
 - **Walkers** (Swarm, Brute, Shooter and Turret) have gravity: an unsupported walker falls at the
   player's gravity to terminal velocity and lands on the first solid tile; a walker that lands in
@@ -74,14 +74,18 @@ on the player.
   leaps. An engaged Flyer moves in both axes toward the player and passes through terrain and
   hazards, including committed columns; the damage fairness rule, not an invisible movement wall,
   protects a player who is committed to a crossing.
-- **The boss's ground.** No rank-and-file enemy pursues onto an arena or the twenty-tile approach before it
-  (`Level.isArenaGround`): a walker neither steps nor selects a leap landing there and a Flyer
-  holds at the arena boundary, so a pack the player has outrun waits at the door instead of joining a fight that is
-  tuned as a boss fight. A Shooter held there is still within its range of someone inside, so
-  the ground is fair as well as unenterable: **no enemy swing, projectile or contact drain deals
-  damage to a player whose box overlaps the boss's ground** — the second clause of the fairness rule below.
-  Bosses are not bound by it; their ground is where they fight. The rule applies to every arena;
-  an enemy already on that ground is not trapped by it.
+- **Mini-boss ground (PROD-112).** The mini-boss arena and its twenty-tile approach impose no
+  runtime boundary on an engaged rank-and-file enemy. A walker may step or select a safe leap
+  landing there, a Flyer may cross the boundary, and ranged movement uses its ordinary
+  approach/hold/retreat policy. Swings, shots and contact drain remain effective there. This does
+  not place an unengaged patrol in the zone: initial population retains the exclusion above.
+- **Main-boss ground.** No rank-and-file enemy pursues onto the main-boss arena, its twenty-tile
+  approach or the exit corridor: a walker neither steps nor selects a leap landing there and a
+  Flyer holds at the boundary. A Shooter held there can still be within range of someone inside,
+  so the ground is fair as well as unenterable: **no rank-and-file swing, projectile or contact
+  drain deals damage to a player whose box overlaps the main-boss ground**. Bosses are not bound
+  by it; their ground is where they fight. An enemy already on protected ground is not trapped by
+  the boundary.
 - **Approach, hold, retreat (ranged).** An engaged Shooter or unfolded Turret faces the player and: beyond
   `SHOOTER_RANGE = 220 px` (13.75 tiles) steps toward the player; between `RETREAT_PX = 5 tiles`
   and `SHOOTER_RANGE` holds; inside `RETREAT_PX` steps away; all through safe ground steps/leaps, shooting
@@ -101,7 +105,7 @@ on the player.
   attack: it needs no wind-up, remains active regardless of attack or stun state, and stacks with
   a swing that lands in the same tick. It never displaces the player (ENG-051) and is subject to
   the fairness rule below like every other enemy damage source: committed columns and landing
-  grace suppress every contact drain; boss ground additionally suppresses rank-and-file contact
+  grace suppress every contact drain; main-boss ground additionally suppresses rank-and-file contact
   but not mini-boss or main-boss contact. Contact drain is not part of `ThreatScore`, which
   measures attacks the population can make, but pressure harnesses count it as gross damage like
   any other.
@@ -133,11 +137,13 @@ on the player.
   `SHOOTER_RANGE` and in line of sight, winds up for `SHOT_WINDUP = 0.25 s` (holding its aim), then
   fires one projectile at the player's centre as it was at the start of the wind-up: speed 340
   px/s, lifetime 2.5 s, radius 6 px, damage `0.45 × contactDamage`, cooldown 0.75 s after the shot.
-- **Fairness on committed spans and on the boss's ground.** No rank-and-file or boss swing,
+- **Fairness on committed spans and on main-boss ground.** No rank-and-file or boss swing,
   projectile, beam or contact drain deals damage while the player occupies a committed column (any
   column their AABB overlaps), nor until they have been grounded and clear of committed columns for
-  `LANDING_GRACE = 0.25 s`. In addition, rank-and-file damage is suppressed while the player's box
-  overlaps boss ground; the boss who owns that ground is not. A projectile that would have hit is
+  `LANDING_GRACE = 0.25 s`. An ordinary jump which does not overlap a committed column neither
+  starts nor resets this protection. In addition, rank-and-file damage is suppressed while the
+  player's box overlaps main-boss ground; mini-boss ground has no such suppression, and either
+  boss rank may hurt on its fight ground. A projectile that would have hit while protected is
   spent and a beam event is skipped. This is the runtime form of completability.md's placement
   invariant and holds however enemies move.
 - **Status.** Slows floor at 40 % and take the strongest; a stunned enemy neither moves nor attacks
@@ -211,6 +217,14 @@ the browser's viewport dimensions, without making simulation rules depend on a s
 projectiles carry boss ownership: they may hurt a player on boss ground, where the fight belongs,
 but are suppressed while the player occupies a committed column and during the same
 `LANDING_GRACE` as every other boss hit.
+
+For player contact (PROD-111), every movement piece sweeps the round's closed, visible body disc
+against the player's closed current-stance movement AABB. Tangency is contact. The earliest
+contact before terrain places and spends the round at that point; if fairness permits damage, it
+applies the round's declared damage exactly once and starts the ordinary player hurt flash. The
+test uses the complete swept piece rather than its endpoint, so every Scatter angle and every
+other boss round shares the same collision rule. Being airborne away from a committed column is
+not protection.
 
 A boss turns only between attacks. Every melee direction, projectile line, spread centre and Laser
 endpoint is recorded when the telegraph begins, so crossing the boss mid-telegraph never turns the
@@ -417,9 +431,9 @@ inventory directly.
   living main boss drains exactly three times that amount. One tick never kills a full-health
   player; overlapping bodies drain independently. A defeated body, a body one pixel clear, or any
   contact while the player is over a committed column or within landing grace drains nothing;
-  boss ground suppresses only rank-and-file contact. Contact remains active through stun and boss
-  attack states, receives the normal incoming non-lethal damage multiplier, refreshes the player
-  hurt flash, and never displaces the player.
+  main-boss ground suppresses only rank-and-file contact, while mini-boss ground does not. Contact
+  remains active through stun and boss attack states, receives the normal incoming non-lethal
+  damage multiplier, refreshes the player hurt flash, and never displaces the player.
 - **P-40** Simulation determinism (simulation.md): `GameSimulation.digest()` is a canonical
   encoding of every mutable, future-affecting field — the player state and run (health, loadout,
   scrap), the auto-fire accumulator, the loot RNG state, every enemy in list order (position,
@@ -472,6 +486,19 @@ inventory directly.
   attack are unchanged. `ThreatScore.pressureOf` uses the accelerated in-reach wind-up and cooldown
   for melee archetypes and the existing full timings for ranged archetypes, and its cohort mean
   still rises strictly across maps 1→10.
+- **P-90** Boss projectile contact: table-driven Bolt, Burst and Scatter fixtures sweep a round
+  through the standing and crouching player AABB, including tangency at a body edge and a complete
+  crossing whose two fixed-tick endpoints are outside the body. The earliest contact before
+  terrain places and spends the round there, lowers health by exactly that round's declared damage
+  once and starts `playerHurtSecondsLeft`. The same contact during an ordinary jump over
+  non-committed ground still lands; contact over a committed column or during its landing grace is
+  spent without damage or hurt flash. A near miss outside the radius remains live.
+- **P-91** Mini-boss-zone access: on flat fixtures, every engaged rank-and-file archetype can enter
+  and later leave the mini-boss's twenty-tile approach and arena under its normal movement policy;
+  representative swing, projectile and contact-drain fixtures lower player health there. The same
+  walker and Flyer fixtures still cannot enter main-boss protected ground, rank-and-file damage is
+  suppressed there, and initial population patrols remain outside both arena exclusions across
+  the generation cohort.
 - **P-66** Full-view boss range: on an unobstructed level, Bolt, every Burst round and every Scatter
   pellet remain live after crossing the former eight-tile limit and are removed only after a player
   hit or swept level-boundary crossing; a solid wall still stops each at its first contact. Laser's
@@ -492,6 +519,6 @@ inventory directly.
   ground archetype and by both boss ranks, with no swept lethal contact and a non-lethal supported
   landing; a Flyer crosses the same committed span in flight. No unengaged enemy launches, a
   fault-injected span beyond the measured envelope produces no launch, a rank-and-file trajectory
-  never enters protected arena ground, and no enemy attack damages the player during the committed
-  span or landing grace. Across the generation cohort every generated chase-direction obstacle is
+  never enters main-boss protected ground, and no enemy attack damages the player during the
+  committed span or landing grace. Across the generation cohort every generated chase-direction obstacle is
   within the corresponding real-box leap envelope.

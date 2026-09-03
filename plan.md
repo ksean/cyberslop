@@ -198,6 +198,17 @@ and the loot-floor expectations only.
     unnecessary non-null assertions and trivial duplicate branches without changing behaviour or
     adding a lint dependency. Complete CLEANUP-1 in `tasks.md`, rerun IntelliJ inspections and
     `./scripts/check.sh`.
+29. **Make boss projectile contacts faithful.** *(done)*
+    Add PROD-111 and P-90: sweep each Bolt, Burst and Scatter round's visible body over its full
+    fixed-tick path against the player's current-stance body, resolving the first contact before
+    terrain as one damaging hit and red flash when fairness permits. Correct the exposure timer so
+    ordinary jumps do not grant committed-crossing protection. Complete BOSS-SHOT-1 in `tasks.md`
+    test-first, then run `./scripts/check.sh`.
+30. **Allow rank-and-file pursuit into mini-boss ground.** *(done)*
+    Add PROD-112 and P-91: distinguish mini-boss ground from protected main-boss ground at runtime,
+    allow every engaged normal archetype to enter and attack in the mini-boss approach and arena,
+    and preserve initial population and final-boss exclusions. Complete MINIBOSS-ZONE-1 in
+    `tasks.md` test-first, then run `./scripts/check.sh`.
 
 ## Agents
 

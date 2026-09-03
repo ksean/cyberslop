@@ -111,13 +111,13 @@ class Level(
 
     fun isCommitted(column: Int): Boolean = column in 0 until widthTiles && committedColumns[column]
 
-    /**
-     * Columns an enemy never pursues into: each arena and the approach before it, and everything
-     * past the boss arena's approach (`specs/enemies.md`, Pursuit). A boss fight is a boss fight.
-     */
-    fun isArenaGround(column: Int, approachTiles: Int): Boolean =
-        column >= boss.leftTile - approachTiles ||
-            column in miniboss.leftTile - approachTiles..miniboss.rightTile
+    /** The mini-boss patrol ground normal enemies may enter after engagement (PROD-112). */
+    fun isMinibossGround(column: Int, approachTiles: Int): Boolean =
+        column in miniboss.leftTile - approachTiles..miniboss.rightTile
+
+    /** The final encounter and exit ground rank-and-file enemies never enter (PROD-112). */
+    fun isMainBossGround(column: Int, approachTiles: Int): Boolean =
+        column >= boss.leftTile - approachTiles
 
     private fun isCommittedNow(column: Int): Boolean {
         for (row in 0 until tiles.height) if (tiles.isLethal(column, row)) return true

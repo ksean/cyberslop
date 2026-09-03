@@ -190,7 +190,7 @@ class GameSimulation(
         previousPlayer = player
     }
 
-    /** How long the player has been grounded and clear of committed columns; see [playerExposed]. */
+    /** Grounded grace accumulated since the most recent committed-column overlap; see [playerExposed]. */
     private var exposedSeconds: Double = LANDING_GRACE
 
     /** The life-steal budget (PROD-073): a token bucket of 12 HP refilling at 12 HP/s, spent by each heal. */
@@ -1016,15 +1016,6 @@ class GameSimulation(
             }
             projectile.secondsLeft -= TICK_SECONDS
             if (!move(projectile)) return@forEach
-
-            if (!projectile.fromPlayer && (player.centre(Physics.Default) - projectile.position).lengthSquared <
-                projectile.radius * projectile.radius * 4.0
-            ) {
-                if (if (projectile.bossOwned) bossDamageAllowed() else enemyDamageAllowed()) {
-                    hurt(projectile.damage, PlayerDamageSource.Projectile)
-                }
-                projectile.secondsLeft = 0.0
-            }
         }
         projectiles.forEach {
             if (it.spent) {
@@ -1056,6 +1047,9 @@ class GameSimulation(
             if (projectile.fromPlayer && !hitTargetsAlong(projectile, before, after, blockingEntry)) {
                 return false
             }
+            if (!projectile.fromPlayer && hitPlayerAlong(projectile, before, after, blockingEntry)) {
+                return false
+            }
             if (viewportExit != null && (terrainEntry == null || viewportExit <= terrainEntry)) {
                 projectile.position = before + (after - before) * viewportExit
                 projectile.secondsLeft = 0.0
@@ -1075,6 +1069,32 @@ class GameSimulation(
                 return false
             }
         }
+        return true
+    }
+
+    /** Resolves the first hostile-round contact with the player's current movement body (PROD-111). */
+    private fun hitPlayerAlong(
+        projectile: LiveProjectile,
+        from: Vec2,
+        to: Vec2,
+        terrainEntry: Double?,
+    ): Boolean {
+        val fraction = sweptDiscAabbEntry(
+            from = from,
+            to = to,
+            radius = projectile.radius,
+            left = player.x,
+            top = player.y,
+            right = player.x + Physics.Default.width,
+            bottom = player.y + player.height(Physics.Default),
+        ) ?: return false
+        if (terrainEntry != null && fraction >= terrainEntry) return false
+
+        projectile.position = from + (to - from) * fraction
+        if (if (projectile.bossOwned) bossDamageAllowed() else enemyDamageAllowed()) {
+            hurt(projectile.damage, PlayerDamageSource.Projectile)
+        }
+        projectile.secondsLeft = 0.0
         return true
     }
 
@@ -1170,6 +1190,54 @@ class GameSimulation(
         if (discriminant < 0.0) return null
         val fraction = (-b - kotlin.math.sqrt(discriminant)) / a
         return fraction.takeIf { it in 0.0..1.0 }
+    }
+
+    /** First contact of a swept closed disc with a closed AABB, including its rounded corners. */
+    private fun sweptDiscAabbEntry(
+        from: Vec2,
+        to: Vec2,
+        radius: Double,
+        left: Double,
+        top: Double,
+        right: Double,
+        bottom: Double,
+    ): Double? = listOfNotNull(
+        segmentAabbEntry(from, to, left - radius, top, right + radius, bottom),
+        segmentAabbEntry(from, to, left, top - radius, right, bottom + radius),
+        segmentDiscEntry(from, to, Vec2(left, top), radius),
+        segmentDiscEntry(from, to, Vec2(right, top), radius),
+        segmentDiscEntry(from, to, Vec2(left, bottom), radius),
+        segmentDiscEntry(from, to, Vec2(right, bottom), radius),
+    ).minOrNull()
+
+    /** First entry of a segment into a closed axis-aligned box. */
+    private fun segmentAabbEntry(
+        from: Vec2,
+        to: Vec2,
+        left: Double,
+        top: Double,
+        right: Double,
+        bottom: Double,
+    ): Double? {
+        val xWindow = axisEntryWindow(from.x, to.x, left, right) ?: return null
+        val yWindow = axisEntryWindow(from.y, to.y, top, bottom) ?: return null
+        val entry = maxOf(0.0, xWindow.first, yWindow.first)
+        val exit = minOf(1.0, xWindow.second, yWindow.second)
+        return entry.takeIf { entry <= exit }
+    }
+
+    private fun axisEntryWindow(start: Double, end: Double, minimum: Double, maximum: Double): Pair<Double, Double>? {
+        val delta = end - start
+        if (kotlin.math.abs(delta) <= Vec2.EPSILON) {
+            return if (start in minimum..maximum) {
+                Double.NEGATIVE_INFINITY to Double.POSITIVE_INFINITY
+            } else {
+                null
+            }
+        }
+        val first = (minimum - start) / delta
+        val second = (maximum - start) / delta
+        return minOf(first, second) to maxOf(first, second)
     }
 
     /** Entry into the blocked tile containing [to], or null when the movement piece stays clear. */
@@ -1376,20 +1444,19 @@ class GameSimulation(
     private fun playerExposed(): Boolean = exposedSeconds >= LANDING_GRACE
 
     /**
-     * What an *enemy* may do to the player: exposed under the fairness rule, and not standing on
-     * the boss's ground (`specs/enemies.md`) — a Shooter held at an arena's edge is still in range
-     * of someone inside, so the ground has to be fair as well as unenterable. Bosses are not
-     * bound by this: their ground is where they fight.
+     * What a rank-and-file enemy may do to the player: exposed under the committed-span rule and
+     * not standing on final-boss ground. Mini-boss ground is ordinary pursuit and combat space
+     * (PROD-112); bosses may hurt on either encounter's ground.
      */
-    private fun enemyDamageAllowed(): Boolean = playerExposed() && !playerOnArenaGround()
+    private fun enemyDamageAllowed(): Boolean = playerExposed() && !playerOnMainBossGround()
 
     /** Boss-owned contact, swings, projectiles and beams are allowed on their fight ground. */
     private fun bossDamageAllowed(): Boolean = playerExposed()
 
-    private fun playerOnArenaGround(): Boolean {
+    private fun playerOnMainBossGround(): Boolean {
         val left = TileMap.toTile(player.x)
         val right = TileMap.toTile(player.x + Physics.Default.width - EDGE)
-        return (left..right).any { level.isArenaGround(it, Populator.ARENA_APPROACH_TILES) }
+        return (left..right).any { level.isMainBossGround(it, Populator.ARENA_APPROACH_TILES) }
     }
 
     private fun playerOverCommitted(): Boolean {
@@ -1401,7 +1468,11 @@ class GameSimulation(
     }
 
     private fun advanceExposure() {
-        exposedSeconds = if (player.onGround && !playerOverCommitted()) exposedSeconds + TICK_SECONDS else 0.0
+        exposedSeconds = when {
+            playerOverCommitted() -> 0.0
+            player.onGround -> exposedSeconds + TICK_SECONDS
+            else -> exposedSeconds
+        }
     }
 
     /** Euclidean and strict at the radius, with hysteresis so an enemy at the edge does not flicker. */
@@ -1485,7 +1556,7 @@ class GameSimulation(
         if (dx == 0.0) return true
         val next = enemy.position + Vec2(dx, 0.0)
         // Down to the last fraction of a pixel, unlike the ledge test's whole-pixel footprint.
-        if (entersArena(enemy, TileMap.toTile(if (dx > 0) next.x + LiveEnemy.BODY_SIZE - EDGE else next.x))) return false
+        if (entersMainBossGround(enemy, TileMap.toTile(if (dx > 0) next.x + LiveEnemy.BODY_SIZE - EDGE else next.x))) return false
         if (!canStand(next)) return false
         enemy.position = next
         enemy.stridePx += kotlin.math.abs(dx)
@@ -1499,21 +1570,17 @@ class GameSimulation(
             !jetOverlap(at, LiveEnemy.BODY_SIZE, LiveEnemy.BODY_SIZE)
     }
 
-    /**
-     * The boss's ground is the boss's (`specs/enemies.md`, Pursuit): an enemy outside an arena's
-     * approach never steps onto it, so a pack the player outran waits at the door rather than
-     * joining a fight tuned as a boss fight. An enemy already on it is not trapped by the rule.
-     */
-    private fun entersArena(enemy: LiveEnemy, leadingColumn: Int): Boolean {
-        if (!level.isArenaGround(leadingColumn, Populator.ARENA_APPROACH_TILES)) return false
+    /** Rank-and-file may enter mini-boss ground, but never newly enter final-boss ground. */
+    private fun entersMainBossGround(enemy: LiveEnemy, leadingColumn: Int): Boolean {
+        if (!level.isMainBossGround(leadingColumn, Populator.ARENA_APPROACH_TILES)) return false
         val here = TileMap.toTile(enemy.position.x)..TileMap.toTile(enemy.position.x + LiveEnemy.BODY_SIZE - 1.0)
-        return here.none { level.isArenaGround(it, Populator.ARENA_APPROACH_TILES) }
+        return here.none { level.isMainBossGround(it, Populator.ARENA_APPROACH_TILES) }
     }
 
     private fun landingAllowed(enemy: LiveEnemy, columns: IntRange): Boolean {
         val here = TileMap.toTile(enemy.position.x)..TileMap.toTile(enemy.position.x + LiveEnemy.BODY_SIZE - EDGE)
-        val alreadyInside = here.any { level.isArenaGround(it, Populator.ARENA_APPROACH_TILES) }
-        return alreadyInside || columns.none { level.isArenaGround(it, Populator.ARENA_APPROACH_TILES) }
+        val alreadyInside = here.any { level.isMainBossGround(it, Populator.ARENA_APPROACH_TILES) }
+        return alreadyInside || columns.none { level.isMainBossGround(it, Populator.ARENA_APPROACH_TILES) }
     }
 
     private fun fly(enemy: LiveEnemy, offset: Vec2, speed: Double) {
@@ -1524,7 +1591,7 @@ class GameSimulation(
         val nextX = enemy.position.x + step.x
         val leading = TileMap.toTile(nextX)
         val trailing = TileMap.toTile(nextX + LiveEnemy.BODY_SIZE - EDGE)
-        val blocked = entersArena(enemy, if (step.x > 0) trailing else leading)
+        val blocked = entersMainBossGround(enemy, if (step.x > 0) trailing else leading)
         val horizontal = if (blocked) 0.0 else step.x
         enemy.position += Vec2(horizontal, step.y)
         enemy.stridePx += kotlin.math.abs(horizontal)

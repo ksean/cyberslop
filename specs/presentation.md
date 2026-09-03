@@ -689,7 +689,8 @@ its `Return to title` button receives focus as before.
   freezes them. The geometry is derived from the existing completion boundary and changes no tile,
   collision, map-clear tick, RNG consumption or digest; its styles are distinct from every item
   ring and shot look.
-- **P-69** Player hurt flash: enemy projectile, boss hit, normal-enemy contact, boss contact and
+- **P-69** Player hurt flash: enemy projectile, an unsuppressed boss-projectile contact from P-90,
+  boss melee hit, normal-enemy contact, boss contact and
   spike, broken-glass and barrel damaging-hazard fixtures each lower health and start
   `playerHurtSecondsLeft`; a
   fairness-suppressed hit and healing do not. The window refreshes under continued damage, decays

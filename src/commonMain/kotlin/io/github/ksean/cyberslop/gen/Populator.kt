@@ -4,7 +4,6 @@ import io.github.ksean.cyberslop.core.Rng
 import io.github.ksean.cyberslop.entity.EnemyArchetype
 import io.github.ksean.cyberslop.entity.EnemySpawn
 import io.github.ksean.cyberslop.world.Level
-import io.github.ksean.cyberslop.world.TileMap
 
 /**
  * Places enemies along the route, but never where a hit would be unavoidable.
@@ -30,10 +29,9 @@ object Populator {
     const val START_CLEAR_TILES = 22
 
     /**
-     * No patrol touches an arena or the approach the witness walks in on: whatever stands there
-     * arrives at the boss with the player, and the boss fight is tuned as a boss fight. Twenty
-     * tiles, not the six of the carved ramp, because a Swarm engaged at the awareness radius and
-     * outrun at 6 tiles/s against 15 has to end up beyond `DISENGAGE_PX` of the boss's centre.
+     * No initial patrol touches an arena or its approach. This is distinct from runtime pursuit,
+     * which may carry an engaged enemy onto mini-boss ground (PROD-112). Twenty tiles, not the six
+     * of the carved ramp, also lets the player outrun a pack before the final encounter.
      */
     const val ARENA_APPROACH_TILES = 20
 
@@ -107,12 +105,12 @@ object Populator {
         EnemyArchetype.Turret to 0.07,
     )
 
-    /** The boss arena's keep-out runs to the map's edge: the exit corridor is in its line of fire. */
+    /** Initial patrols stay out of both encounter zones; engaged pursuit may enter mini-boss ground. */
     fun isClearOfArenas(level: Level, spawn: EnemySpawn): Boolean {
-        val miniboss = level.miniboss
-        val boss = level.boss
-        if (spawn.rightTile >= miniboss.leftTile - ARENA_APPROACH_TILES && spawn.leftTile <= miniboss.rightTile) return false
-        return spawn.rightTile < boss.leftTile - ARENA_APPROACH_TILES
+        return (spawn.leftTile..spawn.rightTile).none { column ->
+            level.isMinibossGround(column, ARENA_APPROACH_TILES) ||
+                level.isMainBossGround(column, ARENA_APPROACH_TILES)
+        }
     }
 
     /** Keeps initial awareness and auto-aim quiet until the player advances from the spawn. */

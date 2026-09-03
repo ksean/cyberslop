@@ -310,12 +310,11 @@ class EnemyAttackTest {
     }
 
     /**
-     * The boss's ground (`specs/enemies.md`): a Shooter held at an arena's edge is still within its
-     * range of a player inside, so the ground has to be fair as well as unenterable — no enemy
-     * swing or projectile lands on a player standing on it.
+     * Final-boss ground (`specs/enemies.md`) remains fair as well as unenterable: a Shooter held at
+     * its edge can still be in range, but no rank-and-file swing or projectile lands inside it.
      */
     @Test
-    fun `no enemy damage lands on a player standing on the boss's ground`() {
+    fun `no enemy damage lands on a player standing on main-boss ground`() {
         val arena = Arena(2, 12, TestLevels.FLOOR_ROW + 1)
         val level = TestLevels.flat(bossArena = arena)
         val sim = TestLevels.simulation(level)
@@ -337,7 +336,7 @@ class EnemyAttackTest {
 
         assertTrue(TileMap.toTile(sim.player.x + 12.0) <= arena.rightTile, "fixture: the player left the arena at ${sim.player.x}")
         assertTrue(fired, "fixture: the shooter never fired")
-        assertEquals(sim.run.maxHealth, sim.run.health, "enemy damage landed on the boss's ground")
+        assertEquals(sim.run.maxHealth, sim.run.health, "enemy damage landed on main-boss ground")
     }
 
     /** An enemy projectile that will overlap the player's centre on the next tick. */

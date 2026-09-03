@@ -705,7 +705,7 @@ class LiveProjectile(
     var secondsLeft: Double,
     val passesTerrain: Boolean,
     val fromPlayer: Boolean,
-    /** Boss shots may hurt on boss ground; ordinary enemy shots may not. */
+    /** Boss shots may hurt on encounter ground; ordinary enemy shots may not hurt on final-boss ground. */
     val bossOwned: Boolean = false,
     val bossModule: BossModule? = null,
     val homingTurn: Double = 0.0,

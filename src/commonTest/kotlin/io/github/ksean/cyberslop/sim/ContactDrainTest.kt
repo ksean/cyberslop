@@ -104,7 +104,7 @@ class ContactDrainTest {
     }
 
     @Test
-    fun `no contact drains over a committed column or on the boss's ground`() {
+    fun `no rank-and-file contact drains over a committed column or on main-boss ground`() {
         val committed = TestLevels.simulation(
             TestLevels.flat(committedColumns = TestLevels.SPAWN_COLUMN..TestLevels.SPAWN_COLUMN),
         )
@@ -117,7 +117,7 @@ class ContactDrainTest {
         ground.boss.fight.damage(ground.boss.spec.maxHealth)
         overlappingSwarm(ground)
         repeat(60) { ground.tick(InputFrame()) }
-        assertEquals(ground.run.maxHealth, ground.run.health, "contact drained on the boss's ground")
+        assertEquals(ground.run.maxHealth, ground.run.health, "contact drained on main-boss ground")
     }
 
     @Test

@@ -111,7 +111,7 @@ object EnemyPursuitEnvelope {
         val right = maxOf(topLeft.x + body.width - EDGE, reach + body.width - EDGE)
         if (left < 0.0 || right >= TileMap.toWorld(level.widthTiles)) return true
         return (TileMap.toTile(left)..TileMap.toTile(right)).any { column ->
-            level.isArenaGround(column, Populator.ARENA_APPROACH_TILES)
+            level.isMainBossGround(column, Populator.ARENA_APPROACH_TILES)
         }
     }
 

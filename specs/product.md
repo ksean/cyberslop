@@ -94,6 +94,11 @@ build of powerups collected on contact, and permadeath with persistent unlocks.
 - **PROD-060:** An enemy within engagement range of the player must act on the player rather than
   patrol: a melee enemy pursues, a ranged enemy holds range and shoots. An engaged enemy is not
   confined to its patrol zone.
+- **PROD-112:** Every engaged rank-and-file archetype may enter, cross and fight within the
+  mini-boss arena and its twenty-tile approach when its ordinary pursuit movement takes it there.
+  Rank-and-file swings, projectiles and contact drain work normally on that ground. Initial
+  population remains outside both arenas, and the main-boss approach, arena and exit corridor
+  retain their rank-and-file movement and damage protection.
 - **PROD-061:** A melee enemy must close on the player and attack with a telegraphed swing. A
   ranged enemy must keep its distance when the player closes, but no enemy may move faster than
   the player runs.
@@ -101,7 +106,7 @@ build of powerups collected on contact, and permadeath with persistent unlocks.
   rank-and-file enemy, health drains per second of contact at a rate the map index scales; a living
   mini-boss or main boss drains exactly three times that normal-enemy amount. Contact stacks with
   any swing or shot, never displaces the player, and never bypasses the fairness rules for
-  committed spans and the boss's ground.
+  committed spans and the main boss's protected ground.
 - **PROD-062:** A boss and a mini-boss must activate — move, attack and become vulnerable — as soon
   as the player is within its awareness radius, not on crossing a line; an engaged boss is free to
   leave its arena and pursue.
@@ -155,12 +160,20 @@ build of powerups collected on contact, and permadeath with persistent unlocks.
   visible view. A projectile continues until it hits terrain, hits the player or leaves the level;
   a beam extends in its locked direction to the first terrain face or the level boundary. Neither
   may expire at the former fixed eight-tile distance.
+- **PROD-111:** A Bolt, Burst or Scatter round from either boss rank must test its visible-radius
+  body over the complete path it travels during a fixed tick against the player's current-stance
+  collision body. On the first contact not suppressed by committed-span fairness, the round must
+  deal its declared damage exactly once, stop at that contact and trigger the player's red hurt
+  flash. Fixed-tick endpoints and an ordinary jump outside a committed crossing must never turn a
+  visible projectile-body contact into a miss; committed crossings and their landing grace retain
+  their existing protection.
 - **PROD-088:** Every engaged enemy must be able to continue pursuing across generated traversal
   hazards: a ground-bound rank-and-file enemy, mini-boss or main boss must jump a safe, reachable
   arc over pits, acid, spike strips, broken glass and low obstructions instead of stopping at them,
   while a Flyer crosses them in flight. A fixed-looking Turret must unfold into a slower mobile form when it
-  engages. An enemy must not launch a jump with no safe landing, enter another boss's protected
-  arena ground, or gain permission to hurt a player during a committed crossing.
+  engages. No enemy may launch a jump with no safe landing or gain permission to hurt a player
+  during a committed crossing; a rank-and-file enemy must not enter the main boss's protected
+  ground.
 
 ## Weapons, powerups and loot
 

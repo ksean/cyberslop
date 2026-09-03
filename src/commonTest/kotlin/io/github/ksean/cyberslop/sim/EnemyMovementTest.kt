@@ -242,12 +242,11 @@ class EnemyMovementTest {
     }
 
     /**
-     * A boss fight is a boss fight (`specs/enemies.md`, Pursuit): an engaged enemy holds at an
-     * arena's approach rather than joining the fight inside it. Walkers stop as at a ledge, Flyers
-     * as at a committed column.
+     * The final fight remains isolated (`specs/enemies.md`, Pursuit): an engaged enemy holds at the
+     * main-boss approach. Walkers stop as at a ledge, Flyers as at a committed column.
      */
     @Test
-    fun `an engaged walker stops at the boss arena's approach`() {
+    fun `an engaged walker stops at the main-boss arena's approach`() {
         val sim = TestLevels.simulation(TestLevels.flat(bossArena = Arena(40, 56, TestLevels.FLOOR_ROW + 1)))
         val boundary = 40 - Populator.ARENA_APPROACH_TILES
         val swarm = TestLevels.enemyAt(sim, EnemyArchetype.Swarm, column = boundary - 3)
@@ -256,14 +255,14 @@ class EnemyMovementTest {
         repeat(600) { tick ->
             sim.tick(InputFrame(right = tick < 170))
             val leading = TileMap.toTile(swarm.position.x + LiveEnemy.BODY_SIZE - 0.001)
-            assertTrue(leading < boundary, "a walker entered the arena approach: column $leading")
+            assertTrue(leading < boundary, "a walker entered the main-boss approach: column $leading")
         }
         assertTrue(swarm.engaged, "fixture: the swarm disengaged")
         assertTrue(swarm.position.x > TileMap.toWorld(boundary - 3), "the swarm did not close on the approach at all")
     }
 
     @Test
-    fun `an engaged flyer holds at the boss arena's approach`() {
+    fun `an engaged flyer holds at the main-boss arena's approach`() {
         val sim = TestLevels.simulation(TestLevels.flat(bossArena = Arena(40, 56, TestLevels.FLOOR_ROW + 1)))
         val boundary = 40 - Populator.ARENA_APPROACH_TILES
         val flyer = TestLevels.enemyAt(sim, EnemyArchetype.Flyer, column = boundary - 3, row = TestLevels.FLOOR_ROW - 4)
@@ -271,7 +270,7 @@ class EnemyMovementTest {
         repeat(600) { tick ->
             sim.tick(InputFrame(right = tick < 170))
             val leading = TileMap.toTile(flyer.position.x + LiveEnemy.BODY_SIZE - 0.001)
-            assertTrue(leading < boundary, "a flyer entered the arena approach: column $leading")
+            assertTrue(leading < boundary, "a flyer entered the main-boss approach: column $leading")
         }
         assertTrue(flyer.position.x > TileMap.toWorld(boundary - 3), "the flyer did not close on the approach at all")
     }

@@ -43,6 +43,7 @@ object TestLevels {
         barrels: List<Barrel> = emptyList(),
         jets: List<FireJet> = emptyList(),
         pickups: List<PickupSite> = emptyList(),
+        minibossArena: Arena = Arena(80, 92, FLOOR_ROW + 1),
         bossArena: Arena = Arena(100, 114, FLOOR_ROW + 1),
         spawnColumn: Int = SPAWN_COLUMN,
         mapIndex: Int = 1,
@@ -69,7 +70,7 @@ object TestLevels {
             arcMask = arc,
             spawnColumn = spawnColumn,
             spawnRow = FLOOR_ROW + 1,
-            miniboss = Arena(80, 92, FLOOR_ROW + 1),
+            miniboss = minibossArena,
             boss = bossArena,
             jets = jets,
             pickups = pickups,
@@ -147,13 +148,18 @@ object TestLevels {
                 jumpStart = sim.player.onGround,
             )
             Dodge.Crouch -> InputFrame(left = spacing.left, right = spacing.right, crouch = true)
-            Dodge.MoveAside -> InputFrame(
-                left = spacing.left,
-                right = spacing.right,
-                jump = true,
-                jumpStart = sim.player.onGround,
-            )
+            Dodge.MoveAside -> moveAwayFromLockedAim(sim)
         }
+    }
+
+    /** Projectile dodges move horizontally away from the point locked at telegraph start. */
+    private fun moveAwayFromLockedAim(sim: GameSimulation): InputFrame {
+        val direction = if (sim.boss.aimedAt.x < sim.boss.position.x) -1 else 1
+        return InputFrame(
+            left = direction < 0,
+            right = direction > 0,
+            jump = !sim.player.onGround,
+        )
     }
 
     /** A charge is faster than a crouched player, so use its telegraph to build clearance. */
