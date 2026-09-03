@@ -9,16 +9,16 @@ import io.github.ksean.cyberslop.loot.PowerupSlots
 /**
  * The difficulty curve, as numbers.
  *
- * Growth uses repeated multiplication rather than `pow`, which carries no cross-target guarantee
- * (ENG-054). Time-to-kill bands are **derived** from the health multipliers rather than chosen
- * separately: boss health is a fixed multiple of trash health, so at any given rate the two times
- * are in that same ratio, and picking them independently only guarantees they will contradict.
+ * Enemy health and damage scale linearly from map one's base values (PROD-113). Time-to-kill bands
+ * are **derived** from the health multipliers rather than chosen separately: boss health is a fixed
+ * multiple of trash health, so at any given rate the two times are in that same ratio, and picking
+ * them independently only guarantees they will contradict.
  */
 object Balance {
     private const val TRASH_BASE = 12.0
-    private const val TRASH_GROWTH = 1.63
+    private const val TRASH_FINAL_MULTIPLIER = 3.0
     private const val CONTACT_BASE = 6.0
-    private const val CONTACT_GROWTH = 1.32
+    private const val CONTACT_FINAL_MULTIPLIER = 5.0
     private const val PLAYER_BASE_HEALTH = 100.0
     private const val PLAYER_HEALTH_PER_MAP = 15.0
 
@@ -37,13 +37,15 @@ object Balance {
     private const val TRASH_SECONDS_FIRST = 2.0
     private const val TRASH_SECONDS_LAST = 1.2
 
-    fun trashHealth(mapIndex: Int): Double = TRASH_BASE * growth(TRASH_GROWTH, mapIndex)
+    fun trashHealth(mapIndex: Int): Double =
+        TRASH_BASE * mapMultiplier(TRASH_FINAL_MULTIPLIER, mapIndex)
 
     fun minibossHealth(mapIndex: Int): Double = MINIBOSS_MULTIPLIER * trashHealth(mapIndex)
 
     fun bossHealth(mapIndex: Int): Double = BOSS_MULTIPLIER * trashHealth(mapIndex)
 
-    fun contactDamage(mapIndex: Int): Double = CONTACT_BASE * growth(CONTACT_GROWTH, mapIndex)
+    fun contactDamage(mapIndex: Int): Double =
+        CONTACT_BASE * mapMultiplier(CONTACT_FINAL_MULTIPLIER, mapIndex)
 
     fun playerMaxHealth(mapIndex: Int): Double =
         PLAYER_BASE_HEALTH + PLAYER_HEALTH_PER_MAP * (mapIndex - 1)
@@ -78,9 +80,8 @@ object Balance {
         }
     }
 
-    private fun growth(rate: Double, mapIndex: Int): Double {
-        var value = 1.0
-        repeat(mapIndex - 1) { value *= rate }
-        return value
+    private fun mapMultiplier(finalMultiplier: Double, mapIndex: Int): Double {
+        val progress = (mapIndex - 1) / (DifficultyCurve.MAPS - 1).toDouble()
+        return 1.0 + (finalMultiplier - 1.0) * progress
     }
 }

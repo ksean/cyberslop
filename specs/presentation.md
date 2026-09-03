@@ -10,12 +10,13 @@ Per-sprite `save`/`translate`/`rotate`/`restore` measured about 7.6× a bare dra
 software-rasterization harness that was not retained; the figure is indicative and the
 requirement is structural — the frame is never drawn entity by entity and no per-sprite transform
 is used (ENG-061). `Scene` fills **style batches** — keyed by layer, style, primitive and stroke width — each a
-flat `DoubleArray` of coordinates; the renderer sets style once per batch and loops. Three
+flat `DoubleArray` of coordinates; the renderer sets style once per batch and loops. Four
 primitives cover everything:
 
 | Primitive | Fields | Used by |
 |---|---|---|
 | `Rect` | x, y, w, h | tiles, torsos, plates, HUD, backdrop |
+| `Triangle` | x1, y1, x2, y2, x3, y3 | filled spike blades |
 | `Segment` | x1, y1, x2, y2, width | limbs, weapon barrels, swing arcs, jet columns, icons |
 | `Dot` | x, y, r | eyes, projectiles, glow, muzzle flash, icon details |
 
@@ -55,8 +56,13 @@ Ten palettes, one per sub-theme, each with `sky`, `skyLow`, `backdropFar/Mid/Nea
 ramp that is strictly increasing in luminance (enforced at construction). Colour temperature
 drifts across the run, from cold slate and sodium orange to sterile white-gold.
 
-Tiles have a lit top edge and a darker body (two batches, not two draws per tile). Acid has a
-bright surface line and a dimmer body. Every exposed acid surface tile also carries three
+Tiles have a lit top edge and a darker body (two batches, not two draws per tile). A spike-strip
+tile has a low rectangular base in `palette.hazard` and three solid triangular blades in
+`palette.hazardGlow`; the blades have no outline-only `Segment` representation. Both colours come
+from the palette selected by the level's current theme, so the trap changes with the map while its
+geometry, footprint and damage do not.
+
+Acid has a bright surface line and a dimmer body. Every exposed acid surface tile also carries three
 two-tone bubble rings: a `hazardGlow` outer dot under a smaller `hazard` dot, at three horizontal
 offsets and coordinate-derived phases. During a 1.2 s cycle each bubble rises through the upper
 70 % of the liquid and grows from 1.5 to 4 screen px before resetting at the bottom; neighbouring
@@ -125,7 +131,10 @@ vocabularies are fixed by depth, so the number of style batches does not grow wi
 detail count. No bitmap, font or other runtime asset is introduced. A backdrop reads no tile,
 writes no tile, is excluded from the simulation digest and is never collidable.
 
-Every burning barrel is topped by a smaller fire in the same warm outer and hot-core colours. A
+Every burning barrel has a drum in `palette.hazard` and structural bands in `palette.tileEdge`,
+both resolved from the current level theme. It is topped by a smaller fire in the fixed warm outer
+`#ff5a1f` and hot-core `#ffd166` colours used by the game's other flames; changing the map theme
+must recolour the drum and bands but not either flame colour. A
 broad central tongue and two shorter asymmetric tongues rise from distinct points on the drum lid;
 each is a linked chain of diagonal strokes whose joints move laterally through a deterministic
 0.72 s loop. Their different phases and heights keep the silhouette irregular, and the tongues do
@@ -713,6 +722,14 @@ its `Return to title` button receives focus as before.
   pause freezes the shape. Barrels at different coordinates do not all share the same pose.
   Composing any phase changes neither damaging contact, barrel geometry nor the simulation digest,
   and one barrel and many barrels open the same set of flame style batches.
+- **P-93** Themed filled traps: for each of the ten map themes, one spike tile draws its base only
+  in that theme's `palette.hazard` and exactly three filled `Triangle` blades in that theme's
+  `palette.hazardGlow`, with no outline blade segments. A barrel in each theme draws its drum and
+  bands only in that theme's `palette.hazard` and `palette.tileEdge`; changing themes changes those
+  styles while preserving their geometry. Every barrel flame uses only `#ff5a1f` and `#ffd166` in
+  every theme and retains P-73's geometry and animation. A frame with many spike tiles or barrels
+  opens the same set of respective body, blade, band and flame batches as a frame with one, and
+  composing them changes no collision, damage, RNG state or simulation digest.
 - **P-85** Broken-glass presentation: every `BrokenGlass` tile draws exactly five unequal,
   disconnected `#7a3f2b` shard segments and three `#b66a45` crumbs within the bottom 30 % of its
   cell. The geometry contains no closed triangle or common baseline and differs

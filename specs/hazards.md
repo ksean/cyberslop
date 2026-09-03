@@ -44,6 +44,11 @@ of rusty, jagged shard segments as specified by presentation.md P-85. The drawn 
 extend beyond the bottom 30 % of the tile, so a patch reads as small ground debris rather than a
 spike wall. Its colour and shape do not change its non-blocking collision or contact rate.
 
+Spike strips and barrel bodies resolve all of their colours from the current map palette
+(PROD-114, presentation.md P-93). Spike blades are filled triangles, not stroked outlines. The
+barrel's fire is the exception to its themed body: it retains the fixed warm outer-flame and
+yellow-hot core shared by the game's flame presentation.
+
 ## Contact rules
 
 - The movement model samples lethal overlap **per sub-step** (half a tile), so a terminal-velocity
@@ -78,7 +83,9 @@ spike wall. Its colour and shape do not change its non-blocking collision or con
   foothold, is not in the `ArcMask`, is outside both arenas and the entry ramp before each, is
   strictly left of `gateColumn`, and is at Chebyshev distance ≥ 2 from every static pickup cell.
   Candidates are drawn from the `hazard` stream at `damagingHazardsPerHundredTiles × widthTiles /
-  100` (generation.md), rounded down, with kind weights spike:glass:barrel = 2:2:1, spike strips
+  100` (generation.md), rounded down. The density target is `7/3 + (14/3)d` per 100 tiles for
+  `d = (mapIndex - 1) / 9`, so its map-10 endpoint is exactly three times its non-zero map-1
+  baseline. Kind weights are spike:glass:barrel = 2:2:1, with spike strips
   1–3 cells long and glass patches 1–2 cells long. Separate glass candidates may not be
   edge-adjacent, so each maximal horizontal glass run remains one declared 1–2-cell patch. This is
   one shared hazard budget rather than an increase to the density curve. The confirming replay
@@ -103,7 +110,8 @@ spike wall. Its colour and shape do not change its non-blocking collision or con
   the `ArcMask` and both arenas, and strictly left of `gateColumn`; the confirming replay reports
   no damaging contact on every map of a seed cohort; a spike, glass patch and barrel fault-injected
   onto the replayed route are removed by the confirming pass, deterministically, and nothing else
-  is; the per-map count rises with map index in cohort mean and is zero on map 1.
+  is; the per-map count rises with map index in cohort mean, including from map 1's non-zero
+  baseline.
 - **P-81** Gate hazard exclusion: over the generation cohort, no acid, fire jet, spike, glass or
   barrel footprint touches `gateColumn` or any later column. Boundary fixtures that attempt to
   carve an acid gap or fire-jet corridor there are rejected; fault-injected spike, glass and barrel
@@ -114,8 +122,8 @@ spike wall. Its colour and shape do not change its non-blocking collision or con
   stack, and a one-pixel-clear player takes nothing. Glass is non-blocking, refreshes the ordinary
   hurt flash, can kill with semantic `Glass`/bleed cause, participates in `Hazards.count` and
   `ThreatScore`, and is placed/confirmed within the shared damaging-hazard budget at the declared
-  weights and 1–2-cell length. Map 1 still has zero damaging hazards and cohort pressure remains
-  increasing.
+  weights and 1–2-cell length. Map 1 participates in the shared baseline budget and cohort pressure
+  remains increasing.
 - **P-61** Enemy hazard traversal is verified in enemies.md; the same spike, glass, barrel, acid,
   void and fire-jet geometry remains unchanged for the player and for witness replay.
 - Hazard contact: safe ground reports no lethal contact; falling into acid does; a single fast tick

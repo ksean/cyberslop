@@ -539,7 +539,7 @@ object Scene {
         val hazardGlow = builder.batch(Layer.Hazard, palette.hazardGlow, Primitive.Rect)
         val bubbleGlow = builder.batch(Layer.Hazard, palette.hazardGlow, Primitive.Dot)
         val bubbleBody = builder.batch(Layer.HazardSurface, palette.hazard, Primitive.Dot)
-        val spikes = builder.batch(Layer.Hazard, palette.hazardGlow, Primitive.Segment, strokeWidth(STRIP_WIDTH))
+        val spikes = builder.batch(Layer.Hazard, palette.hazardGlow, Primitive.Triangle)
         val glassShards = builder.batch(
             Layer.HazardSurface, GLASS_RUST, Primitive.Segment, strokeWidth(GLASS_WIDTH),
         )
@@ -572,8 +572,7 @@ object Scene {
                         }
                     }
 
-                    // A row of points standing on a dark base: the spikes are the strokes, so the
-                    // strip reads as something that cuts rather than as a coloured floor.
+                    // Three solid blades stand on a darker themed base, distinct from low glass.
                     TileKind.Spikes -> {
                         val base = screenY + size
                         hazard.rect(screenX, base - STRIP_BASE_PX, size, STRIP_BASE_PX)
@@ -581,8 +580,14 @@ object Scene {
                         for (n in 0 until STRIP_POINTS) {
                             val left = screenX + n * pitch
                             val tip = left + pitch / 2.0
-                            spikes.segment(left, base, tip, screenY + size * STRIP_TOP)
-                            spikes.segment(tip, screenY + size * STRIP_TOP, left + pitch, base)
+                            spikes.triangle(
+                                left,
+                                base,
+                                tip,
+                                screenY + size * STRIP_TOP,
+                                left + pitch,
+                                base,
+                            )
                         }
                     }
 
@@ -2661,7 +2666,6 @@ object Scene {
 
     /** The hover phase `x / 40` radians (`specs/presentation.md`), in degrees per world px. */
     private const val HOVER_PHASE_DEGREES_PER_PX = 1.4324
-    private const val STRIP_WIDTH = 2.0
     private const val STRIP_BASE_PX = 4.0
     private const val STRIP_POINTS = 3
     private const val STRIP_TOP = 0.35

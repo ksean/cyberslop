@@ -72,6 +72,12 @@ class CombatBodyRenderEnvelopeTest {
                         )
                     }
 
+                    Primitive.Triangle -> listOf(
+                        Vec2(batch[i], batch[i + 1]) to 0.0,
+                        Vec2(batch[i + 2], batch[i + 3]) to 0.0,
+                        Vec2(batch[i + 4], batch[i + 5]) to 0.0,
+                    )
+
                     Primitive.Dot -> listOf(Vec2(batch[i], batch[i + 1]) to batch[i + 2])
                 }
                 if (bounds.none { (point, extent) -> (point - centre).length <= radius * 2.0 + extent }) continue

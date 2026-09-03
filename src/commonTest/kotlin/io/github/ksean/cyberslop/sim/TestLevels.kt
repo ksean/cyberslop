@@ -29,6 +29,7 @@ object TestLevels {
     /** The row the player and enemies stand in; the tile below it is solid. */
     const val FLOOR_ROW = 15
     const val SPAWN_COLUMN = 3
+    private const val DURABLE_ENEMY_HEALTH = 1_000_000_000.0
 
     fun flat(
         gapColumns: IntRange = IntRange.EMPTY,
@@ -47,6 +48,7 @@ object TestLevels {
         bossArena: Arena = Arena(100, 114, FLOOR_ROW + 1),
         spawnColumn: Int = SPAWN_COLUMN,
         mapIndex: Int = 1,
+        theme: ThemeId = ThemeId.RuinedCitySprawl,
     ): Level {
         val tiles = TileMap(WIDTH, HEIGHT)
         for (x in 0 until WIDTH) for (y in FLOOR_ROW + 1 until HEIGHT) tiles[x, y] = TileKind.Solid
@@ -64,7 +66,7 @@ object TestLevels {
         val arc = Mask(WIDTH, HEIGHT).also { it.markRect(0, FLOOR_ROW - 1, WIDTH - 1, FLOOR_ROW) }
         return Level(
             mapIndex = mapIndex,
-            theme = ThemeId.RuinedCitySprawl,
+            theme = theme,
             tiles = tiles,
             floorMask = floorMask,
             arcMask = arc,
@@ -85,8 +87,8 @@ object TestLevels {
     /**
      * An enemy standing in [column] on the floor, with its patrol span in tiles.
      *
-     * Durable by default: the player's weapon fires by itself, and a map-one Swarm dies to one
-     * bottle swing before it can do the thing a behaviour test is watching for.
+     * Durable by default: the player's weapon fires by itself, so behaviour fixtures must not
+     * derive their lifetime from the production balance curve they are intended to ignore.
      */
     fun enemyAt(
         sim: GameSimulation,
@@ -94,7 +96,7 @@ object TestLevels {
         column: Int,
         patrolTiles: Int = 1,
         row: Int = FLOOR_ROW,
-        health: Double = archetype.healthOn(10),
+        health: Double = DURABLE_ENEMY_HEALTH,
     ): LiveEnemy {
         val enemy = LiveEnemy(
             archetype = archetype,

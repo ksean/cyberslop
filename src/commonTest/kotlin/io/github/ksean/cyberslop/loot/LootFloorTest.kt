@@ -17,10 +17,9 @@ import kotlin.test.assertTrue
  * The floor bounds what a player can be holding when they reach a boss that engages on awareness
  * and gates the exit until it falls.
  *
- * It deliberately does not claim the floor beats every map: the required rate grows about 81x across
- * a run and a worst-case loadout does not, so optional loot is required past the early game. What is
- * asserted instead is that the floor is real, rises, carries the opening maps, and that the ceiling
- * is high enough for the last one.
+ * It deliberately does not claim the floor beats every map. Damage-only boss clearability and
+ * full route survival are separate bounds; what is asserted is that the floor is real, rises,
+ * carries the three fully simulated opening maps, and that the ceiling reaches the last one.
  */
 class LootFloorTest {
     /** The reference route's consecutive guaranteed weapon tiers differ, so each is still a reset. */
@@ -65,8 +64,8 @@ class LootFloorTest {
      * mini-boss award — the arriving weapon is gone by then — and never the boss's own award.
      */
     @Test
-    fun `the furthest clearable map is judged with the loadout held at the boss`() {
-        val furthest = LootFloor.furthestClearableMap()
+    fun `the damage bound is judged with the loadout held at the boss`() {
+        val furthest = LootFloor.furthestDamageClearableMap()
         assertTrue(furthest >= 1, "the floor clears nothing")
         (1..furthest).forEach { map ->
             val seconds = Balance.bossHealth(map) / LootFloor.damagePerSecondAt(map)
@@ -92,8 +91,8 @@ class LootFloorTest {
 
     @Test
     fun `map one never faces its mini-boss with the starting weapon`() {
-        // The bottle's 4 DPS against a 108 HP mini-boss is 27 s, far outside an 18 s band. The
-        // guaranteed starter cache is what stops that being the opening experience.
+        // The bottle now meets map one's base requirement. The guaranteed starter cache remains
+        // the intended first progression beat and still gives the reference run a stronger floor.
         assertTrue(
             LootFloor.damagePerSecondAt(1) > Weapons.startingWeapon.baseDps * 2.0,
             "the guaranteed floor on map 1 is no better than the bottle",
@@ -130,10 +129,7 @@ class LootFloorTest {
     fun `the floor carries the opening maps unaided`() {
         val furthest = LootFloor.furthestClearableMap()
 
-        assertTrue(
-            furthest >= GUARANTEED_MAPS,
-            "guaranteed drops alone clear only map $furthest; the opening should not require luck",
-        )
+        assertEquals(GUARANTEED_MAPS, furthest, "full-simulation coverage drifted beyond its calibrated prefix")
     }
 
     /** Round-1 finding: the mini-boss is fought with what the player arrives holding, not with its own award. */

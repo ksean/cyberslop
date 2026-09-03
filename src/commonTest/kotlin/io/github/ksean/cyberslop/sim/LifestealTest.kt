@@ -40,7 +40,7 @@ class LifestealTest {
         val first = TestLevels.enemyAt(sim, EnemyArchetype.Turret, column = 5)
         val second = TestLevels.enemyAt(sim, EnemyArchetype.Turret, column = 6)
         val (dealt, healed) = firstHit(sim, listOf(first, second))
-        assertTrue(second.health < second.archetype.healthOn(10), "fixture: no splash reached the second turret")
+        assertTrue(second.health < second.maxHealth, "fixture: no splash reached the second turret")
         assertClose(dealt * 0.02, healed)
     }
 

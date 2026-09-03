@@ -7,6 +7,8 @@ requirements and decisions belong in `specs/`.
 
 ## Open
 
+None.
+
 ## Deferred
 
 Not scheduled by the current plan; kept so they are not forgotten.

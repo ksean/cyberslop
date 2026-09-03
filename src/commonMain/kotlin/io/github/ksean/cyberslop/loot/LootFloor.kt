@@ -23,10 +23,9 @@ import io.github.ksean.cyberslop.gen.DifficultyCurve
  * verifies the same-id exception for optional routes — modelling one policy and shipping another
  * is how an earlier version of this file came to claim a bound it did not have.
  *
- * It does **not** carry a player to the final map, and it is not meant to. The required damage rate
- * grows about 81x across a run while a worst-case loadout barely moves, so optional loot is
- * genuinely required past the opening — that is the difficulty curve working, not a defect.
- * Nothing about the encounter checks whether the player can win the fight they are walking into.
+ * It does **not** carry a player to the final map, and it is not meant to. A boss-only damage
+ * calculation can outpace the route-survival guarantee, so the two bounds stay separate rather
+ * than claiming that reaching a winnable fight is the same as clearing the map.
  */
 object LootFloor {
     /**
@@ -69,13 +68,8 @@ object LootFloor {
     fun damagePerSecondArrivingAt(mapIndex: Int): Double =
         DamagePipeline.resolve(weaponArrivingAt(mapIndex), slotsArrivingAt(mapIndex)).expectedDps
 
-    /**
-     * The last map whose boss the floor can kill inside its band, having cleared every map before
-     * it. Judged with what the player holds at that boss — the mini-boss award — because that is
-     * what a forced pickup leaves them with. Beyond this the run needs loot the player was not
-     * guaranteed.
-     */
-    fun furthestClearableMap(slack: Double = BAND_SLACK): Int {
+    /** The last map whose boss the held guaranteed loadout can kill inside its damage band. */
+    fun furthestDamageClearableMap(slack: Double = BAND_SLACK): Int {
         var furthest = 0
         for (map in 1..DifficultyCurve.MAPS) {
             val seconds = Balance.bossHealth(map) / damagePerSecondAt(map)
@@ -84,6 +78,10 @@ object LootFloor {
         }
         return furthest
     }
+
+    /** The last map covered by both the damage bound and the full route-and-boss simulation. */
+    fun furthestClearableMap(slack: Double = BAND_SLACK): Int =
+        minOf(furthestDamageClearableMap(slack), FULL_SIMULATION_MAPS)
 
     /** The award's weakest outcome: the powerup in [pool] that adds least single-target damage to [weapon]. */
     private fun weakestPowerupFor(weapon: WeaponSpec, pool: List<Powerup>): Powerup =
@@ -98,6 +96,7 @@ object LootFloor {
     }
 
     private const val MINIBOSS_POWERUP_FROM = 4
+    private const val FULL_SIMULATION_MAPS = 3
     const val BAND_SLACK = 1.6
 
     /** A main boss's powerup is floored at Scav (`specs/combat.md`); a mini-boss's is not. */

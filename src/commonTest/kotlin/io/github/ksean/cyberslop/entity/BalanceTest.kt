@@ -8,15 +8,30 @@ class BalanceTest {
     @Test
     fun `the published curve values hold`() {
         assertClose(12.0, Balance.trashHealth(1))
-        assertClose(84.71, Balance.trashHealth(5))
-        assertClose(974.70, Balance.trashHealth(10))
+        assertClose(22.67, Balance.trashHealth(5))
+        assertClose(36.0, Balance.trashHealth(10))
 
         assertClose(6.0, Balance.contactDamage(1))
-        assertClose(18.22, Balance.contactDamage(5))
-        assertClose(73.0, Balance.contactDamage(10))
+        assertClose(16.67, Balance.contactDamage(5))
+        assertClose(30.0, Balance.contactDamage(10))
 
         assertClose(100.0, Balance.playerMaxHealth(1))
         assertClose(235.0, Balance.playerMaxHealth(10))
+    }
+
+    @Test
+    fun `enemy health and damage have the specified linear endpoint ratios`() {
+        listOf(
+            Balance::trashHealth,
+            Balance::minibossHealth,
+            Balance::bossHealth,
+        ).forEach { healthAt ->
+            assertClose(3.0 * healthAt(1), healthAt(10))
+            assertConstantIncrement(healthAt)
+        }
+
+        assertClose(5.0 * Balance.contactDamage(1), Balance.contactDamage(10))
+        assertConstantIncrement(Balance::contactDamage)
     }
 
     @Test
@@ -71,5 +86,12 @@ class BalanceTest {
             abs(actual - expected) <= abs(expected) * 0.005 + 1e-9,
             "expected about $expected, was $actual",
         )
+    }
+
+    private fun assertConstantIncrement(valueAt: (Int) -> Double) {
+        val increment = valueAt(2) - valueAt(1)
+        (2..10).forEach { map ->
+            assertClose(increment, valueAt(map) - valueAt(map - 1))
+        }
     }
 }

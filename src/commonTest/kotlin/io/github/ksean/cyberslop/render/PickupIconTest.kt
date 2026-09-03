@@ -442,6 +442,7 @@ class PickupIconTest {
             private set
 
         override fun fillRects(style: String, batch: DrawBatch) = record(batch, 1)
+        override fun fillTriangles(style: String, batch: DrawBatch) = record(batch, 1)
         override fun strokeSegments(style: String, width: Double, batch: DrawBatch) = record(batch, 3)
         override fun fillDots(style: String, batch: DrawBatch) = record(batch, 1)
         override fun drawText(item: TextItem) {

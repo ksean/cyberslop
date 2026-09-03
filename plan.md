@@ -47,7 +47,7 @@ Settled before implementation; the specification amendments say the same thing n
    burning barrels hurt per second and are survivable; their whole footprint keeps two tiles from
    every witness foothold and every static pickup, stays out of the `ArcMask` and arenas, and lies
    strictly left of the boss gate; a confirming replay removes any hazard the tape still touches.
-   Density follows the shared curve from map 2.
+   Density follows the shared linear curve from map 1.
 6. **Melee out-reaches and out-damages ranged.** Every melee weapon reaches ≥ 2 m, beyond any
    enemy swing; per tier, melee mean DPS (bottle excluded) exceeds ranged mean DPS. The later
    class-wide 1.5× melee increase permits adjacent tier bands to overlap while tier minimum, mean
@@ -209,6 +209,13 @@ and the loot-floor expectations only.
     allow every engaged normal archetype to enter and attack in the mini-boss approach and arena,
     and preserve initial population and final-boss exclusions. Complete MINIBOSS-ZONE-1 in
     `tasks.md` test-first, then run `./scripts/check.sh`.
+31. **Use linear map scaling and themed filled traps.** *(done)*
+    Add PROD-113, PROD-114, P-92 and P-93: make map 1 the enemy health/damage reference, reach
+    exactly 3× health and 5× damage on map 10, preserve the existing 4-to-9 enemy-density curve,
+    and replace the damaging-hazard schedule with an exact linear 3× density ratio while retaining
+    map 10's target. Draw spike blades as filled map-palette shapes and keep barrel bodies themed
+    while their flame colours stay fixed. Complete MAP-SCALING-1 in `tasks.md` test-first, inspect
+    all ten themes, then run `./scripts/check.sh`.
 
 ## Agents
 

@@ -13,6 +13,7 @@ import io.github.ksean.cyberslop.sim.GroundItem
 import io.github.ksean.cyberslop.sim.LiveBoss
 import io.github.ksean.cyberslop.sim.TestLevels
 import io.github.ksean.cyberslop.world.Arena
+import io.github.ksean.cyberslop.world.Barrel
 import io.github.ksean.cyberslop.world.ThemeId
 import java.io.File
 import kotlin.test.Test
@@ -27,6 +28,54 @@ import kotlin.test.assertTrue
  * test finding any of them.
  */
 class WorldFrameSheetTest {
+    @Test
+    fun `filled spikes and themed barrels are written for all ten maps`() {
+        val directory = File("build/icon-sheets/themed-hazards").also { it.mkdirs() }
+        val cards = mutableListOf<String>()
+
+        ThemeId.entries.forEachIndexed { index, theme ->
+            val map = index + 1
+            val level = TestLevels.flat(
+                spikeColumns = HAZARD_SPIKES,
+                barrels = listOf(Barrel(HAZARD_BARREL_COLUMN, TestLevels.FLOOR_ROW)),
+                mapIndex = map,
+                theme = theme,
+            )
+            val run = RunState.begin(HAZARD_SEED).copy(mapIndex = map)
+            val sim = GameSimulation(level, run, HAZARD_SEED)
+            val frame = Scene.compose(
+                sim,
+                HAZARD_CAMERA,
+                Backdrops.of(HAZARD_SEED, level),
+                HudModel.of(sim),
+                0.0,
+                SceneBuilder(),
+            )
+            val sink = SvgPaintSink(
+                HAZARD_CAMERA.viewWidth * Scene.ZOOM,
+                HAZARD_CAMERA.viewHeight * Scene.ZOOM,
+                "#05060a",
+            )
+            FramePainter.paint(frame, sink)
+            val file = directory.resolve("map-$map.svg")
+            file.writeText(sink.toSvg())
+
+            assertTrue(file.length() > 0, "no hazard frame was written for $theme")
+            assertTrue(
+                frame.batches.any { it.layer == Layer.Hazard && it.primitive == Primitive.Triangle },
+                "$theme has no filled spike blades",
+            )
+            cards += "<figure><img src=\"${file.name}\"><figcaption>Map $map — ${theme.displayName}</figcaption></figure>"
+        }
+
+        directory.resolve("index.html").writeText(
+            "<html><style>body{margin:0;background:#05060a;color:#eee;font:16px sans-serif;" +
+                "display:grid;grid-template-columns:repeat(2,1fr)}figure{margin:8px}" +
+                "img{width:100%;background:#05060a}figcaption{padding:4px 0}</style>" +
+                cards.joinToString("") + "</html>",
+        )
+    }
+
     @Test
     fun `all ten cyberpunk backdrops are written for inspection`() {
         val directory = File("build/icon-sheets/backdrops").also { it.mkdirs() }
@@ -255,6 +304,10 @@ class WorldFrameSheetTest {
         const val GLASS_RISE = 42.0
         const val GLASS_VIEW_WIDTH = 120.0
         const val GLASS_VIEW_HEIGHT = 80.0
+        const val HAZARD_BARREL_COLUMN = 10
+        val HAZARD_SPIKES = 6..8
+        val HAZARD_SEED = 0xA2A2DuL
+        val HAZARD_CAMERA = Camera(32.0, 180.0, 160.0, 130.0)
         val BOSS_SEED = 0xB055uL
         val BOSS_MAPS = listOf(1, 5, 10)
         val ATTACK_LAYERS = setOf(Layer.ShotGlow, Layer.ShotBody, Layer.ShotCore, Layer.Effects)

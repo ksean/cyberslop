@@ -167,6 +167,8 @@ class SceneBatchingTest : SceneFixture() {
 
         override fun fillRects(style: String, batch: DrawBatch) = record(batch, FILL_STATE_CHANGES)
 
+        override fun fillTriangles(style: String, batch: DrawBatch) = record(batch, FILL_STATE_CHANGES)
+
         override fun strokeSegments(style: String, width: Double, batch: DrawBatch) {
             widths.add(width)
             record(batch, STROKE_STATE_CHANGES)

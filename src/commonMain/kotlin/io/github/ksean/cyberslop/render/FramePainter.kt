@@ -18,6 +18,9 @@ interface PaintSink {
     /** Set the fill style once, then fill `batch.size` rectangles of `x, y, width, height`. */
     fun fillRects(style: String, batch: DrawBatch)
 
+    /** Set the fill style once, then fill `batch.size` triangles from their three points. */
+    fun fillTriangles(style: String, batch: DrawBatch)
+
     /** Set stroke style and width once, then stroke `batch.size` segments of `x1, y1, x2, y2`. */
     fun strokeSegments(style: String, width: Double, batch: DrawBatch)
 
@@ -30,7 +33,7 @@ interface PaintSink {
 /**
  * Issues a composed frame, in layer order, at a fixed drawing-state cost per batch.
  *
- * The browser layer supplies the four primitive operations and nothing else — no order, no
+ * The browser layer supplies the five primitive operations and nothing else — no order, no
  * grouping, and no decision about what a frame contains.
  */
 object FramePainter {
@@ -38,6 +41,7 @@ object FramePainter {
         frame.batches.forEach { batch ->
             when (batch.primitive) {
                 Primitive.Rect -> sink.fillRects(batch.style, batch)
+                Primitive.Triangle -> sink.fillTriangles(batch.style, batch)
                 Primitive.Segment -> sink.strokeSegments(batch.style, batch.width, batch)
                 Primitive.Dot -> sink.fillDots(batch.style, batch)
             }

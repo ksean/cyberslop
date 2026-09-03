@@ -30,6 +30,17 @@ class SvgPaintSink(
         }
     }
 
+    override fun fillTriangles(style: String, batch: DrawBatch) {
+        fillSetups++
+        for (index in 0 until batch.size) {
+            val at = index * Primitive.Triangle.stride
+            body.append(
+                """<polygon points="${batch[at]},${batch[at + 1]} ${batch[at + 2]},${batch[at + 3]} """ +
+                    """${batch[at + 4]},${batch[at + 5]}" fill="$style"/>""",
+            ).append('\n')
+        }
+    }
+
     override fun strokeSegments(style: String, width: Double, batch: DrawBatch) {
         strokeSetups++
         for (index in 0 until batch.size) {

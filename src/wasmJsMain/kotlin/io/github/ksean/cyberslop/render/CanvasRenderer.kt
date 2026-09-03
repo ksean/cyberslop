@@ -2,8 +2,6 @@ package io.github.ksean.cyberslop.render
 
 import io.github.ksean.cyberslop.progression.DiscoveryEntry
 import io.github.ksean.cyberslop.sim.GameSimulation
-import io.github.ksean.cyberslop.world.TILE_SIZE
-import io.github.ksean.cyberslop.world.TileMap
 import org.w3c.dom.CENTER
 import org.w3c.dom.CanvasLineCap
 import org.w3c.dom.CanvasRenderingContext2D
@@ -81,7 +79,7 @@ class CanvasRenderer(
     }
 
     /**
-     * The four primitive operations, and nothing else.
+     * The five primitive operations, and nothing else.
      *
      * Order, grouping and content are [FramePainter]'s, in `commonMain`, where they are tested
      * (ENG-060). Each of these configures a fixed amount of drawing state — one property for a fill,
@@ -97,6 +95,21 @@ class CanvasRenderer(
                 context.fillRect(batch[i], batch[i + 1], batch[i + 2], batch[i + 3])
                 i += Primitive.Rect.stride
             }
+        }
+
+        override fun fillTriangles(style: String, batch: DrawBatch) {
+            context.fillStyle = styleOf(style)
+            context.beginPath()
+            var i = 0
+            val end = batch.size * Primitive.Triangle.stride
+            while (i < end) {
+                context.moveTo(batch[i], batch[i + 1])
+                context.lineTo(batch[i + 2], batch[i + 3])
+                context.lineTo(batch[i + 4], batch[i + 5])
+                context.closePath()
+                i += Primitive.Triangle.stride
+            }
+            context.fill()
         }
 
         override fun strokeSegments(style: String, width: Double, batch: DrawBatch) {

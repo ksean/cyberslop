@@ -26,12 +26,18 @@ class RoutePressureTest {
 
     @Test
     fun `the guaranteed loadout survives the route on every floor-covered map on every seed`() {
+        val failures = mutableListOf<String>()
         for (mapIndex in 1..LootFloor.furthestClearableMap()) {
             for (seed in 1uL..COHORT) {
                 val generated = LevelGenerator.generate(seed * SPREAD, mapIndex)
-                assertTrue(!PressureHarness.route(seed * SPREAD, generated).died, "map $mapIndex seed $seed: the guaranteed loadout died on the route")
+                val outcome = PressureHarness.route(seed * SPREAD, generated)
+                if (outcome.died) {
+                    failures += "map $mapIndex seed $seed at x=${outcome.sim.player.x} " +
+                        "after ${outcome.sim.elapsedTicks} ticks and ${outcome.sim.grossDamageTaken} gross damage"
+                }
             }
         }
+        assertTrue(failures.isEmpty(), "the guaranteed loadout died on the route:\n${failures.joinToString("\n")}")
     }
 
     /** Gate-2 finding: guaranteed-only means the optional caches on the route are not picked up either. */

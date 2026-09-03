@@ -2,7 +2,8 @@
 
 ## Archetypes
 
-Health is `multiplier × Balance.trashHealth(mapIndex)`. Ground speeds are fractions of
+Health is `multiplier × Balance.trashHealth(mapIndex)`, where
+`Balance.trashHealth(L) = 12 × [1 + 2(L - 1) / 9]`. Ground speeds are fractions of
 `ENEMY_SPEED`, and no archetype's ordinary pursuit speed may reach the player's run speed of 240
 px/s (PROD-061); a committed leap may carry horizontally at, but never above, that speed. An
 enemy's body is a 14 × 14 px box; its centre is `position + (7, 7)`.
@@ -94,7 +95,10 @@ on the player.
 
 ## Attacks (PROD-061, PROD-063, PROD-105)
 
-`contactDamage(mapIndex)` is the unit every enemy attack and contact drain scales from.
+`contactDamage(L) = 6 × [1 + 4(L - 1) / 9]` is the unit every enemy attack and contact drain scales
+from. Consequently every fixed rank, archetype and attack multiplier retains its identity while
+the same enemy damage source rises linearly from its map-1 amount to exactly five times that amount
+on map 10.
 
 - **Contact (PROD-069).** Every living enemy body hurts to touch. While the player's AABB overlaps
   a rank-and-file enemy's 14 × 14 px box, health drains at
@@ -301,13 +305,13 @@ if walked past.
 
 | | Formula | Map 1 | Map 5 | Map 10 |
 |---|---|---|---|---|
-| Trash health | `12 × 1.63^(L−1)` | 12 | 84.7 | 974.7 |
-| Mini-boss health | `6 × trash` | 72 | 508 | 5848 |
-| Boss health | `12 × trash` | 144 | 1017 | 11696 |
-| Contact damage (the unit enemy attacks scale from) | `6 × 1.32^(L−1)` | 6 | 18.2 | 73 |
+| Trash health | `12 × [1 + 2(L−1)/9]` | 12 | 22.7 | 36 |
+| Mini-boss health | `6 × trash` | 72 | 136 | 216 |
+| Boss health | `12 × trash` | 144 | 272 | 432 |
+| Contact damage (the unit enemy attacks scale from) | `6 × [1 + 4(L−1)/9]` | 6 | 16.7 | 30 |
 | Player max health | `100 + 15 (L−1)` | 100 | 160 | 235 |
 | Target trash kill time | `2.0 → 1.2` linear | 2.00 | 1.64 | 1.20 |
-| Required player DPS | `trash ÷ time` | 6.0 | 51.5 | 812 |
+| Required player DPS | `trash ÷ time` | 6.0 | 13.8 | 30 |
 
 Mini-boss and boss kill-time bands are the health multipliers times the trash band. The boss
 multipliers are sized for roughly three-quarters uptime, because dodging a telegraph means moving
@@ -370,23 +374,26 @@ the arriving loadout from the map's start through the mini-boss fight, the mini-
 weakest from the moment it is taken, and that held loadout at the main boss. The floor is honest
 about that: a forced different-weapon pickup can be a downgrade, and the floor says so rather than
 assuming the player kept the better weapon. Optional loot is genuinely required past the early
-maps; the floor's claims are:
+maps. The fully simulated floor-covered prefix remains maps 1–3: the new health curve lets the
+guaranteed weapon satisfy the boss-only damage band later than that, but route survival is not
+guaranteed from map 4. Damage-only clearability remains reported separately so it cannot silently
+expand the full route-and-boss guarantee. The floor's claims are:
 
 Any simulation harness claiming this floor must take a death award through PROD-090's normal
 jump/contact path before using its loadout or resuming the route. It may replace the roll with the
 floor's declared weakest contents before contact, but may neither teleport the item nor equip the
 inventory directly.
 
-- it carries the opening maps unaided: a map counts as *covered* only if its main boss falls
-  inside the kill-time band to the loadout **held at that boss** (`weaponAt`, `slotsAt` — the
-  mini-boss award, never the boss's own), while the route and the mini-boss are judged with what
-  the player **arrives** holding (`weaponArrivingAt`, `slotsArrivingAt`); the boss-pressure
-  harness fights with exactly the held loadout the floor models;
+- it carries maps 1–3 unaided: a map counts as *covered* only if its main boss falls inside the
+  kill-time band to the loadout **held at that boss** (`weaponAt`, `slotsAt` — the mini-boss award,
+  never the boss's own) and the full-simulation guarantee includes it; the route and the mini-boss
+  are judged with what the player **arrives** holding (`weaponArrivingAt`, `slotsArrivingAt`), and
+  the boss-pressure harness fights with exactly the held loadout the floor models;
 - it never goes backwards (non-decreasing damage across maps);
 - the ceiling (best weapon, greediest legal build) reaches the final map's required rate;
 - the guaranteed loadout survives the witness route on every map the floor covers, with the
-  population engaged and attacking, over the seed cohort; on later maps the route is survivable
-  only with optional loot, which is the curve.
+  population engaged and attacking, over the seed cohort; later maps require optional loot to
+  retain that survival guarantee, which is the curve.
 
 ## Verified properties
 

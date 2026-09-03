@@ -88,10 +88,13 @@ enum class Layer {
     HudWear,
 }
 
-/** What a batch draws. Three shapes cover everything the game puts on screen. */
+/** What a batch draws. Four shapes cover everything the game puts on screen. */
 enum class Primitive(val stride: Int) {
     /** `x, y, width, height` */
     Rect(4),
+
+    /** `x1, y1, x2, y2, x3, y3` — a filled triangular blade. */
+    Triangle(6),
 
     /**
      * `x1, y1, x2, y2` — a limb, a barrel, an arc segment.
@@ -136,6 +139,14 @@ class DrawBatch internal constructor(
         reserve(4)
         data[used] = x; data[used + 1] = y; data[used + 2] = width; data[used + 3] = height
         used += 4
+    }
+
+    fun triangle(x1: Double, y1: Double, x2: Double, y2: Double, x3: Double, y3: Double) {
+        require(primitive == Primitive.Triangle) { "$primitive batch cannot take a triangle" }
+        reserve(6)
+        data[used] = x1; data[used + 1] = y1; data[used + 2] = x2; data[used + 3] = y2
+        data[used + 4] = x3; data[used + 5] = y3
+        used += 6
     }
 
     fun segment(x1: Double, y1: Double, x2: Double, y2: Double) {

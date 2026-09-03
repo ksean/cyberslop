@@ -104,7 +104,7 @@ data class DifficultyCurve(
      */
     val jetFrequency: Double,
     val enemiesPerHundredTiles: Double,
-    /** Spike strips and barrels per hundred tiles of width, rounded down (`specs/hazards.md`). */
+    /** Spike strips, glass patches and barrels per hundred tiles, rounded down (`specs/hazards.md`). */
     val damagingHazardsPerHundredTiles: Double,
 ) {
     companion object {
@@ -126,8 +126,11 @@ data class DifficultyCurve(
                 jetPeriodSeconds = lerp(2.4, 1.4, d),
                 jetFrequency = lerp(0.10, 0.34, d),
                 enemiesPerHundredTiles = lerp(4.0, 9.0, d),
-                damagingHazardsPerHundredTiles = lerp(0.0, 5.0, d).coerceAtMost(STANDARD_HAZARD_CAP) +
-                    if (mapIndex == MAPS) FINAL_MAP_HAZARD_BONUS else 0.0,
+                damagingHazardsPerHundredTiles = lerp(
+                    DAMAGING_HAZARDS_FIRST,
+                    DAMAGING_HAZARDS_LAST,
+                    d,
+                ),
             )
         }
 
@@ -143,7 +146,7 @@ data class DifficultyCurve(
         private val HAZARD_FREQUENCY = listOf(
             0.00, 0.05, 0.30, 0.34, 0.37, 0.40, 0.95, 0.97, 0.99, 1.00,
         )
-        private const val STANDARD_HAZARD_CAP = 4.0
-        private const val FINAL_MAP_HAZARD_BONUS = 3.0
+        private const val DAMAGING_HAZARDS_FIRST = 7.0 / 3.0
+        private const val DAMAGING_HAZARDS_LAST = 7.0
     }
 }

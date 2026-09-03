@@ -110,6 +110,11 @@ class BackdropSceneTest {
         frame.batches.filter { it.layer == layer }.forEach { batch ->
             when (batch.primitive) {
                 Primitive.Rect -> repeat(batch.size) { add(batch[it * 4]) }
+                Primitive.Triangle -> repeat(batch.size) {
+                    add(batch[it * 6])
+                    add(batch[it * 6 + 2])
+                    add(batch[it * 6 + 4])
+                }
                 Primitive.Segment -> repeat(batch.size) {
                     add(batch[it * 4])
                     add(batch[it * 4 + 2])

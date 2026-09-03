@@ -55,21 +55,21 @@ Each theme also has its own palette and backdrop (presentation.md).
 ## Difficulty curve
 
 `DifficultyCurve.at(mapIndex)` uses `d = (mapIndex − 1) / 9` and the endpoints below, clamped to the
-measured budget. Fields interpolate linearly except for the two hazard schedules described below;
+measured budget. Fields interpolate linearly except for the acid-in-gap schedule described below;
 every field still moves in one direction.
 
 | Parameter | Map 1 | Map 10 |
 |---|---|---|
 | width (tiles) | 320 | 720 |
 | gap frequency | 0.12 | 0.42 |
-| hazard frequency | 0.00 | 1.00 |
+| acid-in-gap frequency | 0.00 | 1.00 |
 | max level gap (tiles) | 2 | 3 |
 | vertical band (tiles) | 8 | 26 |
 | jet duty | 0.25 | 0.40 |
 | jet period (s) | 2.4 | 1.4 |
 | jet corridor frequency | 0.10 | 0.34 |
 | enemies per 100 tiles | 4 | 9 |
-| damaging hazards per 100 tiles | 0 | 7 |
+| damaging hazards per 100 tiles | 7/3 | 7 |
 
 The level gap cap of 3 leaves a full tile inside `gapMaxTiles(0) = 5`; wider gaps occur only where
 the landing is lower and the envelope is larger. Jet duty is bounded at 0.40 because a jet whose
@@ -79,9 +79,16 @@ up with the fewest jets. The fairness floor `REACTION = 0.25 s` never scales.
 Acid is proposed only inside a gap. Its per-map frequency is
 `[0.00, 0.05, 0.30, 0.34, 0.37, 0.40, 0.95, 0.97, 0.99, 1.00]`: the larger steps establish it by
 the end of the opening band and sharply mark entry into the late-game band without changing route
-topology. Damaging-hazard density follows the linear 0→5 curve through map 8, caps at 4 on map 9,
-then rises to 7 on map 10 before player-route and enemy-pursuit confirmation. That small plateau in
-the proposal curve prevents rejection noise from making the emitted final map milder than map 9.
+topology. The shared damaging-hazard placement target for spike strips, broken-glass patches and
+burning barrels interpolates linearly as `7/3 + (14/3)d` hazards per 100 tiles. Map 10 therefore
+retains its established target of 7 and has exactly three times map 1's target density. The target
+is measured before the existing player-route and enemy-pursuit confirmation passes; those safety
+passes remain authoritative and may remove a proposed hazard. This density curve does not replace
+the separate acid and jet schedules.
+
+Enemy density retains its existing linear `4 + 5d` enemies per 100 tiles. Enemy health and damage
+use their own linear scales in enemies.md; changing those combat values does not change population
+or consume generation randomness.
 
 The player envelope remains the authority for completability. Separately, `EnemyLeap` measures its
 fixed arc against each required real box (14 × 14 rank-and-file and 44 × 56 boss) and the pursuit
@@ -111,6 +118,12 @@ test and a change to terrain is not masked by one.
   landing has run-out ≥ `stoppingDistance + playerWidth`.
 - **P-13** Over a cohort of 24 seeds, the cohort mean of `DifficultyScore` is strictly increasing
   from each map to the next, and map 10's mean is at least 1.5 × map 1's.
+- **P-92** Linear map scaling: maps 1 through 10 give enemy-health multipliers `1 + 2d`,
+  enemy-damage multipliers `1 + 4d`, the unchanged enemy-density target `4 + 5d`, and the
+  damaging-hazard-density target `7/3 + (14/3)d`, for `d = (mapIndex - 1) / 9`. Endpoint fixtures
+  prove that map 10 is respectively 300 %, 500 % and 300 % of map 1 for health, damage and damaging
+  hazards; adjacent-map fixtures prove each scale has one constant increment. Population fixtures
+  retain the exact 4-to-9 enemy-density endpoints.
 - **P-22** Runtime generation plus verification on the widest map: median and p99 reported over
   100 seeds; p99 < 400 ms.
 - **P-61** The generated pursuit-obstacle audit and real-box leap fixtures are specified in

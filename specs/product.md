@@ -114,7 +114,21 @@ build of powerups collected on contact, and permadeath with persistent unlocks.
   the swing or shot itself, and a muzzle flash for a shot.
 - **PROD-064:** Maps must carry visible, survivable damaging hazards in the dystopian idiom — at
   least spike strips, broken-glass patches and burning barrels — that hurt per second of contact,
-  placed off the proven route, at a density that rises across the run and is zero on map one.
+  placed off the proven route, at a density that rises across the run. The shared damaging-hazard
+  placement target must scale linearly from `7/3` hazards per 100 tiles on map 1 to `7` on map 10,
+  so map 10's target density is exactly 300 % of map 1's. Acid and fire-jet availability and
+  proposal frequency remain separate, theme-driven terrain rules.
+- **PROD-113:** Map 1 is the unscaled reference for enemy health and enemy damage. For map `L` from
+  1 through 10, the health of each rank-and-file archetype, mini-boss and main boss must equal its
+  map-1 counterpart times `1 + 2(L - 1) / 9`, and each damage amount from the same enemy contact or
+  attack source must equal its map-1 counterpart times `1 + 4(L - 1) / 9`. Map 10 enemies must
+  therefore have exactly 300 % of map-1 health and deal exactly 500 % of map-1 damage. Both scales
+  are linear between those endpoints. The existing rank-and-file population-density curve remains
+  unchanged at a linear 4 to 9 enemies per 100 tiles from maps 1 through 10.
+- **PROD-114:** Spike traps and burning-barrel bodies must use colours from the current map's
+  palette. Each spike blade must be a filled shape rather than an outline made from line segments.
+  A burning barrel's drum and structural details must be map-themed, while the fire above it must
+  retain the fixed warm outer-flame and hot-core colours used by fire elsewhere in the game.
 - **PROD-094:** No lethal or damaging hazard may occupy the main boss's gate column or the exit
   corridor strictly beyond it, where entering completes the map. Nothing damaging may therefore
   sit on top of the wall behind the boss. The corridor's safe floor must be visibly marked by an

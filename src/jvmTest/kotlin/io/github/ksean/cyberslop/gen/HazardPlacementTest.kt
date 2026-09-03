@@ -127,12 +127,12 @@ class HazardPlacementTest {
     }
 
     @Test
-    fun `there are no damaging hazards on map one and more of them as the maps go on`() {
+    fun `damaging hazards start on map one and increase across the run`() {
         val means = (1..10).map { mapIndex ->
             (1uL..COHORT).sumOf { seed -> Hazards.count(GeneratedLevels.level(seed * SPREAD, mapIndex)) }
                 .toDouble() / COHORT.toDouble()
         }
-        assertEquals(0.0, means[0], "map 1 carries damaging hazards")
+        assertTrue(means[0] > 0.0, "map 1 has no damaging-hazard baseline: $means")
         means.zipWithNext().forEachIndexed { index, (earlier, later) ->
             assertTrue(later > earlier, "map ${index + 2} averages $later hazards against map ${index + 1}'s $earlier: $means")
         }
@@ -141,7 +141,7 @@ class HazardPlacementTest {
     @Test
     fun `generated broken glass forms one to two tile patches`() {
         var patches = 0
-        for (seed in 1uL..COHORT) for (mapIndex in 2..10) {
+        for (seed in 1uL..COHORT) for (mapIndex in 1..10) {
             val level = GeneratedLevels.level(seed * SPREAD, mapIndex)
             Hazards.glassPatches(level).forEach { patch ->
                 patches++
@@ -159,7 +159,7 @@ class HazardPlacementTest {
     private fun chebyshev(a: Foothold, b: Foothold): Int = maxOf(abs(a.column - b.column), abs(a.row - b.row))
 
     private companion object {
-        const val COHORT = 20uL
+        const val COHORT = 40uL
         const val SPREAD = 0x9E3779B97F4A7C15uL
         val SEED = 0xC0FFEEuL
         const val MIN_SAMPLE = 200

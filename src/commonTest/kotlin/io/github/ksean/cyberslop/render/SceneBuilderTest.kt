@@ -49,13 +49,17 @@ class SceneBuilderTest {
     fun `coordinates survive the round trip`() {
         val builder = SceneBuilder()
         builder.begin()
+        builder.batch(Layer.Terrain, "#fff000", Primitive.Triangle)
+            .triangle(1.0, 2.0, 3.0, 4.0, 5.0, 6.0)
         builder.batch(Layer.Terrain, "#fff000", Primitive.Segment, 5.0).segment(1.0, 2.0, 3.0, 4.0)
         builder.batch(Layer.Terrain, "#fff000", Primitive.Dot).dot(6.0, 7.0, 8.0)
 
         val frame = builder.build()
+        val triangle = frame.batches.first { it.primitive == Primitive.Triangle }
         val segment = frame.batches.first { it.primitive == Primitive.Segment }
         val dot = frame.batches.first { it.primitive == Primitive.Dot }
 
+        assertEquals(listOf(1.0, 2.0, 3.0, 4.0, 5.0, 6.0), (0 until 6).map { triangle[it] })
         assertEquals(listOf(1.0, 2.0, 3.0, 4.0), (0 until 4).map { segment[it] })
         assertEquals(5.0, segment.width, "the batch lost the stroke width")
         assertEquals(listOf(6.0, 7.0, 8.0), (0 until 3).map { dot[it] })
