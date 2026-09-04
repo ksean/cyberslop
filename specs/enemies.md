@@ -3,7 +3,7 @@
 ## Archetypes
 
 Health is `multiplier × Balance.trashHealth(mapIndex)`, where
-`Balance.trashHealth(L) = 12 × [1 + 2(L - 1) / 9]`. Ground speeds are fractions of
+`Balance.trashHealth(L) = 12 × [1 + 4(L - 1) / 9]`. Ground speeds are fractions of
 `ENEMY_SPEED`, and no archetype's ordinary pursuit speed may reach the player's run speed of 240
 px/s (PROD-061); a committed leap may carry horizontally at, but never above, that speed. An
 enemy's body is a 14 × 14 px box; its centre is `position + (7, 7)`.
@@ -26,9 +26,10 @@ boss arena's approach. This is an initial-population rule: after engagement, ran
 may pursue into the mini-boss approach and arena, but not the main-boss protected ground. The
 generator resamples from the remaining legal
 columns so this exclusion does not reduce the requested population. Twenty-two start tiles equal
-the awareness radius, guaranteeing that no initial rank-and-file enemy is already aware of or
-targetable by the player. Twenty approach tiles leave a Swarm engaged at the awareness radius and
-outrun on the approach beyond `DISENGAGE_PX` of the boss's centre.
+the awareness radius, guaranteeing that no initial rank-and-file enemy is already aware of the
+player. Player-ranged targetability instead depends on the gameplay viewport under PROD-116.
+Twenty approach tiles leave a Swarm engaged at the awareness radius and outrun on the approach
+beyond `DISENGAGE_PX` of the boss's centre.
 
 For a player's direct `ArcSwing`, every rank-and-file silhouette is contained by a 24 px combat
 disc about the enemy centre. This disc is intentionally larger than the 14 px movement box: the
@@ -36,15 +37,14 @@ drawn bodies vary by archetype while movement remains cell-sized.
 
 ## Awareness (PROD-060)
 
-The simulation has no screen, so "visible" is an **awareness radius**, not a viewport test: an
-enemy whose centre is at Euclidean distance strictly less than `AWARE_PX = 22 tiles` from the
-player's centre becomes *engaged* — the same strict predicate auto-aim uses, so the two boundaries
-agree at equality; it stays engaged until it dies or that distance exceeds `DISENGAGE_PX =
-28 tiles`, at which point it resumes patrol — so a pack the player has outrun by that much drops
-off rather than arriving at the boss with them. An unengaged non-Turret patrols `homeX ± patrolPx`;
-a Turret folds at `homeX` and waits. An engaged enemy is not confined to its patrol span. The
-radius is the one auto-aim uses, so an enemy the player's weapon can target is one that is acting
-on the player.
+Enemy awareness deliberately does not consume the gameplay viewport: an enemy whose centre is at
+Euclidean distance strictly less than `AWARE_PX = 22 tiles` from the player's centre becomes
+*engaged*. It stays engaged until it dies or that distance exceeds `DISENGAGE_PX = 28 tiles`, at
+which point it resumes patrol — so a pack the player has outrun by that much drops off rather than
+arriving at the boss with them. An unengaged non-Turret patrols `homeX ± patrolPx`; a Turret folds
+at `homeX` and waits. An engaged enemy is not confined to its patrol span. Melee and psychic
+player targeting retain the legacy 22-tile boundary; ranged player targeting instead uses the
+visible gameplay viewport under PROD-116 and may aim at an unengaged on-screen enemy.
 
 ## Movement (PROD-088, PROD-112)
 
@@ -95,9 +95,9 @@ on the player.
 
 ## Attacks (PROD-061, PROD-063, PROD-105)
 
-`contactDamage(L) = 6 × [1 + 4(L - 1) / 9]` is the unit every enemy attack and contact drain scales
+`contactDamage(L) = 6 × [1 + 6(L - 1) / 9]` is the unit every enemy attack and contact drain scales
 from. Consequently every fixed rank, archetype and attack multiplier retains its identity while
-the same enemy damage source rises linearly from its map-1 amount to exactly five times that amount
+the same enemy damage source rises linearly from its map-1 amount to exactly seven times that amount
 on map 10.
 
 - **Contact (PROD-069).** Every living enemy body hurts to touch. While the player's AABB overlaps
@@ -305,13 +305,13 @@ if walked past.
 
 | | Formula | Map 1 | Map 5 | Map 10 |
 |---|---|---|---|---|
-| Trash health | `12 × [1 + 2(L−1)/9]` | 12 | 22.7 | 36 |
-| Mini-boss health | `6 × trash` | 72 | 136 | 216 |
-| Boss health | `12 × trash` | 144 | 272 | 432 |
-| Contact damage (the unit enemy attacks scale from) | `6 × [1 + 4(L−1)/9]` | 6 | 16.7 | 30 |
-| Player max health | `100 + 15 (L−1)` | 100 | 160 | 235 |
+| Trash health | `12 × [1 + 4(L−1)/9]` | 12 | 33.3 | 60 |
+| Mini-boss health | `6 × trash` | 72 | 200 | 360 |
+| Boss health | `12 × trash` | 144 | 400 | 720 |
+| Contact damage (the unit enemy attacks scale from) | `6 × [1 + 6(L−1)/9]` | 6 | 22 | 42 |
+| Player max health | `100` | 100 | 100 | 100 |
 | Target trash kill time | `2.0 → 1.2` linear | 2.00 | 1.64 | 1.20 |
-| Required player DPS | `trash ÷ time` | 6.0 | 13.8 | 30 |
+| Required player DPS | `trash ÷ time` | 6.0 | 20.3 | 50 |
 
 Mini-boss and boss kill-time bands are the health multipliers times the trash band. The boss
 multipliers are sized for roughly three-quarters uptime, because dodging a telegraph means moving
@@ -335,7 +335,8 @@ before, none of the map's own) at full health, with the map's optional caches re
 unearned is taken; when the mini-boss award drops, the harness replaces it where it lies with the
 floor's weakest outcome (`weaponAt`, `slotsAt`), so the rest of the route and the boss fight are
 played with what the floor models rather than with whatever the roll gave. They use the game's own
-auto-aim (nearest target, bosses included once engaged) and record **gross incoming damage** —
+class-specific auto-aim (visible nearest target for ranged weapons under PROD-116, bosses included
+once vulnerable) and record **gross incoming damage** —
 every damage event before lifesteal — separately from net health.
 
 - **Route pressure**, all ten maps: replay the witness tape while the population acts; the tape
@@ -463,10 +464,11 @@ inventory directly.
   archetypes; enemies stand on the route rather than pooling at the arena.
 - **P-82** Start clearance: every initially populated rank-and-file patrol span lies strictly
   outside `spawnColumn ± 22`, so every enemy centre begins at or beyond the strict 22-tile
-  awareness/auto-aim boundary. Boundary fixtures reject a patrol that touches either endpoint and
-  accept the next column outside it. Across the generation cohort no enemy begins engaged or
-  targetable, while the requested population count, maximum ranged share, minimum archetype count
-  and all arena exclusions remain satisfied.
+  awareness boundary. Boundary fixtures reject a patrol that touches either endpoint and accept
+  the next column outside it. Across the generation cohort no enemy begins engaged, while the
+  requested population count, maximum ranged share, minimum archetype count and all arena
+  exclusions remain satisfied. Ranged targetability is outside this placement property and follows
+  the supplied gameplay viewport under PROD-116.
 - **P-44** Boss attack choice: a phase-three main boss with the player inside `MELEE_REACH`
   opens with a ranged attack in about 20 % of attacks over a long fixed-seed run (within ±5
   points) and with the player at or beyond `RANGED_PREFERRED_PX` in about 80 %; within a kind the

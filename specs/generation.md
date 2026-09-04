@@ -118,12 +118,14 @@ test and a change to terrain is not masked by one.
   landing has run-out ≥ `stoppingDistance + playerWidth`.
 - **P-13** Over a cohort of 24 seeds, the cohort mean of `DifficultyScore` is strictly increasing
   from each map to the next, and map 10's mean is at least 1.5 × map 1's.
-- **P-92** Linear map scaling: maps 1 through 10 give enemy-health multipliers `1 + 2d`,
-  enemy-damage multipliers `1 + 4d`, the unchanged enemy-density target `4 + 5d`, and the
+- **P-92** Linear map scaling: maps 1 through 10 give enemy-health multipliers `1 + 4d`,
+  enemy-damage multipliers `1 + 6d`, the unchanged enemy-density target `4 + 5d`, and the
   damaging-hazard-density target `7/3 + (14/3)d`, for `d = (mapIndex - 1) / 9`. Endpoint fixtures
-  prove that map 10 is respectively 300 %, 500 % and 300 % of map 1 for health, damage and damaging
-  hazards; adjacent-map fixtures prove each scale has one constant increment. Population fixtures
-  retain the exact 4-to-9 enemy-density endpoints.
+  prove that map 10 is respectively 500 %, 700 % and 300 % of map 1 for enemy health, enemy damage
+  and damaging-hazard density; adjacent-map fixtures prove each scale has one constant increment.
+  Player maximum health remains at 100 % of its map-1 baseline on every map, damaging-hazard damage
+  retains its separate `1 + 4d` scale, and population fixtures retain the exact 4-to-9 enemy-density
+  endpoints.
 - **P-22** Runtime generation plus verification on the widest map: median and p99 reported over
   100 seeds; p99 < 400 ms.
 - **P-61** The generated pursuit-obstacle audit and real-box leap fixtures are specified in

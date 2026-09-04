@@ -19,6 +19,50 @@ object ProjectileBallistics {
         tickSeconds: Double,
         targetVelocity: Vec2 = Vec2.Zero,
     ): BallisticLaunch {
+        validate(origin, target, targetVelocity, nominalSpeed, gravity, lifetimeSeconds, tickSeconds)
+        solveWithinLifetime(
+            origin, target, targetVelocity, nominalSpeed, gravity, lifetimeSeconds, tickSeconds,
+        )?.let { return it }
+        throw IllegalArgumentException(
+            "no upward ballistic solution from $origin to $target within $lifetimeSeconds seconds",
+        )
+    }
+
+    /**
+     * Keeps an uncapped selected aim even when the live projectile cannot reach it before expiry.
+     * The returned later arc is hypothetical; callers retain the projectile's declared lifetime.
+     */
+    fun solveToward(
+        origin: Vec2,
+        target: Vec2,
+        nominalSpeed: Double,
+        gravity: Double,
+        lifetimeSeconds: Double,
+        tickSeconds: Double,
+        targetVelocity: Vec2 = Vec2.Zero,
+    ): BallisticLaunch {
+        validate(origin, target, targetVelocity, nominalSpeed, gravity, lifetimeSeconds, tickSeconds)
+        return solveWithinLifetime(
+            origin, target, targetVelocity, nominalSpeed, gravity, lifetimeSeconds, tickSeconds,
+        ) ?: checkNotNull(
+            findLaunch(
+                origin, target, Vec2.Zero, nominalSpeed, gravity,
+                lifetimeSeconds = null, tickSeconds = tickSeconds,
+            ),
+        )
+    }
+
+    private fun validate(
+        origin: Vec2,
+        target: Vec2,
+        targetVelocity: Vec2,
+        nominalSpeed: Double,
+        gravity: Double,
+        lifetimeSeconds: Double,
+        tickSeconds: Double,
+    ) {
+        require(origin.x.isFinite() && origin.y.isFinite()) { "invalid projectile origin $origin" }
+        require(target.x.isFinite() && target.y.isFinite()) { "invalid projectile target $target" }
         require(nominalSpeed.isFinite() && nominalSpeed > 0.0) { "invalid projectile speed $nominalSpeed" }
         require(gravity.isFinite() && gravity > 0.0) { "invalid projectile gravity $gravity" }
         require(lifetimeSeconds.isFinite() && lifetimeSeconds > 0.0) { "invalid lifetime $lifetimeSeconds" }
@@ -26,15 +70,23 @@ object ProjectileBallistics {
         require(targetVelocity.x.isFinite() && targetVelocity.y.isFinite()) {
             "invalid target velocity $targetVelocity"
         }
+    }
 
-        findLaunch(origin, target, targetVelocity, nominalSpeed, gravity, lifetimeSeconds, tickSeconds)
-            ?.let { return it }
-        if (targetVelocity != Vec2.Zero) {
-            findLaunch(origin, target, Vec2.Zero, nominalSpeed, gravity, lifetimeSeconds, tickSeconds)
-                ?.let { return it }
-        }
-        throw IllegalArgumentException(
-            "no upward ballistic solution from $origin to $target within $lifetimeSeconds seconds",
+    private fun solveWithinLifetime(
+        origin: Vec2,
+        target: Vec2,
+        targetVelocity: Vec2,
+        nominalSpeed: Double,
+        gravity: Double,
+        lifetimeSeconds: Double,
+        tickSeconds: Double,
+    ): BallisticLaunch? {
+        val moving = findLaunch(
+            origin, target, targetVelocity, nominalSpeed, gravity, lifetimeSeconds, tickSeconds,
+        )
+        if (moving != null || targetVelocity == Vec2.Zero) return moving
+        return findLaunch(
+            origin, target, Vec2.Zero, nominalSpeed, gravity, lifetimeSeconds, tickSeconds,
         )
     }
 
@@ -44,11 +96,11 @@ object ProjectileBallistics {
         targetVelocity: Vec2,
         nominalSpeed: Double,
         gravity: Double,
-        lifetimeSeconds: Double,
+        lifetimeSeconds: Double?,
         tickSeconds: Double,
     ): BallisticLaunch? {
         var ticks = 1
-        while (ticks * tickSeconds < lifetimeSeconds) {
+        while (lifetimeSeconds == null || ticks * tickSeconds < lifetimeSeconds) {
             val duration = ticks * tickSeconds
             val intercept = target + targetVelocity * duration
             val displacement = intercept - origin

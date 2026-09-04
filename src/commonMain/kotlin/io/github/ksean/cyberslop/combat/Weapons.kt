@@ -146,7 +146,7 @@ object Weapons {
         pattern = FirePattern.Projectile(gravity = gravity, lifetimeSeconds = 2.0),
     ).also(::validateLob)
 
-    /** A registry lob must solve even for the lowest aim point at maximum acquisition distance. */
+    /** A registry lob reaches the legacy 22-tile balance distance within its declared lifetime. */
     private fun validateLob(spec: WeaponSpec) {
         val pattern = spec.pattern as FirePattern.Projectile
         if (pattern.gravity <= 0.0) return

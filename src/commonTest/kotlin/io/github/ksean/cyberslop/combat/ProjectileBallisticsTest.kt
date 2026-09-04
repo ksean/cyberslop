@@ -10,6 +10,27 @@ import kotlin.test.assertTrue
 /** P-71: the lob solver targets the fixed-step integrator rather than a cosmetic curve. */
 class ProjectileBallisticsTest {
     @Test
+    fun `an uncapped aim gets a later arc without extending the live lifetime`() {
+        val origin = Vec2(80.0, 160.0)
+        val target = Vec2(1_080.0, 112.0)
+        val gravity = 600.0
+
+        val launch = ProjectileBallistics.solveToward(
+            origin = origin,
+            target = target,
+            nominalSpeed = 420.0,
+            gravity = gravity,
+            lifetimeSeconds = 2.0,
+            tickSeconds = TICK_SECONDS,
+        )
+
+        assertTrue(launch.flightTicks * TICK_SECONDS > 2.0)
+        assertTrue(launch.velocity.y <= -ProjectileBallistics.MIN_UPWARD_SPEED)
+        assertClose(target.x, land(origin, launch, gravity).x)
+        assertClose(target.y, land(origin, launch, gravity).y)
+    }
+
+    @Test
     fun `a same-height target receives an upward whole-tick launch that reaches its snapshot`() {
         val origin = Vec2(80.0, 160.0)
         val target = Vec2(320.0, 160.0)

@@ -3,6 +3,7 @@ package io.github.ksean.cyberslop.sim
 import io.github.ksean.cyberslop.combat.Anchor
 import io.github.ksean.cyberslop.combat.AutoFire
 import io.github.ksean.cyberslop.combat.BallisticLaunch
+import io.github.ksean.cyberslop.combat.CombatBody
 import io.github.ksean.cyberslop.combat.CombatBodies
 import io.github.ksean.cyberslop.combat.DamagePipeline
 import io.github.ksean.cyberslop.combat.Falloff
@@ -333,7 +334,7 @@ class GameSimulation(
         elapsedTicks++
 
         val muzzle = player.centre(Physics.Default)
-        val selectedTarget = selectedAimTarget(muzzle)
+        val selectedTarget = selectedAimTarget(muzzle, autoFire.weapon.spec.cls)
         val aim = selectedTarget?.position
             ?: Targeting.aimPoint(muzzle, emptyList(), facing)
         aimDirection = (aim - muzzle).normalisedOr(Vec2(facing.toDouble(), 0.0))
@@ -552,20 +553,65 @@ class GameSimulation(
         }
     }
 
-    private data class AimTarget(val position: Vec2, val velocity: Vec2)
+    private data class AimTarget(
+        val id: CombatTargetId,
+        val position: Vec2,
+        val velocity: Vec2,
+        val body: CombatBody,
+    )
 
-    /** Nearest live target by current position, carrying its last completed actual movement. */
-    private fun selectedAimTarget(muzzle: Vec2): AimTarget? {
-        val candidates = buildList {
-            enemies.filter { it.alive }.forEach { add(AimTarget(it.centre, it.aimingVelocity)) }
-            if (miniboss.fight.vulnerable && !miniboss.fight.defeated) {
-                add(AimTarget(miniboss.centre, miniboss.aimingVelocity))
-            }
-            if (boss.fight.vulnerable && !boss.fight.defeated) add(AimTarget(boss.centre, boss.aimingVelocity))
-        }
+    /** Class-specific target by current position, carrying its last completed actual movement. */
+    private fun selectedAimTarget(muzzle: Vec2, weaponClass: WeaponClass): AimTarget? {
+        val candidates = aimCandidates()
+        if (weaponClass == WeaponClass.Ranged) return nearestVisibleTarget(muzzle, candidates)
+
         val nearest = Targeting.nearest(muzzle, candidates.map(AimTarget::position)) ?: return null
         return candidates.first { it.position == nearest }
     }
+
+    private fun aimCandidates(): List<AimTarget> = buildList {
+        enemies.forEachIndexed { index, enemy ->
+            if (enemy.alive) {
+                add(
+                    AimTarget(
+                        id = CombatTargetId(CombatTargetKind.Enemy, index),
+                        position = enemy.centre,
+                        velocity = enemy.aimingVelocity,
+                        body = CombatBodies.enemy(enemy.centre),
+                    ),
+                )
+            }
+        }
+        if (miniboss.fight.vulnerable && !miniboss.fight.defeated) {
+            add(
+                AimTarget(
+                    id = CombatTargetId(CombatTargetKind.Miniboss),
+                    position = miniboss.centre,
+                    velocity = miniboss.aimingVelocity,
+                    body = CombatBodies.boss(miniboss.centre, isMain = false),
+                ),
+            )
+        }
+        if (boss.fight.vulnerable && !boss.fight.defeated) {
+            add(
+                AimTarget(
+                    id = CombatTargetId(CombatTargetKind.Boss),
+                    position = boss.centre,
+                    velocity = boss.aimingVelocity,
+                    body = CombatBodies.boss(boss.centre, isMain = true),
+                ),
+            )
+        }
+    }
+
+    private fun nearestVisibleTarget(muzzle: Vec2, candidates: List<AimTarget>): AimTarget? =
+        candidates.asSequence()
+            .filter { gameplayViewport.overlaps(it.body) }
+            .minWithOrNull(
+                compareBy<AimTarget> { (it.position - muzzle).lengthSquared }
+                    .thenBy { it.id.kind.ordinal }
+                    .thenBy { it.id.index },
+            )
 
     // ---- firing -------------------------------------------------------------------------------
 
@@ -768,7 +814,7 @@ class GameSimulation(
             } else {
                 DEFAULT_PROJECTILE_SPEED
             }
-            ProjectileBallistics.solve(
+            ProjectileBallistics.solveToward(
                 origin = origin,
                 target = aimPoint,
                 nominalSpeed = speed,
@@ -848,7 +894,7 @@ class GameSimulation(
         val pattern = weapon.spec.pattern as? FirePattern.Projectile
         val gravity = pattern?.gravity ?: 0.0
         val baseVelocity = if (pattern != null && pattern.gravity > 0.0) {
-            ballisticLaunch?.velocity ?: ProjectileBallistics.solve(
+            ballisticLaunch?.velocity ?: ProjectileBallistics.solveToward(
                 origin = origin,
                 target = requireNotNull(aimPoint) { "lobbed projectile requires an aim point" },
                 nominalSpeed = speed,

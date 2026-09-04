@@ -4,14 +4,13 @@ import io.github.ksean.cyberslop.core.Vec2
 import io.github.ksean.cyberslop.world.TILE_SIZE
 
 /**
- * Where the weapon points.
+ * Legacy distance-bounded targeting for melee and psychic weapons.
  *
- * Always at the nearest valid target. There is no cursor and no setting: the game is played on the
- * four arrow keys, which means it needs no pointing device at all rather than merely offering a way
- * to do without one. PROD-004 is satisfied outright instead of by amendment.
+ * Ranged weapons instead select the nearest visible combat body from the gameplay viewport in
+ * `GameSimulation` (PROD-116). There is no player-controlled cursor or targeting setting.
  */
 object Targeting {
-    /** Enemies further than this are ignored, so auto-aim does not snap across the whole map. */
+    /** The retained melee/psychic cap and enemy-awareness distance; ranged auto-aim does not use it. */
     const val AUTO_RANGE_PX = 22.0 * TILE_SIZE
 
     /**

@@ -54,11 +54,14 @@ presentation.
 
 ## Contact rules
 
+- Survivable hazards use `Balance.hazardDamage(L) = 6 × [1 + 4(L - 1) / 9]` as their damage unit,
+  retaining the existing linear 100 % to 500 % map curve independently of PROD-113's enemy-damage
+  increase. Each kind's multiplier in the table above applies to this unit.
 - The movement model samples lethal overlap **per sub-step** (half a tile), so a terminal-velocity
   tick cannot step over a one-tile hazard layer; a jet burn is tested against the player's AABB at
   the current level clock. Either sets health to zero at the end of the tick, after all other
   damage.
-- Damaging overlap is tested against the player's AABB each tick and drains `rate × contactDamage
+- Damaging overlap is tested against the player's AABB each tick and drains `rate × hazardDamage
   × dt`; one maximal spike strip or broken-glass patch counts once however many of its tiles the
   box overlaps, and overlapping distinct hazards drains each. It can kill a player who stands in
   it, and it never displaces the player (ENG-051). A terminal broken-glass contact has the semantic
@@ -108,7 +111,9 @@ presentation.
 - **P-10** Every jet corridor contains exactly one jet volume with pixel-measured safe zones and an
   off-window that fits the crossing plus reaction time (completability.md).
 - **P-36** Damaging hazards: overlapping a spike strip, broken-glass patch, barrel body or barrel
-  flame drains health at the hazard's rate per second and a single tick of contact does not kill; every footprint
+  flame drains health at the hazard's rate times `hazardDamage(mapIndex)` per second and a single
+  tick of contact does not kill; the damage unit is 100 % of its map-1 value on map 1, 500 % on map
+  10 and linear between them; every footprint
   cell is at Chebyshev distance ≥ 2 from every witness foothold and every static pickup, outside
   the `ArcMask` and both arenas, and strictly left of `gateColumn`; the confirming replay reports
   no damaging contact on every map of a seed cohort; a spike, glass patch and barrel fault-injected

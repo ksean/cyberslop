@@ -46,9 +46,11 @@ fights is engaged and pursuing, so it is within the awareness radius of the play
 follows. Boss projectiles and beams continue to terrain or the level boundary; the camera clips
 their draw geometry at its own viewport rather than the simulation shortening them to fit. Player
 ranged attacks are the deliberate exception: the most recently composed camera rectangle becomes
-the next fixed tick's gameplay viewport under PROD-101. A travelling ranged shot spent at an edge
-leaves its normal impact/tracer endpoint there; the renderer displays that simulation result and
-does not independently decide whether the shot or an off-screen target can interact.
+the next fixed tick's gameplay viewport under PROD-101 and PROD-116. The same rectangle determines
+which combat bodies are visible ranged-aim candidates and where a ranged shot terminates. A shot
+spent at an edge leaves its normal impact/tracer endpoint there; the renderer displays that
+simulation result and does not independently select a target or decide whether an off-screen
+target can interact.
 
 ## Palettes and the world
 

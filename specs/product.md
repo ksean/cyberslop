@@ -37,8 +37,9 @@ build of powerups collected on contact, and permadeath with persistent unlocks.
   rather than partially applied.
 - **PROD-100:** Exiting a cleared map into the next map must carry the player's current health
   forward as the same absolute value. Clearing or entering a map must not heal, refill or reset
-  health; the next map still recalculates maximum health for its map index and permanent upgrades,
-  while a new run begins at its full map-one maximum.
+  health. The player's unupgraded maximum health is 100 on every map and is changed only by
+  permanent upgrades; advancing the map index must not change it. A new run begins at its full
+  upgraded maximum.
 - **PROD-048:** The title screen and the run-ended screens must share the in-game visual identity.
 - **PROD-081:** The title screen must always offer a keyboard-operable button named `Shop`. The
   shop must show the player's spendable Scrap, every permanent upgrade and its current rank,
@@ -66,7 +67,8 @@ build of powerups collected on contact, and permadeath with persistent unlocks.
   `Space`. Either binding for an action must have identical press, hold, release, buffering and
   focus-loss semantics. `Escape` controls the browser lifecycle pause in PROD-091 rather than
   entering the simulation input frame. The equipped weapon fires automatically on its own cooldown
-  at the nearest valid target. There is no attack input.
+  at the nearest valid target when one is available. There is no attack input. Ranged-class target
+  selection follows PROD-116.
 - **PROD-022:** Aiming must require no player input and no configuration.
 - **PROD-023:** A run must begin with a broken bottle melee weapon that swings every two seconds.
 - **PROD-024:** Every map presented must be completable: the generator holds a witness — an input
@@ -120,11 +122,12 @@ build of powerups collected on contact, and permadeath with persistent unlocks.
   proposal frequency remain separate, theme-driven terrain rules.
 - **PROD-113:** Map 1 is the unscaled reference for enemy health and enemy damage. For map `L` from
   1 through 10, the health of each rank-and-file archetype, mini-boss and main boss must equal its
-  map-1 counterpart times `1 + 2(L - 1) / 9`, and each damage amount from the same enemy contact or
-  attack source must equal its map-1 counterpart times `1 + 4(L - 1) / 9`. Map 10 enemies must
-  therefore have exactly 300 % of map-1 health and deal exactly 500 % of map-1 damage. Both scales
+  map-1 counterpart times `1 + 4(L - 1) / 9`, and each damage amount from the same enemy contact or
+  attack source must equal its map-1 counterpart times `1 + 6(L - 1) / 9`. Map 10 enemies must
+  therefore have exactly 500 % of map-1 health and deal exactly 700 % of map-1 damage. Both scales
   are linear between those endpoints. The existing rank-and-file population-density curve remains
-  unchanged at a linear 4 to 9 enemies per 100 tiles from maps 1 through 10.
+  unchanged at a linear 4 to 9 enemies per 100 tiles from maps 1 through 10. Damaging hazards retain
+  their separate damage scale specified in [hazards.md](hazards.md).
 - **PROD-114:** Spike traps and burning-barrel bodies must use colours from the current map's
   palette. The building-window colour is the map's canonical theme colour, and every filled spike
   blade and barrel drum must use that exact colour. Supports, bands and other structural details
@@ -248,6 +251,13 @@ build of powerups collected on contact, and permadeath with persistent unlocks.
   camera view. A travelling shot is spent when it first reaches the view's edge and no direct or
   secondary part of that ranged activation may damage an enemy or boss wholly off-screen. Melee,
   psychic, enemy and boss attacks retain their existing boundaries.
+- **PROD-116:** A player's ranged-class weapon must aim at the closest visible eligible enemy,
+  mini-boss or main boss, regardless of its distance from the player. Visibility is the canonical
+  combat body's positive-area overlap with the current gameplay viewport under PROD-101, and
+  distance is measured from the player's current weapon position to the target's current combat
+  centre. No fixed auto-aim range may exclude an on-screen target. If no eligible target is
+  visible, the weapon aims in the player's facing direction rather than selecting an off-screen
+  target. Melee, psychic, enemy and boss targeting remain unchanged.
 - **PROD-083:** The first time a browser profile collects each weapon or powerup, the collection
   must complete and then gameplay must pause for three seconds of active foreground time. A card
   centred over the game must show that item's usual picture, name and a brief, mechanically

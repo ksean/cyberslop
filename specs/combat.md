@@ -7,13 +7,36 @@ another copy of that same weapon.
 
 ## The firing tick
 
-The equipped weapon fires on its own cooldown at the nearest valid target (PROD-021). Cooldown is
-an accumulator in simulation time, so overshoot is never discarded and rates do not drift:
+The equipped weapon fires on its own cooldown using its class-specific target acquisition
+(PROD-021, PROD-116). Cooldown is an accumulator in simulation time, so overshoot is never
+discarded and rates do not drift:
 
 ```
 cooldownLeft -= dt
 while (cooldownLeft <= 0) { fire(); cooldownLeft += resolved.cooldown }
 ```
+
+### Visible ranged target acquisition (PROD-116)
+
+On every fixed tick while the equipped weapon is `WeaponClass.Ranged`, its aim target is the
+closest eligible combat target whose canonical combat body is visible in the supplied gameplay
+viewport. Eligible targets are living rank-and-file enemies and undefeated vulnerable mini-bosses
+and main bosses. Visibility is exactly PROD-101's positive-area overlap between the interiors of
+the combat body and viewport: partial overlap counts, while mere edge tangency does not.
+
+Closest means the smallest squared Euclidean distance from the player's current weapon origin,
+before an `Anchor.Cursor` pattern relocates its effect, to the target's current combat centre.
+Exact distance ties use stable `CombatTargetId` order. The 22-tile awareness/legacy auto-aim radius
+is not applied, so a target anywhere in an unusually wide or tall visible view remains eligible.
+When none is visible, aim falls back to the player's current facing direction and never snaps to an
+off-screen target.
+
+This selection supplies straight, spread, lobbed, homing and cursor-anchored ranged patterns. A
+trigger snapshots its selected aim under each pattern's existing rules: in particular, delayed
+burst rounds retain the trigger tick's locked direction or lob intercept rather than selecting
+again. PROD-101 still bounds every ranged result to the visible view. `WeaponClass.Melee`,
+`WeaponClass.Psychic`, enemy and boss target acquisition keep their existing range and eligibility
+rules.
 
 ## Weapon model
 
@@ -208,12 +231,12 @@ enough for stacking to happen.
 
 ### Lobbed projectiles (PROD-097, PROD-107)
 
-Target acquisition still chooses the nearest valid combat target by its current centre. Each
-rank-and-file enemy and boss also exposes an **aiming velocity**: its actual combat-centre
-displacement during the most recently completed active fixed tick, divided by `dt`. Actual walk,
-flight, leap, knockback and charge displacement all count. The velocity is zero when the actor did
-not move during that tick and for a newly spawned actor with no completed movement tick. This is
-future-affecting state under P-40.
+Target acquisition first chooses the nearest visible eligible combat target under PROD-116 by its
+current centre. Each rank-and-file enemy and boss also exposes an **aiming velocity**: its actual
+combat-centre displacement during the most recently completed active fixed tick, divided by `dt`.
+Actual walk, flight, leap, knockback and charge displacement all count. The velocity is zero when
+the actor did not move during that tick and for a newly spawned actor with no completed movement
+tick. This is future-affecting state under P-40.
 
 At the trigger tick, a positive-gravity projectile snapshots an intercept rather than blindly
 using the current centre when the selected target is moving. Let `p` be that centre, `v` its aiming
@@ -234,9 +257,13 @@ It sets `vx0 = dxN / (N × dt)`. Each tick thereafter first applies any homing t
 non-homing fixture where the target continues at `v`, this semi-implicit update places projectile
 and target centres together after exactly `N` ticks. A stationary target is the exact existing
 `v = 0` solution. If no moving-target solution fits the lifetime, the solver falls back to the
-stationary solution at `p`; a registry entry must have enough lifetime for that fallback throughout
-the game's target-acquisition distance. Ashfall declares `gravity = 600 px/s²`; every other current
-player projectile declares zero.
+stationary solution at `p`. If that stationary point itself cannot be reached within the declared
+lifetime — possible because PROD-116 does not cap the distance of a visible target — the solver
+keeps `p` as the selected aim and computes the smallest later whole-tick hypothetical arc that
+satisfies the same nominal-speed and minimum-upward-speed constraints. The live grenade's declared
+lifetime is not extended: it may expire or meet a PROD-101 view edge before reaching `p`. Target
+selection and the player's aim direction never fall back to a nearer point. Ashfall declares
+`gravity = 600 px/s²`; every other current player projectile declares zero.
 
 The initial upward velocity is gameplay state, not a drawn offset: ceilings and walls can stop the
 grenade, and an obstruction below a clear arc is passed over. Gravity continues after a Ricochet
@@ -299,10 +326,10 @@ strike, blast and chain targets, and other direct or immediate on-hit consequenc
 bleed already applied while its target was visible continues under its normal duration if that
 target later leaves the view, and life steal continues to count only damage actually dealt.
 
-Auto-aim and range are unchanged: an off-screen enemy may still be selected, but the ranged
-activation cannot damage it until its combat body enters the visible view. `WeaponClass.Melee` and
-`WeaponClass.Psychic` activations are not view-bounded. Enemy and boss projectiles and beams retain
-their terrain, player and level boundaries from PROD-092.
+Ranged auto-aim uses this same visibility test under PROD-116, so it never selects a wholly
+off-screen target and never applies the legacy 22-tile range cap to one that is visible.
+`WeaponClass.Melee` and `WeaponClass.Psychic` activations are not view-bounded. Enemy and boss
+projectiles and beams retain their terrain, player and level boundaries from PROD-092.
 
 **Life steal (PROD-073).** Red Market Siphon heals the player by its fraction of every point of
 damage the held weapon **actually deals** to an enemy or a boss — a swing, a projectile landing,
@@ -380,8 +407,8 @@ falling physics and is within the existing strict `PICKUP_REACH` contact radius 
 grounded walk-over pose. A weapon or powerup produced by the same death independently keeps its
 raised PROD-090 position.
 
-Contact removes the bowl and heals exactly `0.05 × maxHealth` as calculated for the current map
-and permanent upgrades at that tick, capped at `maxHealth`. Fractional health is retained. The
+Contact removes the bowl and heals exactly `0.05 × maxHealth` as calculated from the map-independent
+baseline and permanent upgrades at that tick, capped at `maxHealth`. Fractional health is retained. The
 bowl is still consumed and starts its green feedback when the player is already at full health. It
 does not enter the loadout, award Scrap or create a first-discovery card; it emits the ordinary one
 per-item `PickupPulse`. Its presence, position and payload, and the ramen stream state, are
@@ -494,11 +521,12 @@ same-weapon pickup pays exactly one weapon value and no values for the powerups 
   grenade meets each continuing target centre on the solver's selected whole tick. A stationary
   target exactly preserves P-71's launch; a newly spawned or stopped target reports zero velocity;
   walk, flight, leap, knockback and boss charge displacement update the snapshot. If the moving
-  intercept exceeds lifetime the stationary fallback is used. Nearest-target selection remains
-  based on current centres, simultaneous Fork Bomb rounds share one intercept, and changing target
-  motion after launch does not bend the grenade. Zip Pistol and enemy/boss-shot controls retain
-  their prior aim. Changing an actor's aiming velocity or a pending lob intercept changes P-40's
-  digest.
+  intercept exceeds lifetime the stationary fallback is used; if that point is also beyond the
+  live lifetime, its later hypothetical arc is used without extending the projectile. PROD-116
+  target selection remains based on current centres, simultaneous Fork Bomb rounds share one
+  intercept, and changing target motion after launch does not bend the grenade. Zip Pistol retains
+  its straight trajectory and enemy/boss-shot controls retain their prior aim. Changing an actor's
+  aiming velocity or a pending lob intercept changes P-40's digest.
 - **P-72** Swept player-projectile collision: fixtures place a rank-and-file enemy wholly between
   the Sable Railgun's start and end positions for one tick at its base 1,400 px/s and at the
   Ranger-Optics maximum 2,100 px/s; both take exactly one hit. Tangency hits and one epsilon of
@@ -519,6 +547,19 @@ same-weapon pickup pays exactly one weapon value and no values for the powerups 
   its target leaves. Psychic and melee player attacks and enemy and boss shots are unchanged
   controls. Equal initial state, input tape and viewport tape produce equal outcomes on JVM and
   Wasm, while changing the viewport tape can change them.
+- **P-97** Visible ranged auto-aim: with a ranged weapon equipped, a fixture containing a closer
+  wholly off-screen enemy and a farther visible enemy beyond 22 tiles aims and fires toward the
+  visible enemy. Among several visible living enemies and vulnerable undefeated bosses it chooses
+  the smallest firing-origin-to-current-centre squared distance; reversing insertion order does
+  not change the result, and an exact distance tie uses stable `CombatTargetId` order. A combat
+  body with positive-area viewport overlap is eligible while mere edge tangency is not. With no
+  visible eligible target the aim follows the player's facing direction and no off-screen target
+  is selected. Straight, spread, Ashfall lob and Kessler cursor-anchor fixtures consume this same
+  selection; an Ashfall target beyond its live lifetime produces the later hypothetical arc without
+  extending that lifetime or throwing, and a timed burst keeps its trigger-locked aim if the target
+  or viewport later changes. Melee and psychic controls retain their existing 22-tile selection
+  rule, and enemy and boss aim is unchanged. Equal state, input and viewport produce equal target
+  identity and aim on JVM and Wasm; changing only the viewport may change them.
 - **P-42** Weapon pickup: collecting a weapon with a different `WeaponId` — including one of lower
   tier and lower score than the held one — equips it; the previous weapon's Scrap and the Scrap of
   every cleared slot are paid; the slots are empty afterwards; and a powerup collected next lands

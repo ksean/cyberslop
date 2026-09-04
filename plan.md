@@ -20,9 +20,10 @@ the high-risk high-reward class, each of those actions is animated — and the m
 
 Settled before implementation; the specification amendments say the same thing normatively.
 
-1. **Awareness radius, not screen space.** The simulation cannot see the screen, so "visible" is
-   a Euclidean awareness radius of 22 tiles (the auto-aim range) with hysteresis at 28 tiles
-   (tuned down from 33 in step 9 so an outrun pack drops off before the boss). An
+1. **Enemy awareness is not screen space.** Engagement uses a Euclidean awareness radius of 22
+   tiles with hysteresis at 28 tiles (tuned down from 33 in step 9 so an outrun pack drops off
+   before the boss). This remains distinct from player-ranged auto-aim, which later uses the
+   explicit gameplay viewport supplied to the simulation. An
    engaged enemy is free of its patrol span; an unengaged one patrols as today. *(enemies.md)*
 2. **Engaged enemies act by role.** Melee archetypes pursue; a Shooter approaches to firing range,
    holds, and retreats inside five tiles; a Turret is fixed. Walkers gain gravity and a ledge rule
@@ -236,6 +237,17 @@ and the loot-floor expectations only.
     to its resolved first-contact reach. Explicitly cover Static Lash, preserve existing swooshes
     and successful-hit effects, and keep the feedback outside gameplay and deterministic state.
     Complete MELEE-MISS-1 in `tasks.md` test-first, then run `./scripts/check.sh`.
+35. **Aim ranged weapons at the closest visible enemy.** *(done)* Add PROD-116 and P-97: on each
+    ranged-weapon tick, choose the nearest eligible combat body overlapping the gameplay viewport
+    without the legacy 22-tile cap, use stable identity order for exact ties, and face forward when
+    no eligible target is visible. Preserve trigger-locked burst and lob behavior and all
+    non-player-ranged targeting. Complete RANGED-AIM-1 in `tasks.md` test-first, then run
+    `./scripts/check.sh`.
+36. **Flatten player health and steepen enemy scaling.** Keep unupgraded player maximum health at
+    100 on every map, raise enemy health linearly from 100 % on map 1 to 500 % on map 10, and raise
+    enemy damage linearly from 100 % to 700 %. Preserve permanent health upgrades and the existing
+    survivable-hazard damage curve by separating its damage unit from enemy damage. Complete
+    MAP-BALANCE-1 in `tasks.md` test-first, then run `./scripts/check.sh`.
 
 ## Agents
 

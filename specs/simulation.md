@@ -12,9 +12,9 @@ then last composed for the player. The browser converts the current platform-ind
 to this value before each fixed tick; multiple catch-up ticks before another frame therefore
 consume the same visible rectangle. Canvas size, camera following and interpolation remain
 presentation concerns, while the numeric rectangle is an explicit rule input used only for
-PROD-101's player-ranged boundary. It contains no browser or DOM reference and is not stored in the
-simulation digest or canonical save. A deterministic replay must supply the same viewport tape as
-well as the same control-input tape.
+PROD-101's player-ranged boundary and PROD-116's player-ranged target acquisition. It contains no
+browser or DOM reference and is not stored in the simulation digest or canonical save. A
+deterministic replay must supply the same viewport tape as well as the same control-input tape.
 
 ## Movement model
 
