@@ -294,6 +294,17 @@ suspension freezes the collapse and effect together.
   may extend outside it. A frame is composed only after the active swing has tested the combat
   bodies at the positions that frame draws, so a visible swoosh/body overlap has a direct hit from
   that swing (PROD-033, P-63).
+- A qualifying missed melee activation (combat.md, PROD-115) leaves a **miss-range trace** for
+  `FLASH_VISIBLE_SECONDS`: four equal, separated dashes form a thin ray from its snapshotted origin
+  along its locked direction, and a spark dot is centred at the exact resolved first-contact reach.
+  Every dash stays between the origin and that endpoint. The trace uses the existing player-melee
+  glow on `Effects` and thins with the remaining flash fraction, so it reads as short-lived
+  feedback rather than terrain or a live damaging region. It begins only once the complete
+  activation is known to have damaged no enemy or boss. Static Lash therefore retains its normal
+  live swoosh and, after a complete miss, shows the full resolved 4 m lash reach; a successful
+  activation shows no miss trace. A non-directional melee attack uses the locked aim direction as
+  a range ruler without implying that its attack was directional. The trace neither replaces an
+  existing swoosh/ring nor draws any possible continuation between chain targets.
 - A ranged shot draws a **muzzle flash** at the barrel: a bright core dot, a longer bloom segment
   along the projectile's actual initial velocity and two short spikes at ±35°, fading over the
   flash window. This equals the aim for a straight shot; a lobber's flash visibly points into its
@@ -822,6 +833,15 @@ its `Return to title` button receives focus as before.
   remain unchanged. The world sheet review additionally checks that all ten landmarks are
   immediately distinguishable without colour, no panorama has an obvious repeated stamp, internal
   detail survives at normal size, and actors, pickups, terrain and hazards retain priority.
+- **P-96** Missed exceptional-melee reach: a Static Lash activation with no target in its direct
+  sector emits no miss feedback before its live `ArcSwing` window ends, then records a
+  presentation-only trace whose origin and locked direction are that completed swing's and whose
+  endpoint is exactly 4 m away at zero Ranger Optics stacks and 6 m away at three. Four equal,
+  separated dash segments lie wholly between those endpoints and one spark is centred on the far
+  endpoint. An otherwise equal activation that damages an enemy or boss emits no trace. A missed
+  non-`ArcSwing` melee activation emits the same range ruler, while ranged and psychic controls do
+  not. The trace thins and disappears after `FLASH_VISIBLE_SECONDS`, changing actor count does not
+  change its batch count, and its creation, decay and composition do not change P-40's digest.
 - **P-85** Broken-glass presentation: every `BrokenGlass` tile draws exactly five unequal,
   disconnected `#7a3f2b` shard segments and three `#b66a45` crumbs within the bottom 30 % of its
   cell. The geometry contains no closed triangle or common baseline and differs

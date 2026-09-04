@@ -111,7 +111,7 @@ class GameSimulation(
     var lastShot: MuzzleFlash? = null
         private set
 
-    /** Where the last instantly resolving attack went (PROD-071); presentation only. */
+    /** The last instant-hit geometry or completed exceptional-melee miss; presentation only. */
     var lastHit: HitIndicator? = null
         internal set
 
@@ -344,7 +344,7 @@ class GameSimulation(
             playerStridePx += (if (player.vx < 0.0) -player.vx else player.vx) * TICK_SECONDS
         }
 
-        advanceActiveSwing(muzzle)
+        val completedMeleeMiss = advanceActiveSwing(muzzle)
         legacyMeleeVisual = legacyMeleeVisual?.let { swing ->
             val remaining = swing.secondsLeft - TICK_SECONDS
             if (remaining > 0.0) swing.copy(secondsLeft = remaining) else null
@@ -355,8 +355,9 @@ class GameSimulation(
         }
         lastHit = lastHit?.let { hit ->
             val remaining = hit.secondsLeft - TICK_SECONDS
-            if (remaining > 0.0) hit.copy(secondsLeft = remaining) else null
+            if (remaining > VISUAL_EPSILON) hit.copy(secondsLeft = remaining) else null
         }
+        completedMeleeMiss?.let(::showHit)
         for (index in spent.indices) spent[index] = spent[index].copy(secondsLeft = spent[index].secondsLeft - TICK_SECONDS)
         spent.removeAll { it.secondsLeft <= 0.0 }
         // Exposure is read off the box the movement model just produced, *before* anything can
@@ -650,19 +651,32 @@ class GameSimulation(
             applyHit(hit, weapon, shot.direction)
             struck++
         }
-    }
-
-    private fun advanceActiveSwing(origin: Vec2) {
-        val swing = activeSwing ?: return
-        activeSwing = if (swing.elapsedSeconds >= swing.totalSeconds) {
-            null
-        } else {
-            swing.copy(
-                origin = origin,
-                elapsedSeconds = minOf(swing.totalSeconds, swing.elapsedSeconds + TICK_SECONDS),
-            )
+        if (struck == 0 && needsMeleeMissFeedback(weapon)) {
+            showHit(HitShape.MeleeMiss(muzzle, shot.direction, reach))
         }
     }
+
+    private fun advanceActiveSwing(origin: Vec2): HitShape.MeleeMiss? {
+        val swing = activeSwing ?: return null
+        if (swing.elapsedSeconds >= swing.totalSeconds) {
+            activeSwing = null
+            return if (swing.hitTargets.isEmpty() && needsMeleeMissFeedback(swing.weapon)) {
+                HitShape.MeleeMiss(swing.origin, swing.direction, swing.reachPx)
+            } else {
+                null
+            }
+        }
+        activeSwing = swing.copy(
+            origin = origin,
+            elapsedSeconds = minOf(swing.totalSeconds, swing.elapsedSeconds + TICK_SECONDS),
+        )
+        return null
+    }
+
+    /** Non-swoosh melee and weapons with a native contact chain need explicit miss reach (PROD-115). */
+    private fun needsMeleeMissFeedback(weapon: ResolvedWeapon): Boolean =
+        weapon.spec.pattern !is FirePattern.ArcSwing ||
+            weapon.spec.onHit.any { effect -> effect is HitEffect.Shock }
 
     /** Tests the positions the next frame will draw, after both player and target movement. */
     private fun resolveActiveSwing() {
@@ -2133,6 +2147,7 @@ class GameSimulation(
         /** What a projectile keeps of its damage at each terrain bounce. */
         const val BOUNCE_DAMAGE = 0.85
         private const val BURST_EPSILON = 1e-9
+        private const val VISUAL_EPSILON = 1e-9
         /** A projectile step is walked in pieces no longer than this, so no shot crosses a tile unseen. */
         const val MAX_PROJECTILE_STEP = TILE_SIZE / 2.0
         const val BOSS_BEAM_HALF_WIDTH = 5.0

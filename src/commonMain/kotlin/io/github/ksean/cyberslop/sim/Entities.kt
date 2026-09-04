@@ -653,9 +653,9 @@ data class MuzzleFlash(
 }
 
 /**
- * Where an instantly resolving attack went (PROD-071): the geometry the hit test used, kept for
- * the flash window so the renderer can draw it. Presentation only — outside the digest like
- * [SwingVisual] and [MuzzleFlash].
+ * Where an instantly resolving attack went, or how far a qualifying completed melee miss reached
+ * (PROD-071, PROD-115). Kept for the flash window so the renderer can draw it. Presentation only —
+ * outside the digest like [SwingVisual] and [MuzzleFlash].
  */
 sealed interface HitShape {
     /** A strike from above: the beam's [foot] is the strike centre, [radius] the scaled blast radius. */
@@ -663,6 +663,9 @@ sealed interface HitShape {
 
     /** The weapon, then every target struck, in strike order. */
     data class Chain(val points: List<Vec2>) : HitShape
+
+    /** A missed exceptional melee attack's first-contact range (PROD-115). */
+    data class MeleeMiss(val origin: Vec2, val direction: Vec2, val reachPx: Double) : HitShape
 
     /** A blast, pull or orbit at its resolved [radius]. */
     data class Ring(val centre: Vec2, val radius: Double) : HitShape

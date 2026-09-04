@@ -94,6 +94,28 @@ window ends: there is no cosmetic swoosh afterimage with no matching hit region.
 `Orbit`, enemy strikes and boss attack modules are outside this player-weapon rule and retain their
 own geometry and timing.
 
+## Miss-range feedback for exceptional melee attacks (PROD-115)
+
+A player-melee activation requires fallback range feedback when either its fire pattern is not an
+`ArcSwing` or its weapon declares a native chain or extra-target effect. Static Lash qualifies
+because its native Shock can continue from a direct strike to one extra target, even though its
+primary attack remains an `ArcSwing`. A powerup which does not give that weapon a functioning
+melee-chain path does not make it qualify.
+
+The fallback is emitted only when the complete activation has dealt no damage to any enemy or boss,
+directly or secondarily. An immediate pattern therefore knows the result on its firing tick; an
+`ArcSwing` cannot be called a miss until its complete live window has ended, because a target may
+enter its already visible sector on a later tick. At that boundary the feedback snapshots the
+attack's final origin, locked direction and exact resolved first-contact reach. For Static Lash the
+reach is its direct 4 m reach after Ranger Optics, not the distance a successful Shock could travel
+afterward. For a non-directional melee pattern the locked aim direction is still the direction of
+the one-dimensional range ruler; it does not narrow or otherwise reinterpret that pattern's hit
+region.
+
+This snapshot is presentation-only. It adds no collision test, target, damage, status, chain jump
+or persistence and is excluded from the determinism digest. The ordinary swoosh, ring or successful
+chain presentation is neither replaced nor delayed.
+
 ## Weapon pickup
 
 Contact always resolves (PROD-030, PROD-070). If a weapon on the ground has a different `WeaponId`

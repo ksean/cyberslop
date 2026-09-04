@@ -1816,7 +1816,8 @@ object Scene {
     /**
      * Where an instant attack went (PROD-071), at the geometry its hit test used: a beam from the
      * top of the view onto a strike point with a ring at its radius, a chain through the targets
-     * struck, or a ring at a blast's radius. Fades over the flash window.
+     * struck, a missed exceptional melee attack's range, or a ring at a blast's radius. Fades over
+     * the flash window.
      */
     private fun hitIndicator(builder: SceneBuilder, palette: Palette, sim: GameSimulation, camera: Camera) {
         val hit = sim.lastHit ?: return
@@ -1842,9 +1843,36 @@ object Scene {
                     sparks.dot(b.x, b.y, CHAIN_SPARK_PX * hit.strength)
                 }
             }
+            is HitShape.MeleeMiss -> meleeMissTrace(builder, bloom, screen(shape.origin), shape, hit.strength)
             is HitShape.Ring -> ring(builder, bloom, screen(shape.centre), shape.radius * ZOOM, FLASH_WIDTH * hit.strength)
             is HitShape.Impact -> Unit // drawn with the projectiles, in the shooter's colour
         }
+    }
+
+    /** Four equal dashes and an exact endpoint spark make a miss's resolved reach readable. */
+    private fun meleeMissTrace(
+        builder: SceneBuilder,
+        style: String,
+        origin: Vec2,
+        miss: HitShape.MeleeMiss,
+        strength: Double,
+    ) {
+        val ray = miss.direction * (miss.reachPx * ZOOM)
+        val denominator = MELEE_MISS_DASHES * 2.0 - 1.0
+        val dashes = builder.batch(
+            Layer.Effects,
+            style,
+            Primitive.Segment,
+            strokeWidth(MELEE_MISS_WIDTH * strength),
+        )
+        repeat(MELEE_MISS_DASHES) { index ->
+            val start = origin + ray * (index * 2.0 / denominator)
+            val end = origin + ray * ((index * 2.0 + 1.0) / denominator)
+            dashes.segment(start.x, start.y, end.x, end.y)
+        }
+        val endpoint = origin + ray
+        builder.batch(Layer.Effects, style, Primitive.Dot)
+            .dot(endpoint.x, endpoint.y, MELEE_MISS_SPARK_PX * strength)
     }
 
     /** A ring as a closed polygon of segments, in one batch. */
@@ -2661,6 +2689,9 @@ object Scene {
     private const val BOSS_BEAM_BLOOM_WIDTH = 14.0
     private const val CHAIN_WIDTH = 2.0
     private const val CHAIN_SPARK_PX = 4.0
+    private const val MELEE_MISS_DASHES = 4
+    private const val MELEE_MISS_WIDTH = 3.0
+    private const val MELEE_MISS_SPARK_PX = 3.5
     private const val SWING_SEGMENTS = 10
     private const val SWOOSH_RIBS = 3
     private const val SWING_WIDTH = 4.0

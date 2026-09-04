@@ -303,6 +303,12 @@ build of powerups collected on contact, and permadeath with persistent unlocks.
   psychic activation must show a firing cue at the moment it happens: a muzzle flash at the barrel
   for a weapon that has one, an activation pulse at the weapon for one that does not (the Kessler
   dish). Enemy and boss attack cues remain governed by PROD-063.
+- **PROD-115:** When a player's melee activation either has no `ArcSwing` swoosh or belongs to a
+  weapon with a native chain or extra-target mechanic, an activation that damages no enemy or boss
+  must briefly show how far its first contact could have reached. The miss indicator must end at
+  the exact resolved first-contact range in the attack's locked direction; it must not depict the
+  possible distance of later chain jumps or create damaging space. Static Lash is explicitly
+  covered by this rule. Existing swooshes and successful-hit effects remain unchanged.
 - **PROD-102:** During active gameplay, each activation of the player's melee weapon must produce
   one short swing sound, each firing event of the player's ranged weapon one short fire sound, and
   each firing event of the player's psychic weapon one subtle warp-like sound distinct from both.

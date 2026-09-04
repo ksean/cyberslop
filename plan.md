@@ -230,6 +230,12 @@ and the loot-floor expectations only.
     four-role tonal hierarchy while preserving P-94's distance, parallax, constant-batch and
     simulation-isolation contracts. Complete DISTANT-DETAIL-1 in `tasks.md` test-first, inspect the
     ten-theme world sheet at normal size and then run `./scripts/check.sh`.
+34. **Show the range of missed exceptional melee attacks.** *(done)* Add PROD-115 and P-96: after
+    a non-swoosh or natively chain-capable player melee
+    activation damages no target, draw a short-lived range trace from its completed attack origin
+    to its resolved first-contact reach. Explicitly cover Static Lash, preserve existing swooshes
+    and successful-hit effects, and keep the feedback outside gameplay and deterministic state.
+    Complete MELEE-MISS-1 in `tasks.md` test-first, then run `./scripts/check.sh`.
 
 ## Agents
 
