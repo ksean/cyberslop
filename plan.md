@@ -61,8 +61,8 @@ Settled before implementation; the specification amendments say the same thing n
    future-affecting field joins the determinism check, built after hazards so its golden is cut
    once.
 9. **Touch hurts, a weapon is a build, a shot shows where it went.** (a) A living enemy's body
-   drains `1.0 × contactDamage` per second of overlap, like a hazard, under the fairness rule; not
-   bosses. (b) A different weapon pickup equips: the old weapon and every powerup slot convert to
+   drains `1.0 × contactDamage` per second of overlap using the same per-tick model as a hazard,
+   under the fairness rule; not bosses. (b) A different weapon pickup equips: the old weapon and every powerup slot convert to
    Scrap; another copy of the held weapon converts to its tier's Scrap value and preserves the
    build. A paired boss award applies weapon then powerup. The loot floor is derived against that
    policy — its guaranteed weapon sequence always changes ids, so the arriving loadout is the last
@@ -158,7 +158,7 @@ and the loot-floor expectations only.
     LEAD-1 in `tasks.md` test-first and extend the determinism digest.
 20. **Add broken-glass ground hazards.** *(done)*
     Add PROD-108, P-84 and P-85: place 1–2-cell glass patches inside the existing hazard budget,
-    drain at `0.5 × contactDamage` per second and draw small static rusty jagged debris. Complete
+    drain at `0.5 × hazardDamage` per second and draw small static rusty jagged debris. Complete
     GLASS-1 in `tasks.md` test-first and inspect the representative world sheet.
 21. **Increase all player-melee damage by 50 %.** *(done)*
     Add PROD-109 and P-86, update the nine registry rows exactly, preserve every non-damage field
@@ -243,11 +243,17 @@ and the loot-floor expectations only.
     no eligible target is visible. Preserve trigger-locked burst and lob behavior and all
     non-player-ranged targeting. Complete RANGED-AIM-1 in `tasks.md` test-first, then run
     `./scripts/check.sh`.
-36. **Flatten player health and steepen enemy scaling.** Keep unupgraded player maximum health at
+36. **Flatten player health and steepen enemy scaling.** *(done)* Keep unupgraded player maximum health at
     100 on every map, raise enemy health linearly from 100 % on map 1 to 500 % on map 10, and raise
     enemy damage linearly from 100 % to 700 %. Preserve permanent health upgrades and the existing
     survivable-hazard damage curve by separating its damage unit from enemy damage. Complete
     MAP-BALANCE-1 in `tasks.md` test-first, then run `./scripts/check.sh`.
+37. **Measure uncapped pressure and 90 %-dodge survival.** *(done)* Separate the all-map no-dodge pressure
+    probe from real-health survival: let the former record a complete route without terminal health
+    truncation, set guaranteed-only full-simulation coverage to map 1, and require a deterministic
+    four-control policy to avoid at least 90 % of counted telegraphed attack activations while
+    surviving that route and boss fight. Complete DODGE-SURVIVAL-1 in `tasks.md` test-first, then
+    run `./scripts/check.sh`.
 
 ## Agents
 

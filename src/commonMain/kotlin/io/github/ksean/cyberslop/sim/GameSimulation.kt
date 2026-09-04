@@ -169,11 +169,17 @@ class GameSimulation(
     var grossDamageTaken: Double = 0.0
         private set
 
-    private fun hurt(amount: Double, source: PlayerDamageSource) {
+    /** Inert unless a test harness installs an observer; excluded from state, saves and digest. */
+    internal var incomingAttackObserver: ((IncomingAttackEvent) -> Unit)? = null
+    private var nextIncomingAttackId = 0
+    private val openIncomingAttacks = mutableSetOf<Int>()
+
+    private fun hurt(amount: Double, source: PlayerDamageSource, incomingAttackId: Int? = null) {
         val reduced = amount * run.upgrades.incomingDamageMultiplier
         val before = run.health
         grossDamageTaken += reduced
         run = run.damaged(reduced)
+        observeIncomingAttack(incomingAttackId, IncomingAttackPhase.DamagedPlayer)
         if (run.health < before) playerHurtSecondsLeft = HURT_FLASH_SECONDS
         if (before > 0.0 && run.dead) beginDeath(source)
     }
@@ -189,6 +195,35 @@ class GameSimulation(
         deathSequence = DeathSequence(source)
         // Terminal frames must not repeatedly interpolate from the pre-lethal movement state.
         previousPlayer = player
+    }
+
+    private fun beginIncomingAttack(): Int? {
+        if (incomingAttackObserver == null) return null
+        val activationId = nextIncomingAttackId++
+        openIncomingAttacks += activationId
+        observeIncomingAttack(activationId, IncomingAttackPhase.Started)
+        return activationId
+    }
+
+    private fun observeIncomingAttack(activationId: Int?, phase: IncomingAttackPhase) {
+        if (activationId != null) incomingAttackObserver?.invoke(IncomingAttackEvent(activationId, phase))
+    }
+
+    private fun completeFinishedIncomingAttacks() {
+        enemies.filter { !it.windingUp }.forEach { it.incomingAttackId = null }
+        listOf(miniboss, boss).filter { it.fight.defeated }.forEach { it.incomingAttackId = null }
+        val owned = buildSet {
+            enemies.mapNotNullTo(this) { it.incomingAttackId }
+            miniboss.incomingAttackId?.let(::add)
+            boss.incomingAttackId?.let(::add)
+            projectiles.mapNotNullTo(this) { it.incomingAttackId }
+            bossBeams.mapNotNullTo(this) { it.incomingAttackId }
+        }
+        val completed = openIncomingAttacks.filterNot(owned::contains)
+        completed.forEach { activationId ->
+            observeIncomingAttack(activationId, IncomingAttackPhase.Completed)
+            openIncomingAttacks -= activationId
+        }
     }
 
     /** Grounded grace accumulated since the most recent committed-column overlap; see [playerExposed]. */
@@ -388,6 +423,8 @@ class GameSimulation(
             null -> Unit
         }
         if (burnedByJet()) kill(PlayerDamageSource.Fire)
+
+        completeFinishedIncomingAttacks()
 
         // The exit sits past the boss arena, behind a gate that only the boss's death opens
         // (PROD-020). Clearing the map means walking out of it.
@@ -1152,7 +1189,7 @@ class GameSimulation(
 
         projectile.position = from + (to - from) * fraction
         if (if (projectile.bossOwned) bossDamageAllowed() else enemyDamageAllowed()) {
-            hurt(projectile.damage, PlayerDamageSource.Projectile)
+            hurt(projectile.damage, PlayerDamageSource.Projectile, projectile.incomingAttackId)
         }
         projectile.secondsLeft = 0.0
         return true
@@ -1439,12 +1476,14 @@ class GameSimulation(
             enemy.attackDirection = offset.normalisedOr(Vec2.Right)
             enemy.windUpTotal = shot.windUpSeconds
             enemy.windUpLeft = shot.windUpSeconds
+            enemy.incomingAttackId = beginIncomingAttack()
         } else {
             val swing = EnemyAttacks.swing(enemy.archetype)
             if (offset.lengthSquared > swing.reachPx * swing.reachPx) return
             enemy.attackDirection = offset.normalisedOr(Vec2(enemy.facing.toDouble(), 0.0))
             enemy.windUpTotal = swing.windUpSeconds
             enemy.windUpLeft = swing.windUpSeconds
+            enemy.incomingAttackId = beginIncomingAttack()
         }
     }
 
@@ -1459,6 +1498,8 @@ class GameSimulation(
 
     private fun strike(enemy: LiveEnemy, playerCentre: Vec2) {
         val swing = EnemyAttacks.swing(enemy.archetype)
+        val incomingAttackId = enemy.incomingAttackId
+        enemy.incomingAttackId = null
         enemy.cooldownLeft = swing.cooldownSeconds
         enemy.lastSwing = SwingVisual(
             origin = enemy.centre,
@@ -1468,20 +1509,28 @@ class GameSimulation(
             secondsLeft = SWING_VISIBLE_SECONDS,
             totalSeconds = SWING_VISIBLE_SECONDS,
         )
+        observeIncomingAttack(incomingAttackId, IncomingAttackPhase.Opportunity)
         val offset = playerCentre - enemy.centre
         if (offset.lengthSquared > swing.reachPx * swing.reachPx) return
         if (!TrigTable.withinArc(enemy.attackDirection, offset, swing.arcDegrees / 2.0)) return
         if (!enemyDamageAllowed()) return
-        hurt(Balance.contactDamage(level.mapIndex) * swing.damageShare, PlayerDamageSource.Melee)
+        hurt(
+            Balance.contactDamage(level.mapIndex) * swing.damageShare,
+            PlayerDamageSource.Melee,
+            incomingAttackId,
+        )
     }
 
     private fun fire(enemy: LiveEnemy) {
         val shot = EnemyAttacks.SHOT
+        val incomingAttackId = enemy.incomingAttackId
+        enemy.incomingAttackId = null
         enemy.cooldownLeft = shot.cooldownSeconds
         if (projectiles.size >= MAX_PROJECTILES) return
         val origin = enemy.centre
         val direction = (enemy.attackTarget - origin).normalisedOr(enemy.attackDirection)
         enemy.lastShot = MuzzleFlash(direction, FLASH_VISIBLE_SECONDS, FLASH_VISIBLE_SECONDS)
+        observeIncomingAttack(incomingAttackId, IncomingAttackPhase.Opportunity)
         projectiles.add(
             LiveProjectile(
                 position = origin,
@@ -1491,6 +1540,7 @@ class GameSimulation(
                 secondsLeft = shot.lifetimeSeconds,
                 passesTerrain = false,
                 fromPlayer = false,
+                incomingAttackId = incomingAttackId,
             ),
         )
     }
@@ -1774,10 +1824,21 @@ class GameSimulation(
             if (!live.fight.engaged && (target.centre - live.centre).lengthSquared < AWARE_PX * AWARE_PX) {
                 live.fight.engage()
             }
+            val attackBefore = live.currentAttack
             val damage = live.tick(TICK_SECONDS, target)
-            live.events.forEach(::emitBossEvent)
+            if (attackBefore == null && live.currentAttack != null) {
+                live.incomingAttackId = beginIncomingAttack()
+            }
+            val incomingAttackId = live.incomingAttackId
+            live.events.forEach { event ->
+                observeIncomingAttack(incomingAttackId, IncomingAttackPhase.Opportunity)
+                emitBossEvent(event, incomingAttackId)
+            }
             live.hurtSecondsLeft = (live.hurtSecondsLeft - TICK_SECONDS).coerceAtLeast(0.0)
-            if (damage > 0.0 && bossDamageAllowed()) hurt(damage, PlayerDamageSource.Melee)
+            if (damage > 0.0 && bossDamageAllowed()) {
+                hurt(damage, PlayerDamageSource.Melee, incomingAttackId)
+            }
+            if (attackBefore != null && live.currentAttack == null) live.incomingAttackId = null
         }
 
         if (miniboss.fight.defeated && !minibossRewarded) {
@@ -1795,19 +1856,39 @@ class GameSimulation(
         }
     }
 
-    private fun emitBossEvent(event: BossAttackEvent) {
+    private fun emitBossEvent(event: BossAttackEvent, incomingAttackId: Int?) {
         when (event.attack.module) {
             BossModule.Slam, BossModule.Sweep, BossModule.Flurry, BossModule.Rush -> Unit
-            BossModule.Bolt -> spawnBossRound(event, speed = 280.0, angle = 0.0)
-            BossModule.Burst -> spawnBossRound(event, speed = 300.0, angle = 0.0)
+            BossModule.Bolt -> spawnBossRound(
+                event,
+                speed = 280.0,
+                angle = 0.0,
+                incomingAttackId = incomingAttackId,
+            )
+            BossModule.Burst -> spawnBossRound(
+                event,
+                speed = 300.0,
+                angle = 0.0,
+                incomingAttackId = incomingAttackId,
+            )
             BossModule.Scatter -> BOSS_SCATTER_ANGLES.forEach { angle ->
-                spawnBossRound(event, speed = 320.0, angle = angle)
+                spawnBossRound(
+                    event,
+                    speed = 320.0,
+                    angle = angle,
+                    incomingAttackId = incomingAttackId,
+                )
             }
-            BossModule.Laser -> spawnBossBeam(event)
+            BossModule.Laser -> spawnBossBeam(event, incomingAttackId)
         }
     }
 
-    private fun spawnBossRound(event: BossAttackEvent, speed: Double, angle: Double) {
+    private fun spawnBossRound(
+        event: BossAttackEvent,
+        speed: Double,
+        angle: Double,
+        incomingAttackId: Int?,
+    ) {
         if (projectiles.size >= MAX_PROJECTILES) return
         val direction = TrigTable.rotate(event.direction, angle)
         projectiles += LiveProjectile(
@@ -1820,10 +1901,11 @@ class GameSimulation(
             fromPlayer = false,
             bossOwned = true,
             bossModule = event.attack.module,
+            incomingAttackId = incomingAttackId,
         )
     }
 
-    private fun spawnBossBeam(event: BossAttackEvent) {
+    private fun spawnBossBeam(event: BossAttackEvent, incomingAttackId: Int?) {
         val end = clippedBeamEnd(event.origin, event.direction, bossLevelReach)
         val beam = LiveBossBeam(
             start = event.origin,
@@ -1831,6 +1913,7 @@ class GameSimulation(
             damage = event.attack.damage,
             secondsLeft = event.attack.activeSeconds,
             totalSeconds = event.attack.activeSeconds,
+            incomingAttackId = incomingAttackId,
         )
         bossBeams += beam
         hitByBeam(beam)
@@ -1847,7 +1930,7 @@ class GameSimulation(
     private fun hitByBeam(beam: LiveBossBeam) {
         if (beam.hitPlayer || !beamTouchesPlayer(beam)) return
         beam.hitPlayer = true
-        if (bossDamageAllowed()) hurt(beam.damage, PlayerDamageSource.Laser)
+        if (bossDamageAllowed()) hurt(beam.damage, PlayerDamageSource.Laser, beam.incomingAttackId)
     }
 
     private fun beamTouchesPlayer(beam: LiveBossBeam): Boolean {
@@ -2062,7 +2145,7 @@ class GameSimulation(
         )
         if (spikeRate > 0.0) {
             hurt(
-                spikeRate * Balance.contactDamage(level.mapIndex) * TICK_SECONDS,
+                spikeRate * Balance.hazardDamage(level.mapIndex) * TICK_SECONDS,
                 PlayerDamageSource.Spike,
             )
         }
@@ -2071,7 +2154,7 @@ class GameSimulation(
         )
         if (glassRate > 0.0) {
             hurt(
-                glassRate * Balance.contactDamage(level.mapIndex) * TICK_SECONDS,
+                glassRate * Balance.hazardDamage(level.mapIndex) * TICK_SECONDS,
                 PlayerDamageSource.Glass,
             )
         }
@@ -2080,7 +2163,7 @@ class GameSimulation(
         )
         if (fireRate > 0.0) {
             hurt(
-                fireRate * Balance.contactDamage(level.mapIndex) * TICK_SECONDS,
+                fireRate * Balance.hazardDamage(level.mapIndex) * TICK_SECONDS,
                 PlayerDamageSource.Fire,
             )
         }

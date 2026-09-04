@@ -9,6 +9,7 @@ import io.github.ksean.cyberslop.loot.Loadout
 import io.github.ksean.cyberslop.loot.PowerupId
 import io.github.ksean.cyberslop.loot.PowerupSlots
 import io.github.ksean.cyberslop.physics.InputFrame
+import io.github.ksean.cyberslop.progression.UpgradeRanks
 import io.github.ksean.cyberslop.run.RunState
 import kotlin.math.abs
 import kotlin.test.Test
@@ -115,8 +116,14 @@ class LifestealTest {
     /** The budget refills at 12 HP/s, so ten seconds of ceaseless hits bank at most one second's worth extra. */
     @Test
     fun `ten seconds of hits heal at most eleven seconds of budget`() {
-        // Map 10's 235 max health leaves room for the whole eleven seconds of budget.
-        val sim = simulation(WeaponId.KesslerOrbitalUplink, PowerupId.RedMarketSiphon to 3, damaged = 200.0, mapIndex = 10)
+        // A rank-five chassis leaves room for the whole eleven seconds of budget without relying on map scaling.
+        val sim = simulation(
+            WeaponId.KesslerOrbitalUplink,
+            PowerupId.RedMarketSiphon to 3,
+            damaged = 140.0,
+            mapIndex = 10,
+            upgrades = UpgradeRanks(reinforcedChassis = 5),
+        )
         repeat(6) { TestLevels.enemyAt(sim, EnemyArchetype.Turret, column = 5 + it % 3, row = TestLevels.FLOOR_ROW - it / 3) }
         val start = sim.run.health
         repeat(600) { sim.tick(InputFrame()) }
@@ -204,11 +211,12 @@ class LifestealTest {
         vararg build: Pair<PowerupId, Int>,
         damaged: Double = 50.0,
         mapIndex: Int = 1,
+        upgrades: UpgradeRanks = UpgradeRanks(),
         level: io.github.ksean.cyberslop.world.Level = TestLevels.flat(committedColumns = 1..5, mapIndex = mapIndex),
     ): GameSimulation {
         var slots = PowerupSlots.empty()
         build.forEach { (id, stacks) -> repeat(stacks) { slots = slots.collect(id).first } }
-        val initial = RunState.begin(TestLevels.SEED).copy(mapIndex = mapIndex)
+        val initial = RunState.begin(TestLevels.SEED, upgrades).copy(mapIndex = mapIndex)
         val run = initial.copy(
             health = initial.maxHealth,
             loadout = Loadout(Weapons.of(weapon), slots),

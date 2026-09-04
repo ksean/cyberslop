@@ -12,6 +12,21 @@ import kotlin.test.assertTrue
  */
 class RoutePressureTest {
     @Test
+    fun `pressure probe completes the route after ordinary health is exhausted`() {
+        val generated = LevelGenerator.generate(SPREAD, 10)
+
+        val outcome = PressureHarness.route(SPREAD, generated)
+
+        val witnessTicks = generated.witness.steps.sumOf { step -> step.frames.size }
+        assertTrue(!outcome.died, "measurement health ended the pressure probe")
+        assertTrue(outcome.sim.elapsedTicks >= witnessTicks, "the pressure probe truncated the witness tape")
+        assertTrue(
+            outcome.grossDamage > outcome.sim.run.maxHealth,
+            "the pressure probe capped ${outcome.grossDamage} damage at ${outcome.sim.run.maxHealth} health",
+        )
+    }
+
+    @Test
     fun `route pressure rises by thirds of the run`() {
         val perMap = (1..10).map { mapIndex ->
             (1uL..COHORT).sumOf { seed ->
@@ -30,7 +45,7 @@ class RoutePressureTest {
         for (mapIndex in 1..LootFloor.furthestClearableMap()) {
             for (seed in 1uL..COHORT) {
                 val generated = LevelGenerator.generate(seed * SPREAD, mapIndex)
-                val outcome = PressureHarness.route(seed * SPREAD, generated)
+                val outcome = PressureHarness.survivalRoute(seed * SPREAD, generated)
                 if (outcome.died) {
                     failures += "map $mapIndex seed $seed at x=${outcome.sim.player.x} " +
                         "after ${outcome.sim.elapsedTicks} ticks and ${outcome.sim.grossDamageTaken} gross damage"
@@ -53,7 +68,10 @@ class RoutePressureTest {
     @Test
     fun `the map-one harness does not take the starter cache it already models`() {
         for (seed in 1uL..COHORT) {
-            val outcome = PressureHarness.route(seed * SPREAD, LevelGenerator.generate(seed * SPREAD, 1))
+            val outcome = PressureHarness.survivalRoute(
+                seed * SPREAD,
+                LevelGenerator.generate(seed * SPREAD, 1),
+            )
             if (outcome.sim.miniboss.fight.defeated) continue
             assertTrue(outcome.sim.run.loadout.weapon.id == LootFloor.weaponArrivingAt(1).id, "seed $seed: the bot ended map 1 holding ${outcome.sim.run.loadout.weapon.name}")
         }

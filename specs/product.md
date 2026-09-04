@@ -144,15 +144,18 @@ build of powerups collected on contact, and permadeath with persistent unlocks.
   enemy may therefore begin a map within the player's initial awareness radius; population targets
   and all other placement protections remain in force.
 - **PROD-108:** Broken glass must be a non-blocking, survivable ground hazard which drains health
-  at `0.5 × contactDamage(mapIndex)` per second of player overlap. It must be generated in small
+  at `0.5 × hazardDamage(mapIndex)` per second of player overlap. It must be generated in small
   patches under the normal damaging-hazard placement and confirmation rules and presented as low,
   rusty, jagged shards visibly distinct from spike strips and ordinary floor.
 - **PROD-068:** Difficulty pressure must rise across the run and be measured: over a seed cohort,
-  the population's threat score rises strictly in cohort mean from map to map, and a reference bot
-  replaying each map's route with the guaranteed loadout takes gross incoming damage per hundred
-  tiles that, averaged over the early, middle and late thirds of the run, is strictly increasing —
-  while that loadout still survives the route and wins the boss fight on every map the loot floor
-  covers.
+  the population's threat score rises strictly in cohort mean from map to map. A no-dodge pressure
+  probe with non-terminal measurement health must replay each complete route and record uncapped
+  gross incoming damage per hundred tiles; its early-, middle- and late-run averages must be
+  strictly increasing. Separately, an unupgraded player with only guaranteed equipment must survive
+  the route and win the boss fight on map 1 using a deterministic policy which responds to live
+  telegraphs through the four player controls and avoids damage from at least 90 % of counted enemy
+  and boss attack activations over the seed cohort. Contact drain and hazards are not attacks and
+  remain ordinary survival pressure.
 - **PROD-072:** A boss whose current phase holds both melee and ranged attacks must choose by
   distance: the further the player stands from it, the more often it opens with a ranged attack;
   the nearer, the more often with a melee one. The choice is made when an attack begins and holds

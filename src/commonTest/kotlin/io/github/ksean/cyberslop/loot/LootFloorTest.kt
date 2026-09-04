@@ -19,7 +19,7 @@ import kotlin.test.assertTrue
  *
  * It deliberately does not claim the floor beats every map. Damage-only boss clearability and
  * full route survival are separate bounds; what is asserted is that the floor is real, rises,
- * carries the three fully simulated opening maps, and that the ceiling reaches the last one.
+ * carries the fully simulated first map, and that the ceiling reaches the last one.
  */
 class LootFloorTest {
     /** The reference route's consecutive guaranteed weapon tiers differ, so each is still a reset. */
@@ -167,7 +167,7 @@ class LootFloorTest {
     }
 
     private companion object {
-        const val GUARANTEED_MAPS = 3
+        const val GUARANTEED_MAPS = 1
 
         /** Floating-point slack only; the floor is compared in damage, not in units of it. */
         const val TOLERANCE = 1e-9

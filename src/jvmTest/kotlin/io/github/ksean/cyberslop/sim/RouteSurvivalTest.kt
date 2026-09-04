@@ -2,7 +2,6 @@ package io.github.ksean.cyberslop.sim
 
 import io.github.ksean.cyberslop.gen.LevelGenerator
 import io.github.ksean.cyberslop.loot.LootFloor
-import io.github.ksean.cyberslop.run.RunState
 import io.github.ksean.cyberslop.verify.WitnessReplay
 import kotlin.test.Test
 import kotlin.test.assertFalse
@@ -51,21 +50,7 @@ class RouteSurvivalTest {
 
     private fun diesOnTheRoute(mapIndex: Int): Boolean {
         val generated = LevelGenerator.generate(SEED, mapIndex)
-        var run = RunState.begin(SEED).copy(mapIndex = mapIndex)
-        run = run.copy(
-            health = run.maxHealth,
-            loadout = run.loadout.copy(
-                weapon = LootFloor.weaponArrivingAt(mapIndex),
-                slots = LootFloor.slotsArrivingAt(mapIndex),
-            ),
-        )
-        val sim = GameSimulation(generated.level, run, SEED, optionalLoot = false)
-        sim.items.clear()
-        var died = false
-        generated.witness.steps.forEach { step ->
-            step.frames.forEach { if (sim.tick(it).playerDied) died = true }
-        }
-        return died
+        return PressureHarness.survivalRoute(SEED, generated).died
     }
 
     private companion object {

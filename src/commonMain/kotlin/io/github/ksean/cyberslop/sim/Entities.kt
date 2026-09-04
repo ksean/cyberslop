@@ -89,6 +89,9 @@ class LiveEnemy(
     var windUpLeft: Double = 0.0
     var windUpTotal: Double = 0.0
 
+    /** Optional test-observation identity; never affects behavior or the deterministic digest. */
+    internal var incomingAttackId: Int? = null
+
     /** Where the attack being wound up is aimed: a direction for a swing, a point for a shot. */
     var attackDirection: Vec2 = Vec2.Right
     var attackTarget: Vec2 = Vec2.Zero
@@ -196,6 +199,9 @@ class LiveBoss(
         private set
     var attackElapsed: Double = 0.0
         private set
+
+    /** Optional test-observation identity; never affects behavior or the deterministic digest. */
+    internal var incomingAttackId: Int? = null
 
     /** Which way the boss faces, and where its ranged attack was aimed when the telegraph began. */
     var facing: Int = -1
@@ -722,6 +728,8 @@ class LiveProjectile(
     var hitTargets: Set<CombatTargetId> = emptySet(),
     /** Downward acceleration in screen pixels per second squared (PROD-097). */
     val gravity: Double = 0.0,
+    /** Optional owner for test-only incoming-attack accounting. */
+    internal val incomingAttackId: Int? = null,
 ) {
     val spent: Boolean get() = secondsLeft <= 0.0 || pierceLeft < 0
 }
@@ -734,6 +742,8 @@ class LiveBossBeam(
     var secondsLeft: Double,
     val totalSeconds: Double,
     var hitPlayer: Boolean = false,
+    /** Optional owner for test-only incoming-attack accounting. */
+    internal val incomingAttackId: Int? = null,
 ) {
     val strength: Double get() = (secondsLeft / totalSeconds).coerceIn(0.0, 1.0)
 }

@@ -1,11 +1,13 @@
 package io.github.ksean.cyberslop.sim
 
+import io.github.ksean.cyberslop.entity.Dodge
 import io.github.ksean.cyberslop.gen.GeneratedLevel
 import io.github.ksean.cyberslop.loot.Loadout
 import io.github.ksean.cyberslop.loot.LootFloor
 import io.github.ksean.cyberslop.loot.Powerups
 import io.github.ksean.cyberslop.physics.InputFrame
 import io.github.ksean.cyberslop.physics.Physics
+import io.github.ksean.cyberslop.physics.TICK_SECONDS
 import io.github.ksean.cyberslop.run.RunState
 import io.github.ksean.cyberslop.world.TileMap
 import io.github.ksean.cyberslop.world.TILE_SIZE
@@ -20,7 +22,13 @@ object PressureHarness {
 
     class RouteOutcome(val grossDamage: Double, val died: Boolean, val sim: GameSimulation)
 
-    /** The guaranteed loadout a player *arrives* with, at full health on [mapIndex]. */
+    internal class SurvivalOutcome(
+        val died: Boolean,
+        val sim: GameSimulation,
+        val dodges: DodgeAccounting,
+    )
+
+    /** The guaranteed loadout a player *arrives* with, at shipping health on [mapIndex]. */
     fun floorRun(seed: ULong, mapIndex: Int): RunState {
         val run = RunState.begin(seed).copy(mapIndex = mapIndex)
         return run.copy(
@@ -30,28 +38,54 @@ object PressureHarness {
     }
 
     /**
-     * Route pressure: replay the witness while the population acts; the tape ends at the boss
-     * arena entrance. A death ends the map and counts as the map's full max health.
+     * Route pressure: replay the complete witness while the population acts. Sentinel health is a
+     * JVM measurement fixture only; it prevents ordinary damage from truncating the pressure tape.
      */
     fun route(seed: ULong, generated: GeneratedLevel): RouteOutcome {
         // Guaranteed-only, in the simulation itself: neither the optional caches the witness
         // walks over nor the drops of whatever the auto-fire kills ever exist.
-        val sim = GameSimulation(generated.level, floorRun(seed, generated.level.mapIndex), seed, optionalLoot = false)
+        val pressureRun = floorRun(seed, generated.level.mapIndex).copy(health = PRESSURE_HEALTH)
+        val sim = GameSimulation(generated.level, pressureRun, seed, optionalLoot = false)
         // Map one's starter cache is what `LootFloor.weaponArrivingAt(1)` already models; taking it as
         // well would give the bot two draws at a weapon where a run gets one.
         sim.items.clear()
         pinAwards(sim, generated.level.mapIndex)
         for (step in generated.witness.steps) {
             for (frame in step.frames) {
-                if (sim.tick(frame).playerDied) return RouteOutcome(sim.run.maxHealth, died = true, sim)
+                if (sim.tick(frame).playerDied) return RouteOutcome(sim.grossDamageTaken, died = true, sim)
             }
             // A witness step is one indivisible, verified traversal ending at rest. Finish it before
             // detouring for an award that appeared in mid-air, then rejoin before the next step.
             if (!collectGuaranteedAwards(sim)) {
-                return RouteOutcome(sim.run.maxHealth, died = true, sim)
+                return RouteOutcome(sim.grossDamageTaken, died = true, sim)
             }
         }
         return RouteOutcome(sim.grossDamageTaken, died = false, sim)
+    }
+
+    /** Shipping-health route survival with deterministic responses to live telegraphs. */
+    internal fun survivalRoute(seed: ULong, generated: GeneratedLevel): SurvivalOutcome {
+        val sim = GameSimulation(
+            generated.level,
+            floorRun(seed, generated.level.mapIndex),
+            seed,
+            optionalLoot = false,
+        )
+        val dodges = DodgeAccounting()
+        sim.incomingAttackObserver = dodges::observe
+        sim.items.clear()
+        pinAwards(sim, generated.level.mapIndex)
+        fun tick(planned: InputFrame): TickReport = routeTick(sim, planned, dodges)
+
+        for (step in generated.witness.steps) {
+            for (frame in step.frames) {
+                if (tick(frame).playerDied) return SurvivalOutcome(died = true, sim, dodges)
+            }
+            if (!collectGuaranteedAwards(sim, ::tick)) {
+                return SurvivalOutcome(died = true, sim, dodges)
+            }
+        }
+        return SurvivalOutcome(died = false, sim, dodges)
     }
 
     /**
@@ -70,17 +104,24 @@ object PressureHarness {
      * Takes each guaranteed award through ordinary movement and contact. The harness may pin what an
      * award contains, but never writes that loadout into the simulation in place of collection.
      */
-    internal fun collectGuaranteedAwards(sim: GameSimulation): Boolean {
+    internal fun collectGuaranteedAwards(
+        sim: GameSimulation,
+        tick: (InputFrame) -> TickReport = sim::tick,
+    ): Boolean {
         val routeCentreX = playerCentreX(sim)
         while (true) {
             val item = sim.items.firstOrNull { it.isGuaranteedEquipment } ?: return true
-            if (!moveToRest(sim, item.position.x)) return false
-            if (!jumpThrough(sim, item)) return false
-            if (!moveToRest(sim, routeCentreX)) return false
+            if (!moveToRest(sim, item.position.x, tick)) return false
+            if (!jumpThrough(sim, item, tick)) return false
+            if (!moveToRest(sim, routeCentreX, tick)) return false
         }
     }
 
-    private fun moveToRest(sim: GameSimulation, targetCentreX: Double): Boolean {
+    private fun moveToRest(
+        sim: GameSimulation,
+        targetCentreX: Double,
+        tick: (InputFrame) -> TickReport,
+    ): Boolean {
         var ticks = 0
         while (ticks < AWARD_APPROACH_TICKS) {
             val delta = targetCentreX - playerCentreX(sim)
@@ -99,7 +140,7 @@ object PressureHarness {
                 else -> 1
             }
             val jumpStart = sim.player.onGround && terrainRequiresJump(sim, direction)
-            val report = sim.tick(
+            val report = tick(
                 InputFrame(
                     left = direction < 0,
                     right = direction > 0,
@@ -132,10 +173,14 @@ object PressureHarness {
         return false
     }
 
-    private fun jumpThrough(sim: GameSimulation, item: GroundItem): Boolean {
+    private fun jumpThrough(
+        sim: GameSimulation,
+        item: GroundItem,
+        tick: (InputFrame) -> TickReport,
+    ): Boolean {
         var airborne = false
-        repeat(AWARD_JUMP_TICKS) { tick ->
-            if (sim.tick(InputFrame(jump = true, jumpStart = tick == 0)).playerDied) return false
+        repeat(AWARD_JUMP_TICKS) { tickIndex ->
+            if (tick(InputFrame(jump = true, jumpStart = tickIndex == 0)).playerDied) return false
             if (!sim.player.onGround) airborne = true
             if (airborne && sim.player.onGround) return item !in sim.items
         }
@@ -149,14 +194,109 @@ object PressureHarness {
         sim.holdLoadout(Loadout(LootFloor.weaponAt(mapIndex), LootFloor.slotsAt(mapIndex)))
 
     /** Boss pressure: after the route, fight with the dodge policy until the boss dies or time runs out. */
-    fun fight(sim: GameSimulation): Boolean {
+    internal fun fight(sim: GameSimulation, dodges: DodgeAccounting? = null): Boolean {
         val dodge = ArenaDodge()
         var ticks = 0
         while (ticks < FIGHT_TICKS && !sim.boss.fight.defeated && !sim.run.dead) {
-            sim.tick(dodge.next(sim))
+            val planned = dodge.next(sim)
+            if (dodges == null) sim.tick(planned) else survivalTick(sim, planned, dodges)
             ticks++
         }
         return sim.boss.fight.defeated
+    }
+
+    private fun survivalTick(
+        sim: GameSimulation,
+        planned: InputFrame,
+        dodges: DodgeAccounting,
+        policy: (GameSimulation, InputFrame) -> DodgeResponse = DodgePolicy::response,
+    ): TickReport {
+        val response = policy(sim, planned)
+        dodges.recordResponse(response.activationIds)
+        return sim.tick(response.input)
+    }
+
+    /** Replays one route control while recording telegraph responses. */
+    private fun routeTick(
+        sim: GameSimulation,
+        planned: InputFrame,
+        dodges: DodgeAccounting,
+    ): TickReport = survivalTick(sim, planned, dodges, RouteDodgePolicy::response)
+
+    private data class DodgeResponse(val input: InputFrame, val activationIds: Set<Int>)
+
+    private object RouteDodgePolicy {
+        fun response(sim: GameSimulation, planned: InputFrame): DodgeResponse {
+            val activationIds = buildSet {
+                listOf(sim.miniboss, sim.boss).forEach { live ->
+                    live.takeIf { it.telegraphing }?.incomingAttackId?.let(::add)
+                }
+                sim.enemies.filter { it.windingUp }.mapNotNullTo(this) { it.incomingAttackId }
+            }
+
+            val minibossAttack = sim.miniboss.currentAttack
+            val input = if (!sim.miniboss.fight.defeated &&
+                minibossAttack?.dodge == Dodge.Crouch &&
+                sim.miniboss.attackElapsed < minibossAttack.telegraphSeconds &&
+                sim.miniboss.attackElapsed + TICK_SECONDS >= minibossAttack.telegraphSeconds
+            ) {
+                planned.copy(crouch = true)
+            } else {
+                planned
+            }
+            return DodgeResponse(input, activationIds)
+        }
+    }
+
+    private object DodgePolicy {
+        fun response(sim: GameSimulation, planned: InputFrame): DodgeResponse {
+            activeBoss(sim)?.let { live ->
+                val activationId = live.incomingAttackId
+                val responded = if (live.telegraphing && activationId != null) setOf(activationId) else emptySet()
+                return DodgeResponse(bossInput(sim, live, planned), responded)
+            }
+
+            val ranged = sim.enemies.filter { it.windingUp && it.archetype.shoots }
+            if (ranged.isNotEmpty()) {
+                val ids = ranged.mapNotNullTo(mutableSetOf()) { it.incomingAttackId }
+                return DodgeResponse(planned, ids)
+            }
+
+            val melee = sim.enemies
+                .filter { it.windingUp && !it.archetype.shoots }
+                .minByOrNull { (it.centre - sim.player.centre(Physics.Default)).lengthSquared }
+                ?: return DodgeResponse(planned, emptySet())
+            val direction = if (sim.player.centre(Physics.Default).x < melee.centre.x) -1 else 1
+            if (!sim.player.onGround || planned.jump || planned.jumpStart) {
+                return DodgeResponse(planned, emptySet())
+            }
+            return DodgeResponse(
+                InputFrame(left = direction < 0, right = direction > 0),
+                setOfNotNull(melee.incomingAttackId),
+            )
+        }
+
+        private fun activeBoss(sim: GameSimulation) =
+            listOf(sim.miniboss, sim.boss).firstOrNull { !it.fight.defeated && it.currentAttack != null }
+
+        private fun bossInput(
+            sim: GameSimulation,
+            live: LiveBoss,
+            planned: InputFrame,
+        ): InputFrame {
+            val attack = live.currentAttack ?: return planned
+            val retreat = if (sim.player.centre(Physics.Default).x < live.position.x) -1 else 1
+            val horizontal = if (live.meleeChargeSelected || attack.dodge == Dodge.MoveAside) {
+                InputFrame(left = retreat < 0, right = retreat > 0)
+            } else {
+                planned
+            }
+            return when (attack.dodge) {
+                Dodge.Jump -> horizontal.copy(jump = true, jumpStart = sim.player.onGround)
+                Dodge.Crouch -> horizontal.copy(crouch = true)
+                Dodge.MoveAside -> horizontal
+            }
+        }
     }
 
     /** Answer each telegraphed attack with its dodge; otherwise maintain body-clear spacing. */
@@ -222,4 +362,5 @@ object PressureHarness {
     private const val JUMP_LOOKAHEAD = 24.0
     private const val JUMP_PROBE_STEP = 4.0
     private const val GROUND_PROBE = 0.05
+    private const val PRESSURE_HEALTH = 1_000_000_000.0
 }

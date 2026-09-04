@@ -14,7 +14,7 @@ data class RunState(
     /** Immutable profile snapshot applied to this active simulation. */
     val upgrades: UpgradeRanks = UpgradeRanks(),
 ) {
-    val maxHealth: Double get() = Balance.playerMaxHealth(mapIndex) * upgrades.healthMultiplier
+    val maxHealth: Double get() = Balance.playerMaxHealth() * upgrades.healthMultiplier
 
     fun damaged(amount: Double): RunState = copy(health = (health - amount).coerceAtLeast(0.0))
 
@@ -30,7 +30,7 @@ data class RunState(
             seed = seed,
             mapIndex = 1,
             loadout = Loadout.starting(),
-            health = Balance.playerMaxHealth(1) * upgrades.healthMultiplier,
+            health = Balance.playerMaxHealth() * upgrades.healthMultiplier,
             scrap = 0,
             upgrades = upgrades,
         )

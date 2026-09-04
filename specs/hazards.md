@@ -14,9 +14,9 @@ are placed off the witness route so the proven path stays hazard-free.
 | Acid (toxic pool) | lethal | the floor of a gap, when the theme allows acid and the curve's hazard frequency rolls | death |
 | Void | lethal | below the bottom row of the map | death |
 | Fire jet | lethal while on | one per jet corridor, spanning the six rows above the floor, timed `period / duty / phase` | death |
-| Spike strip | damaging | a `Spikes` tile on walkable floor, 1–3 tiles long | `1.0 × contactDamage` per second of overlap |
-| Broken glass | damaging | a `BrokenGlass` tile on walkable floor, in patches 1–2 tiles long | `0.5 × contactDamage` per second of overlap |
-| Burning barrel | damaging | a `Barrel` object standing on a floor tile, with a flame one tile above it | `1.5 × contactDamage` per second of overlap with the barrel or its flame |
+| Spike strip | damaging | a `Spikes` tile on walkable floor, 1–3 tiles long | `1.0 × hazardDamage` per second of overlap |
+| Broken glass | damaging | a `BrokenGlass` tile on walkable floor, in patches 1–2 tiles long | `0.5 × hazardDamage` per second of overlap |
+| Burning barrel | damaging | a `Barrel` object standing on a floor tile, with a flame one tile above it | `1.5 × hazardDamage` per second of overlap with the barrel or its flame |
 
 Acid, void, spikes and broken glass are tile kinds (`Acid`, `Void`, `Spikes`, `BrokenGlass`; none
 blocks movement). A fire jet and a barrel are objects on the `Level`, not tiles. A jet's state is
@@ -126,7 +126,7 @@ presentation.
   footprints on the gate itself and beyond it are removed by final confirmation without changing
   earlier hazards.
 - **P-84** Broken glass: a player's AABB overlapping one or several cells of one maximal glass
-  patch drains exactly `0.5 × contactDamage × dt` per tick, two distinct overlapping patches
+  patch drains exactly `0.5 × hazardDamage × dt` per tick, two distinct overlapping patches
   stack, and a one-pixel-clear player takes nothing. Glass is non-blocking, refreshes the ordinary
   hurt flash, can kill with semantic `Glass`/bleed cause, participates in `Hazards.count` and
   `ThreatScore`, and is placed/confirmed within the shared damaging-hazard budget at the declared

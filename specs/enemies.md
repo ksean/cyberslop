@@ -329,28 +329,43 @@ target who remains in reach; for each ranged enemy,
 contributions are summed and divided by `widthTiles / 100`. Bosses are excluded (every map has one
 of each).
 
-Two play harnesses in `jvmTest` measure survivability. Both start a map with the guaranteed loadout a player
-*arrives* with (`LootFloor.weaponArrivingAt`, `LootFloor.slotsArrivingAt`: the awards of the maps
-before, none of the map's own) at full health, with the map's optional caches removed so nothing
-unearned is taken; when the mini-boss award drops, the harness replaces it where it lies with the
-floor's weakest outcome (`weaponAt`, `slotsAt`), so the rest of the route and the boss fight are
-played with what the floor models rather than with whatever the roll gave. They use the game's own
-class-specific auto-aim (visible nearest target for ranged weapons under PROD-116, bosses included
-once vulnerable) and record **gross incoming damage** —
-every damage event before lifesteal — separately from net health.
+The pressure and survival measurements in `jvmTest` are deliberately separate. Both remove optional
+caches and drops and use the game's own class-specific auto-aim (visible nearest target for ranged
+weapons under PROD-116, bosses included once vulnerable).
 
-- **Route pressure**, all ten maps: replay the witness tape while the population acts; the tape
-  ends at the boss arena entrance. A death ends the map and counts as the map's full max health.
-  Reported per map over the seed cohort as mean gross damage per 100 tiles of width.
-- **Boss pressure**, on the maps the loot floor covers: after the route, fight with the dodge
+- **Route pressure**, all ten maps: a no-dodge probe starts with the guaranteed loadout a player
+  arrives with (`LootFloor.weaponArrivingAt`, `LootFloor.slotsArrivingAt`), replays the complete
+  witness tape while the population acts and stops at the boss-arena entrance. A test-only
+  non-terminal damage sink records every point of gross incoming damage before lifesteal without
+  allowing the ordinary 100-health death sequence to truncate the tape. It grants no immunity in a
+  shipping run and changes no production run, save or digest. Pressure is reported per map over the
+  seed cohort as mean gross damage per 100 tiles of width. Any guaranteed award encountered on the
+  route is pinned to and collected through the same floor mechanics as the survival harness.
+- **Guaranteed-only survival**, map 1: an unupgraded player starts at the shipping maximum of 100
+  with only the guaranteed loadout. Optional loot is absent. When the mini-boss award drops, the
+  harness replaces its contents where it lies with the floor's weakest outcome (`weaponAt`,
+  `slotsAt`) and collects it through ordinary movement and contact. From the route start through
+  the isolated main-boss fight, a deterministic dodge policy may inspect only current and past
+  simulation state and may act only through left, right, crouch and jump. It may not alter health,
+  grant immunity, inspect future randomness, teleport, pause simulation or skip elapsed ticks.
+- **Dodge accounting:** one counted incoming attack is one telegraphed rank-and-file swing or shot,
+  or one mini-boss or main-boss attack activation, which reaches at least one live damage
+  opportunity directed at the player while the policy is present. A multi-event Flurry or Burst
+  and a multi-projectile Scatter count once. An activation is dodged when the policy responds during
+  its telegraph and none of that activation's owned swing events, projectiles or beam damages the
+  player. Contact drain, damaging hazards and lethal hazards are not attack activations: they are
+  excluded from the ratio but retain their full effects and may still fail survival. Across the
+  fixed seed cohort, `dodged activations / counted activations` must be at least `0.90`; the player
+  must also survive the route and win the boss fight on every cohort seed.
+- **Boss survival**, on the map the loot floor covers: after the route, fight with the dodge
   policy against the isolated main encounter (the earlier mini-boss, residual rank-and-file
   population and any uncollected award are absent) — answer each telegraphed attack with its dodge
   for the attack's whole duration, retreating directly away during a selected charge's telegraph
   and active window; otherwise maintain a nominal `64 px` horizontal centre-to-centre standoff.
   Near an arena edge and between attacks, vault over the boss, advancing through its
   horizontal span only once the bodies are vertically clear. Any boss-body contact during the
-  fight counts toward gross damage. Continue until the boss dies or
-  `FIGHT_TICKS = 12 000` elapse; the map must be won.
+  fight remains ordinary survival damage but is not part of the dodge ratio. Continue until the
+  boss dies or `FIGHT_TICKS = 12 000` elapse; the map must be won.
 - **Boss escalation calibration**, all ten maps: on one flat, hazard-free arena, engage the seeded
   main boss below 25 % health against a stationary non-attacking target with enough health to live
   for 60 s, and record gross damage per second. Over the roster seed cohort, the mean of maps 1–3,
@@ -375,17 +390,18 @@ the arriving loadout from the map's start through the mini-boss fight, the mini-
 weakest from the moment it is taken, and that held loadout at the main boss. The floor is honest
 about that: a forced different-weapon pickup can be a downgrade, and the floor says so rather than
 assuming the player kept the better weapon. Optional loot is genuinely required past the early
-maps. The fully simulated floor-covered prefix remains maps 1–3: the new health curve lets the
-guaranteed weapon satisfy the boss-only damage band later than that, but route survival is not
-guaranteed from map 4. Damage-only clearability remains reported separately so it cannot silently
-expand the full route-and-boss guarantee. The floor's claims are:
+maps. The fully simulated floor-covered prefix is now map 1: the steeper enemy curves and constant
+player maximum require optional loot or permanent upgrades for a survival guarantee from map 2,
+even where the guaranteed weapon still satisfies a boss-only damage band. Damage-only clearability
+remains reported separately so it cannot silently expand the full route-and-boss guarantee. The
+floor's claims are:
 
 Any simulation harness claiming this floor must take a death award through PROD-090's normal
 jump/contact path before using its loadout or resuming the route. It may replace the roll with the
 floor's declared weakest contents before contact, but may neither teleport the item nor equip the
 inventory directly.
 
-- it carries maps 1–3 unaided: a map counts as *covered* only if its main boss falls inside the
+- it carries map 1 unaided: a map counts as *covered* only if its main boss falls inside the
   kill-time band to the loadout **held at that boss** (`weaponAt`, `slotsAt` — the mini-boss award,
   never the boss's own) and the full-simulation guarantee includes it; the route and the mini-boss
   are judged with what the player **arrives** holding (`weaponArrivingAt`, `slotsArrivingAt`), and
@@ -430,10 +446,14 @@ inventory directly.
   mechanics:** for every attack, including every event of Flurry and Burst, a player performing the
   listed dodge through the active/projectile window takes nothing and a player who stands still in
   its named geometry takes damage.
-- **P-39** Pressure: over the seed cohort, `ThreatScore`'s cohort mean rises strictly across maps
-  1→10; route pressure's mean gross damage per 100 tiles averaged over maps 1–3, 4–6 and 7–10 is
-  strictly increasing; the guaranteed loadout survives the route and wins the boss fight on every
-  floor-covered map on every cohort seed.
+- **P-39** Pressure and guaranteed-only survival: over the seed cohort, `ThreatScore`'s cohort mean
+  rises strictly across maps 1→10; the non-terminal no-dodge route probe completes every witness
+  tape and its mean uncapped gross damage per 100 tiles averaged over maps 1–3, 4–6 and 7–10 is
+  strictly increasing. On map 1, the unupgraded 100-health guaranteed-loadout policy uses only live
+  telegraphs and the four controls, dodges at least 90 % of counted attack activations in aggregate,
+  and survives the route and wins the isolated boss fight on every cohort seed. Fixtures prove
+  that multi-event and multi-projectile activations count once and that contact and hazard damage
+  affect survival without entering the dodge ratio.
 - **P-41** Contact drain: overlapping a living rank-and-file enemy drains
   `CONTACT_DRAIN × contactDamage × dt` per tick, while overlapping either a living mini-boss or a
   living main boss drains exactly three times that amount. One tick never kills a full-health
@@ -520,8 +540,8 @@ inventory directly.
   melee and ranged; only the declared modules occur in each map band; over the seed cohort every
   legal pair and both signature kinds occur. The same module's damage is strictly increasing with
   map index, a main version exceeds the mini version on the same map, and mean no-dodge boss damage
-  per second is strictly increasing from maps 1–3 to 4–6 to 7–10. The dodge bot still wins every
-  loot-floor-covered boss fight on every cohort seed.
+  per second is strictly increasing from maps 1–3 to 4–6 to 7–10. The guaranteed-only dodge policy
+  still meets P-39 on the loot-floor-covered map.
 - **P-61** Pursuit across hazards: fixtures for a one- to three-tile spike strip, a one- to
   two-tile broken-glass patch, the widest generated flat acid/void gap and the tallest generated
   step are each crossed by every engaged

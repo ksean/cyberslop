@@ -129,6 +129,8 @@ object TestLevels {
             sim.tick(InputFrame()) // resolve its reward transition before discarding that fixture loot
         }
         sim.enemies.clear()
+        sim.projectiles.clear()
+        sim.bossBeams.clear()
         sim.items.removeAll { it.isGuaranteedEquipment }
         sim.boss.placeAt(
             Vec2(

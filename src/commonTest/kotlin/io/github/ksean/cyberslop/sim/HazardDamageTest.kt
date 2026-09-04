@@ -13,6 +13,21 @@ import kotlin.test.assertTrue
 /** Damaging hazards drain at their rate, never kill in one tick and never displace (P-36). */
 class HazardDamageTest {
     @Test
+    fun `survivable hazard damage retains its existing map curve`() {
+        val sim = TestLevels.simulation(
+            TestLevels.flat(
+                spikeColumns = TestLevels.SPAWN_COLUMN..TestLevels.SPAWN_COLUMN,
+                mapIndex = 10,
+            ),
+        )
+
+        sim.tick(InputFrame())
+
+        val expected = sim.run.maxHealth - Hazards.SPIKE_RATE * Balance.hazardDamage(10) * TICK_SECONDS
+        assertEquals(expected, sim.run.health, 1e-6)
+    }
+
+    @Test
     fun `standing in broken glass drains health at half the contact rate`() {
         val sim = TestLevels.simulation(
             TestLevels.flat(glassColumns = TestLevels.SPAWN_COLUMN..TestLevels.SPAWN_COLUMN + 1),
@@ -20,7 +35,7 @@ class HazardDamageTest {
 
         repeat(60) { sim.tick(InputFrame()) }
 
-        val expected = Hazards.GLASS_RATE * Balance.contactDamage(1) * 60 * TICK_SECONDS
+        val expected = Hazards.GLASS_RATE * Balance.hazardDamage(1) * 60 * TICK_SECONDS
         assertEquals(sim.run.maxHealth - expected, sim.run.health, 1e-6, "glass did not drain at its rate")
     }
 
@@ -48,7 +63,7 @@ class HazardDamageTest {
 
         repeat(60) { sim.tick(InputFrame()) }
 
-        val expected = Hazards.SPIKE_RATE * Balance.contactDamage(1) * 60 * TICK_SECONDS
+        val expected = Hazards.SPIKE_RATE * Balance.hazardDamage(1) * 60 * TICK_SECONDS
         assertEquals(sim.run.maxHealth - expected, sim.run.health, 1e-6, "spikes did not drain at their rate")
     }
 
@@ -58,7 +73,7 @@ class HazardDamageTest {
 
         repeat(60) { sim.tick(InputFrame()) }
 
-        val expected = Hazards.BARREL_RATE * Balance.contactDamage(1) * 60 * TICK_SECONDS
+        val expected = Hazards.BARREL_RATE * Balance.hazardDamage(1) * 60 * TICK_SECONDS
         assertEquals(sim.run.maxHealth - expected, sim.run.health, 1e-6, "a barrel's body did not drain at its rate")
     }
 
@@ -69,7 +84,7 @@ class HazardDamageTest {
 
         repeat(60) { sim.tick(InputFrame()) }
 
-        val expected = Hazards.BARREL_RATE * Balance.contactDamage(1) * 60 * TICK_SECONDS
+        val expected = Hazards.BARREL_RATE * Balance.hazardDamage(1) * 60 * TICK_SECONDS
         assertEquals(sim.run.maxHealth - expected, sim.run.health, 1e-6, "a barrel's flame did not drain at its rate")
     }
 
@@ -92,7 +107,7 @@ class HazardDamageTest {
 
         repeat(60) { sim.tick(InputFrame()) }
 
-        val expected = (Hazards.SPIKE_RATE + Hazards.BARREL_RATE) * Balance.contactDamage(1) * 60 * TICK_SECONDS
+        val expected = (Hazards.SPIKE_RATE + Hazards.BARREL_RATE) * Balance.hazardDamage(1) * 60 * TICK_SECONDS
         assertEquals(sim.run.maxHealth - expected, sim.run.health, 1e-6, "two hazards did not both drain")
     }
 

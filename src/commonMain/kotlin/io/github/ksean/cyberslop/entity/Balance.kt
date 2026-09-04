@@ -16,11 +16,11 @@ import io.github.ksean.cyberslop.loot.PowerupSlots
  */
 object Balance {
     private const val TRASH_BASE = 12.0
-    private const val TRASH_FINAL_MULTIPLIER = 3.0
+    private const val TRASH_FINAL_MULTIPLIER = 5.0
     private const val CONTACT_BASE = 6.0
-    private const val CONTACT_FINAL_MULTIPLIER = 5.0
+    private const val CONTACT_FINAL_MULTIPLIER = 7.0
+    private const val HAZARD_FINAL_MULTIPLIER = 5.0
     private const val PLAYER_BASE_HEALTH = 100.0
-    private const val PLAYER_HEALTH_PER_MAP = 15.0
 
     /**
      * Boss health, as a multiple of trash health.
@@ -47,8 +47,10 @@ object Balance {
     fun contactDamage(mapIndex: Int): Double =
         CONTACT_BASE * mapMultiplier(CONTACT_FINAL_MULTIPLIER, mapIndex)
 
-    fun playerMaxHealth(mapIndex: Int): Double =
-        PLAYER_BASE_HEALTH + PLAYER_HEALTH_PER_MAP * (mapIndex - 1)
+    fun hazardDamage(mapIndex: Int): Double =
+        CONTACT_BASE * mapMultiplier(HAZARD_FINAL_MULTIPLIER, mapIndex)
+
+    fun playerMaxHealth(): Double = PLAYER_BASE_HEALTH
 
     fun targetTrashSeconds(mapIndex: Int): Double {
         val d = (mapIndex - 1) / (DifficultyCurve.MAPS - 1).toDouble()

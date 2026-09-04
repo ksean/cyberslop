@@ -20,7 +20,7 @@ data class Barrel(val column: Int, val row: Int) {
  * against the AABB the movement model produced and turns into a drain, never a displacement.
  */
 object Hazards {
-    /** Multiples of `contactDamage` per second of overlap. */
+    /** Multiples of `hazardDamage` per second of overlap. */
     const val SPIKE_RATE = 1.0
     const val GLASS_RATE = 0.5
     const val BARREL_RATE = 1.5

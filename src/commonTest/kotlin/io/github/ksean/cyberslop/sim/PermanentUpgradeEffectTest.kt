@@ -30,13 +30,13 @@ class PermanentUpgradeEffectTest {
         val ranks = UpgradeRanks(reinforcedChassis = 5)
         val fresh = RunState.begin(SEED, ranks)
 
-        assertEquals(Balance.playerMaxHealth(1) * 1.5, fresh.maxHealth)
+        assertEquals(Balance.playerMaxHealth() * 1.5, fresh.maxHealth)
         assertEquals(fresh.maxHealth, fresh.health)
 
         val damaged = fresh.copy(health = 47.0)
         val advanced = damaged.advanced()
         assertEquals(2, advanced.mapIndex)
-        assertEquals(Balance.playerMaxHealth(2) * 1.5, advanced.maxHealth)
+        assertEquals(fresh.maxHealth, advanced.maxHealth)
         assertEquals(47.0, advanced.health)
         val restored = SaveCodec.decodeRun(SaveCodec.encodeRun(advanced)).getOrThrow().run
         assertEquals(advanced.mapIndex, restored.mapIndex)
@@ -45,7 +45,7 @@ class PermanentUpgradeEffectTest {
         val active = RunState.begin(SEED).copy(health = 47.0)
         val refreshed = active.copy(upgrades = ranks)
         assertEquals(47.0, refreshed.health)
-        assertEquals(Balance.playerMaxHealth(1) * 1.5, refreshed.maxHealth)
+        assertEquals(Balance.playerMaxHealth() * 1.5, refreshed.maxHealth)
     }
 
     @Test
@@ -187,7 +187,7 @@ class PermanentUpgradeEffectTest {
         val before = sim.run.health
         sim.tick(InputFrame())
         val expected = (Hazards.SPIKE_RATE + Hazards.GLASS_RATE + Hazards.BARREL_RATE) *
-            Balance.contactDamage(1) * TICK_SECONDS
+            Balance.hazardDamage(1) * TICK_SECONDS
         assertEquals(expected * ranks.incomingDamageMultiplier, before - sim.run.health, 1e-6)
         return before - sim.run.health
     }

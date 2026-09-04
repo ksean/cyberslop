@@ -96,7 +96,7 @@ object LootFloor {
     }
 
     private const val MINIBOSS_POWERUP_FROM = 4
-    private const val FULL_SIMULATION_MAPS = 3
+    private const val FULL_SIMULATION_MAPS = 1
     const val BAND_SLACK = 1.6
 
     /** A main boss's powerup is floored at Scav (`specs/combat.md`); a mini-boss's is not. */

@@ -8,15 +8,18 @@ class BalanceTest {
     @Test
     fun `the published curve values hold`() {
         assertClose(12.0, Balance.trashHealth(1))
-        assertClose(22.67, Balance.trashHealth(5))
-        assertClose(36.0, Balance.trashHealth(10))
+        assertClose(33.33, Balance.trashHealth(5))
+        assertClose(60.0, Balance.trashHealth(10))
 
         assertClose(6.0, Balance.contactDamage(1))
-        assertClose(16.67, Balance.contactDamage(5))
-        assertClose(30.0, Balance.contactDamage(10))
+        assertClose(22.0, Balance.contactDamage(5))
+        assertClose(42.0, Balance.contactDamage(10))
 
-        assertClose(100.0, Balance.playerMaxHealth(1))
-        assertClose(235.0, Balance.playerMaxHealth(10))
+        assertClose(6.0, Balance.hazardDamage(1))
+        assertClose(16.67, Balance.hazardDamage(5))
+        assertClose(30.0, Balance.hazardDamage(10))
+
+        assertClose(100.0, Balance.playerMaxHealth())
     }
 
     @Test
@@ -26,20 +29,24 @@ class BalanceTest {
             Balance::minibossHealth,
             Balance::bossHealth,
         ).forEach { healthAt ->
-            assertClose(3.0 * healthAt(1), healthAt(10))
+            assertClose(5.0 * healthAt(1), healthAt(10))
             assertConstantIncrement(healthAt)
         }
 
-        assertClose(5.0 * Balance.contactDamage(1), Balance.contactDamage(10))
+        assertClose(7.0 * Balance.contactDamage(1), Balance.contactDamage(10))
         assertConstantIncrement(Balance::contactDamage)
+
+        assertClose(5.0 * Balance.hazardDamage(1), Balance.hazardDamage(10))
+        assertConstantIncrement(Balance::hazardDamage)
     }
 
     @Test
-    fun `every curve rises with the map index`() {
+    fun `enemy curves rise while player maximum health has no map input`() {
+        assertClose(100.0, Balance.playerMaxHealth())
         (1..9).forEach { map ->
             assertTrue(Balance.trashHealth(map + 1) > Balance.trashHealth(map))
             assertTrue(Balance.contactDamage(map + 1) > Balance.contactDamage(map))
-            assertTrue(Balance.playerMaxHealth(map + 1) > Balance.playerMaxHealth(map))
+            assertTrue(Balance.hazardDamage(map + 1) > Balance.hazardDamage(map))
             assertTrue(Balance.requiredDps(map + 1) > Balance.requiredDps(map))
         }
     }
@@ -54,14 +61,6 @@ class BalanceTest {
             assertClose(Balance.targetTrashSeconds(map), Balance.trashHealth(map) / dps)
             assertClose(Balance.targetMinibossSeconds(map), Balance.minibossHealth(map) / dps)
             assertClose(Balance.targetBossSeconds(map), Balance.bossHealth(map) / dps)
-        }
-    }
-
-    @Test
-    fun `a player at the required rate survives several contact hits`() {
-        (1..10).forEach { map ->
-            val hits = Balance.playerMaxHealth(map) / Balance.contactDamage(map)
-            assertTrue(hits >= 3.0, "map $map: only $hits contact hits survivable")
         }
     }
 
